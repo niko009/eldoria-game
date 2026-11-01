@@ -8,8 +8,10 @@ const MAX_PLAYERS := 10
 const INPUT_SCRIPT := preload("res://platform_input.gd")
 const DISPLAY_SCRIPT := preload("res://display_settings.gd")
 const GRAPHICS_SCRIPT := preload("res://graphics_profile.gd")
+const FOREST_SCRIPT := preload("res://forest_world.gd")
+const UPDATE_SCRIPT := preload("res://update_manager.gd")
 const MOVE_SPEED := 6.0
-const CLIENT_VERSION := "0.1.3"
+const CLIENT_VERSION := "0.2.1"
 const SERVER_CONFIG_URL := "https://bacus.dev/projects/eldoria/server.json"
 
 var peer: MultiplayerPeer = ENetMultiplayerPeer.new()
@@ -19,6 +21,9 @@ var own_id := 0
 var is_dedicated := false
 var is_websocket_host := false
 var connected_peers := {}
+var updater: Node
+var update_button: Button
+var update_info: Label
 var camera: Camera3D
 var info: Label
 var ip_input: LineEdit
@@ -49,6 +54,7 @@ func _ready() -> void:
     add_child(input_driver)
     if not is_dedicated:
         _ui()
+        _init_updater()
         # Exported Windows/Android builds discover the server automatically.
         # SceneTree test harnesses supply CLI user args and trigger discovery explicitly.
         if OS.get_cmdline_user_args().is_empty():
@@ -58,48 +64,17 @@ func _ready() -> void:
         _host()
 
 func _world() -> void:
-    sunlight = DirectionalLight3D.new()
-    sunlight.rotation_degrees = Vector3(-55, 35, 0)
-    add_child(sunlight)
-    var env := WorldEnvironment.new()
-    env.environment = Environment.new()
-    env.environment.background_mode = Environment.BG_COLOR
-    env.environment.background_color = Color("8cb5c7")
-    add_child(env)
-    var ground := MeshInstance3D.new()
-    var mesh := PlaneMesh.new()
-    mesh.size = Vector2(160, 160)
-    ground.mesh = mesh
-    var mat := StandardMaterial3D.new()
-    mat.albedo_color = Color("527e50")
-    ground.material_override = mat
-    add_child(ground)
-    for i in range(35):
-        var tree := MeshInstance3D.new()
-        var trunk := CylinderMesh.new()
-        trunk.top_radius = .22
-        trunk.bottom_radius = .32
-        trunk.height = 3
-        tree.mesh = trunk
-        tree.position = Vector3(sin(i * 8.1) * 35, 1.5, cos(i * 5.3) * 35)
-        var tm := StandardMaterial3D.new()
-        tm.albedo_color = Color("76583b")
-        tree.material_override = tm
-        add_child(tree)
-        var leaves := MeshInstance3D.new()
-        var leaves_mesh := SphereMesh.new()
-        foliage.append(leaves_mesh)
-        leaves.mesh = leaves_mesh
-        leaves.scale = Vector3(1.7, 2.3, 1.7)
-        leaves.position = tree.position + Vector3(0, 2.7, 0)
-        var lm := StandardMaterial3D.new()
-        lm.albedo_color = Color("285c39")
-        leaves.material_override = lm
-        add_child(leaves)
+    var world := FOREST_SCRIPT.new()
+    world.name = "Eldoria_Forest"
+    add_child(world)
+    sunlight = world.sun
+    foliage = world.tree_leaf_meshes
     camera = Camera3D.new()
     camera.position = Vector3(0, 7, 14)
     camera.current = not is_dedicated
+    camera.far = 220.0
     add_child(camera)
+    camera.look_at(Vector3(0, 1, 0), Vector3.UP)
 
 func _ui() -> void:
     config_request = HTTPRequest.new()
@@ -134,8 +109,16 @@ func _ui() -> void:
     emote.pressed.connect(_interact)
     panel.add_child(emote)
     info = Label.new()
-    info.text = "Looking up Eldoria server... (LAN/Wi-Fi)"
+    info.text = "Connecting to the online world..."
     panel.add_child(info)
+    update_info = Label.new()
+    update_info.text = "Checking game version..."
+    panel.add_child(update_info)
+    update_button = Button.new()
+    update_button.text = "Install update"
+    update_button.visible = false
+    update_button.pressed.connect(func() -> void: updater.install_update())
+    panel.add_child(update_button)
 
     if OS.get_name() != "Android":
         var settings := HBoxContainer.new()
@@ -196,6 +179,27 @@ func _ui() -> void:
             quality_button.text = "Graphics: High" if graphics_quality == GRAPHICS_SCRIPT.HIGH else "Graphics: Low"
         )
         player_ui.add_child(quality_button)
+
+func _init_updater() -> void:
+    updater = UPDATE_SCRIPT.new()
+    updater.current_version = CLIENT_VERSION
+    add_child(updater)
+    updater.update_available.connect(_on_update_available)
+    updater.update_status.connect(_on_update_status)
+    if OS.get_cmdline_user_args().is_empty():
+        updater.check_for_updates()
+
+func _on_update_available(version: String, notes: String) -> void:
+    update_info.text = "New version v%s: %s" % [version, notes]
+    update_button.visible = true
+    if OS.get_name() == "Android":
+        update_button.text = "Download Android APK v%s" % version
+    else:
+        update_button.text = "Update and restart v%s" % version
+
+func _on_update_status(message: String) -> void:
+    if update_info != null:
+        update_info.text = message
 
 func _host() -> void:
     _clear_session()
