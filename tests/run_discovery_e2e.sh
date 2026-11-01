@@ -6,7 +6,7 @@ LOG_DIR="$ROOT/tests/logs"
 mkdir -p "$LOG_DIR"
 "$GODOT_BIN" --headless --path "$ROOT/client" --editor --quit > "$LOG_DIR/discovery-import.log" 2>&1
 # Local deterministic HTTP config provider, identical JSON schema to bacus.dev.
-node -e 'require("http").createServer((req,res)=>{res.writeHead(200,{"Content-Type":"application/json","Cache-Control":"no-store"});res.end(JSON.stringify({schema:1,protocol:"godot-enet",client_version:"0.1.2",status:"lan",host:"127.0.0.1",port:7777}))}).listen(18087,"127.0.0.1")' > "$LOG_DIR/discovery-http.log" 2>&1 &
+node -e 'require("http").createServer((req,res)=>{res.writeHead(200,{"Content-Type":"application/json","Cache-Control":"no-store"});res.end(JSON.stringify({schema:1,protocol:"godot-enet",client_version:"0.2.1",status:"lan",host:"127.0.0.1",port:7777}))}).listen(18087,"127.0.0.1")' > "$LOG_DIR/discovery-http.log" 2>&1 &
 web=$!
 timeout 38 "$GODOT_BIN" --headless --path "$ROOT/client" -- --dedicated-server > "$LOG_DIR/discovery-server.log" 2>&1 &
 server=$!
