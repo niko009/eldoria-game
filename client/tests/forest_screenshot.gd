@@ -9,7 +9,7 @@ func _run() -> void:
     game.camera.position = Vector3(-4, 7.7, 22)
     game.camera.look_at(Vector3(-2, 2.0, -18), Vector3.UP)
     await process_frame
-    for i in range(70):
+    for i in range(7):
         await process_frame
     var image := root.get_texture().get_image()
     var dest := ProjectSettings.globalize_path("res://../builds/eldoria-forest-preview.png")

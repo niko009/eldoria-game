@@ -12,8 +12,8 @@ func _run() -> void:
     root.add_child(g)
     await process_frame
     var forest := g.get_node("Eldoria_Forest")
-    if forest.tree_leaf_meshes.size() < 60:
-        _fail("not enough detailed tree canopy meshes")
+    if forest.asset_tree_count < 55 or forest.asset_detail_count < 120:
+        _fail("insufficient imported forest models %s trees, %s details" % [forest.asset_tree_count,forest.asset_detail_count])
         return
     if absf(forest.height_at(0,0)) > 0.01 or absf(forest.height_at(3,0)) > 0.01:
         _fail("spawn clearing elevation changed")

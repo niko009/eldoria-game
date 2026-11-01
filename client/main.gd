@@ -11,7 +11,7 @@ const GRAPHICS_SCRIPT := preload("res://graphics_profile.gd")
 const FOREST_SCRIPT := preload("res://forest_world.gd")
 const UPDATE_SCRIPT := preload("res://update_manager.gd")
 const MOVE_SPEED := 6.0
-const CLIENT_VERSION := "0.2.1"
+const CLIENT_VERSION := "0.3.0"
 const SERVER_CONFIG_URL := "https://bacus.dev/projects/eldoria/server.json"
 
 var peer: MultiplayerPeer = ENetMultiplayerPeer.new()
@@ -50,6 +50,7 @@ func _ready() -> void:
     graphics_quality = GRAPHICS_SCRIPT.default_quality(is_dedicated)
     _world()
     GRAPHICS_SCRIPT.apply(graphics_quality, sunlight, foliage)
+    get_node("Eldoria_Forest").apply_detail_quality(graphics_quality == GRAPHICS_SCRIPT.HIGH)
     input_driver = INPUT_SCRIPT.new()
     add_child(input_driver)
     if not is_dedicated:
@@ -176,6 +177,7 @@ func _ui() -> void:
         quality_button.pressed.connect(func() -> void:
             graphics_quality = GRAPHICS_SCRIPT.HIGH if graphics_quality == GRAPHICS_SCRIPT.LOW else GRAPHICS_SCRIPT.LOW
             GRAPHICS_SCRIPT.apply(graphics_quality, sunlight, foliage)
+            get_node("Eldoria_Forest").apply_detail_quality(graphics_quality == GRAPHICS_SCRIPT.HIGH)
             quality_button.text = "Graphics: High" if graphics_quality == GRAPHICS_SCRIPT.HIGH else "Graphics: Low"
         )
         player_ui.add_child(quality_button)

@@ -1,11 +1,21 @@
 extends Node3D
-# Original deterministic stylized forest, no downloaded meshes or textures.
+# Deterministic stylized landscape with Quaternius CC0 glTF nature assets.
 # Identical vegetation positions on Windows and Android; visual quality differs.
 const WORLD_RADIUS := 94.0
 const TERRAIN_CELLS := 88
 const TREE_SEED := 20261101
 var tree_leaf_meshes: Array[SphereMesh] = []
 var leaf_instances: Array[MeshInstance3D] = []
+var asset_tree_count := 0
+var asset_detail_count := 0
+var _asset_scenes: Dictionary = {}
+var _optional_details: Array[Node3D] = []
+var _optional_trees: Array[Node3D] = []
+var _low_quality := false
+const ASSET_ROOT := "res://assets/nature/"
+const TREE_MODELS := ["CommonTree_1", "CommonTree_2", "CommonTree_3", "Pine_1", "Pine_2", "Pine_3", "TwistedTree_1", "TwistedTree_2"]
+const DETAILS := ["Bush_Common", "Bush_Common_Flowers", "Fern_1", "Grass_Common_Short", "Grass_Wispy_Tall", "Flower_3_Group", "Mushroom_Common"]
+const ROCKS := ["Rock_Medium_1", "Rock_Medium_2"]
 var _rng := RandomNumberGenerator.new()
 var _terrain_noise := FastNoiseLite.new()
 var sun: DirectionalLight3D
@@ -17,8 +27,10 @@ func _ready() -> void:
     _terrain_noise.seed = TREE_SEED
     _terrain_noise.frequency = 0.042
     _terrain_noise.fractal_octaves = 3
+    _load_asset_scenes()
     _create_sky()
     _create_terrain()
+    _create_mountain_silhouette()
     _create_path()
     _create_water()
     _create_trees()
@@ -40,16 +52,16 @@ func _mat(color: Color, rough: float = 0.94) -> StandardMaterial3D:
 func _create_sky() -> void:
     sun = DirectionalLight3D.new()
     sun.rotation_degrees = Vector3(-37, -34, 0)
-    sun.light_color = Color("ffe4bd")
-    sun.light_energy = 0.78
+    sun.light_color = Color("fff0d4")
+    sun.light_energy = 0.95
     sun.shadow_enabled = true
     add_child(sun)
     environment_node = WorldEnvironment.new()
     var e := Environment.new()
     var sky := Sky.new()
     var sky_mat := ProceduralSkyMaterial.new()
-    sky_mat.sky_top_color = Color("446c88")
-    sky_mat.sky_horizon_color = Color("a6c7bc")
+    sky_mat.sky_top_color = Color("70a9cf")
+    sky_mat.sky_horizon_color = Color("d5e5da")
     sky_mat.ground_bottom_color = Color("546a5c")
     sky_mat.ground_horizon_color = Color("acbead")
     sky_mat.sun_angle_max = 10.0
@@ -57,12 +69,12 @@ func _create_sky() -> void:
     e.background_mode = Environment.BG_SKY
     e.sky = sky
     e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-    e.ambient_light_color = Color("8fa9ad")
-    e.ambient_light_energy = 0.30
+    e.ambient_light_color = Color("b9c9bd")
+    e.ambient_light_energy = 0.55
     e.reflected_light_source = Environment.REFLECTION_SOURCE_BG
     e.fog_enabled = true
-    e.fog_light_color = Color("9bbaa9")
-    e.fog_density = 0.004
+    e.fog_light_color = Color("bfd0c0")
+    e.fog_density = 0.0012
     environment_node.environment = e
     add_child(environment_node)
 
@@ -94,6 +106,40 @@ func _create_terrain() -> void:
     m.cull_mode = BaseMaterial3D.CULL_DISABLED
     terrain.material_override = m
     add_child(terrain)
+
+# Distant scenery skyline uses a shared mesh rather than thousands of objects.
+func _create_mountain_silhouette() -> void:
+    var st := SurfaceTool.new()
+    st.begin(Mesh.PRIMITIVE_TRIANGLES)
+    for m in range(21):
+        var angle := TAU * float(m) / 21.0
+        var center := Vector3(cos(angle)*175.0,0,sin(angle)*175.0)
+        var summit_y := _rng.randf_range(31.0,74.0)
+        var radius := _rng.randf_range(29.0,58.0)
+        var segments := 10
+        for k in range(segments):
+            var a := TAU * float(k) / segments
+            var b := TAU * float(k+1) / segments
+            var shape_a := radius * (0.84 + 0.2 * sin(float(k+m)*5.21))
+            var shape_b := radius * (0.84 + 0.2 * sin(float(k+1+m)*5.21))
+            var v1 := center + Vector3(cos(a)*shape_a, _rng.randf_range(-3.0,1.0), sin(a)*shape_a)
+            var v2 := center + Vector3(cos(b)*shape_b, _rng.randf_range(-3.0,1.0), sin(b)*shape_b)
+            var summit := center + Vector3(_rng.randf_range(-5.0,5.0),summit_y,_rng.randf_range(-5.0,5.0))
+            for v in [v1,v2,summit]:
+                var c := Color("77938b") if v.y < 28.0 else Color("859b9e")
+                if v.y > 45.0:
+                    c = Color("bbc5bb")
+                st.set_color(c)
+                st.add_vertex(v)
+    st.generate_normals()
+    var back := MeshInstance3D.new()
+    back.name = "Misty alpine skyline"
+    back.mesh = st.commit()
+    var material := _mat(Color.WHITE)
+    material.vertex_color_use_as_albedo = true
+    material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    back.material_override = material
+    add_child(back)
 
 func _create_path() -> void:
     var st := SurfaceTool.new()
@@ -138,7 +184,7 @@ func _create_water() -> void:
     for i in range(24):
         var angle := TAU * float(i) / 24.0
         var radius := 10.3 + _rng.randf_range(-0.3, 0.65)
-        _rock(Vector3(-29 + cos(angle)*radius, height_at(-29+cos(angle)*radius,22+sin(angle)*radius),22+sin(angle)*radius), _rng.randf_range(0.4,1.25))
+        _spawn_asset(ROCKS[i%ROCKS.size()], Vector3(-29+cos(angle)*radius,height_at(-29+cos(angle)*radius,22+sin(angle)*radius),22+sin(angle)*radius),_rng.randf_range(0.5,1.5))
 
 func _mesh(mesh: Mesh, pos: Vector3, mat: Material, parent: Node3D = self, scale_size: Vector3 = Vector3.ONE) -> MeshInstance3D:
     var node := MeshInstance3D.new()
@@ -149,96 +195,86 @@ func _mesh(mesh: Mesh, pos: Vector3, mat: Material, parent: Node3D = self, scale
     parent.add_child(node)
     return node
 
-func _make_tree(pos: Vector3, which: int, size: float) -> void:
-    var root := Node3D.new()
-    root.position = pos
-    root.rotation.y = _rng.randf_range(0, TAU)
-    root.scale = Vector3.ONE * size
-    add_child(root)
-    var trunk := CylinderMesh.new()
-    trunk.height = 5.7 if which != 1 else 8.0
-    trunk.top_radius = 0.20 if which != 1 else 0.10
-    trunk.bottom_radius = 0.43 if which != 1 else 0.32
-    trunk.radial_segments = 8
-    var bark := _mat(Color("7b5b46") if which != 2 else Color("d8d1b2"))
-    _mesh(trunk, Vector3(0,trunk.height/2.0,0), bark, root)
-    if which == 1:
-        # Several layered pine skirts, silhouette much richer than a sphere.
-        for i in range(4):
-            var crown := CylinderMesh.new()
-            crown.top_radius = 0.0
-            crown.bottom_radius = 2.65 - i*0.39
-            crown.height = 3.55
-            crown.radial_segments = 9
-            var color := Color("315749").lerp(Color("6f9771"), 0.15 + i*0.12)
-            _mesh(crown, Vector3(0, 4.7+i*1.05,0), _mat(color), root)
-    else:
-        var palette := [Color("446c4f"),Color("668d5b"),Color("789d6b"),Color("c6ab62"),Color("96b789")]
-        var selected: Color = palette[_rng.randi_range(0,palette.size()-1)]
-        for i in range(6):
-            var angle := TAU * float(i) / 5.0 + 0.3
-            var offset := Vector3(cos(angle)*1.5, 5.4+sin(i*4.4)*0.8, sin(angle)*1.6)
-            if i == 5:
-                offset = Vector3(0,7.25,0)
-            var leaves := SphereMesh.new()
-            leaves.radius = 1.0
-            leaves.height = 2.0
-            leaves.radial_segments = 16
-            leaves.rings = 8
-            tree_leaf_meshes.append(leaves)
-            var leaf_color: Color = selected.lerp(Color("bad09c"), _rng.randf_range(0,0.25))
-            var part := _mesh(leaves, offset, _mat(leaf_color), root, Vector3(_rng.randf_range(1.25,2.05),_rng.randf_range(1.1,1.85),_rng.randf_range(1.2,1.8)))
-            leaf_instances.append(part)
-        for j in range(3):
-            var branch := CylinderMesh.new()
-            branch.height = 2.5
-            branch.top_radius = 0.10
-            branch.bottom_radius = 0.22
-            branch.radial_segments = 6
-            var node := _mesh(branch, Vector3(cos(j*2.1)*0.8,4.7,sin(j*2.1)*0.8),bark,root)
-            node.rotation.z = 0.6
-            node.rotation.y = j*2.1
+func _load_asset_scenes() -> void:
+    for id in TREE_MODELS + DETAILS + ROCKS:
+        var model: PackedScene = load(ASSET_ROOT + id + ".gltf")
+        if model != null:
+            _asset_scenes[id] = model
+        else:
+            push_error("Forest model unavailable: " + id)
+
+func _spawn_asset(id: String, where: Vector3, scale_value: float, optional: bool = false) -> Node3D:
+    if not _asset_scenes.has(id):
+        return null
+    var instance: Node3D = (_asset_scenes[id] as PackedScene).instantiate()
+    instance.name = id
+    instance.position = where
+    instance.rotation.y = _rng.randf_range(-PI, PI)
+    instance.scale = Vector3.ONE * scale_value
+    add_child(instance)
+    if id in TREE_MODELS and Vector2(where.x,where.z).length() > 36.0:
+        _optional_trees.append(instance)
+    if optional:
+        _optional_details.append(instance)
+        asset_detail_count += 1
+    return instance
+
+func apply_detail_quality(high: bool) -> void:
+    _low_quality = not high
+    # All scenery is deterministic; quality only hides small decorative foliage.
+    for i in range(_optional_details.size()):
+        _optional_details[i].visible = high or i % 3 == 0
+    for i in range(_optional_trees.size()):
+        _optional_trees[i].visible = high or i % 4 != 0
 
 func _create_trees() -> void:
-    # Open spawn clearing and winding path remain navigable.
-    for i in range(110):
-        var x := _rng.randf_range(-86.0,86.0)
-        var z := _rng.randf_range(-86.0,86.0)
-        if Vector2(x,z).length() < 15.0 or absf(x - sin(z*0.081)*5.0) < 4.1:
+    # Keep the playable spawn glade and trail open; foreground forest is now
+    # genuine glTF tree meshes with bark textures and alpha-cutout foliage.
+    for i in range(105):
+        var x := _rng.randf_range(-87.0, 87.0)
+        var z := _rng.randf_range(-87.0, 87.0)
+        if Vector2(x,z).length() < 11.0 or absf(x-sin(z*0.081)*5.0) < 3.1:
             continue
-        if Vector2(x+29,z-22).length() < 12.5:
+        if Vector2(x+29,z-22).length() < 13.0:
             continue
-        _make_tree(Vector3(x,height_at(x,z),z),i%3,_rng.randf_range(0.75,1.3))
-
-func _rock(pos: Vector3, size: float) -> void:
-    var rock := SphereMesh.new()
-    rock.radial_segments = 8
-    rock.rings = 5
-    var c := Color("8e9a8c").lerp(Color("a8a897"),_rng.randf())
-    var mesh := _mesh(rock, pos+Vector3(0,size*0.27,0),_mat(c),self, Vector3(size, size*_rng.randf_range(0.55,0.9),size*_rng.randf_range(0.7,1.35)))
-    mesh.rotation.y = _rng.randf_range(0,TAU)
+        var model: String = TREE_MODELS[i%6]
+        if i%19 == 0 and Vector2(x,z).length() > 36.0:
+            model = TREE_MODELS[6 + (i%2)]
+        var t := _spawn_asset(model, Vector3(x,height_at(x,z),z),_rng.randf_range(0.85,1.28))
+        if t != null:
+            asset_tree_count += 1
+    # Hand-composed forest frame surrounding the first player's viewpoint.
+    # Placed outside the spawn clearance; no giant crimson canopy over camera.
+    var focal_grove := [[-15.0,7.0],[17.0,9.0],[-13.0,-13.0],[14.0,-12.0],[-20.0,-27.0],[18.0,-26.0],[-11.0,34.0],[14.0,33.0]]
+    for i in range(focal_grove.size()):
+        var px: float = focal_grove[i][0]
+        var pz: float = focal_grove[i][1]
+        if _spawn_asset(TREE_MODELS[i%6],Vector3(px,height_at(px,pz),pz),_rng.randf_range(0.9,1.2)) != null:
+            asset_tree_count += 1
 
 func _create_rocks_and_flowers() -> void:
-    for i in range(105):
-        var x := _rng.randf_range(-78,78)
-        var z := _rng.randf_range(-78,78)
-        if Vector2(x,z).length() < 6.0:
+    # Low-cost real scene instances: single clumps instead of dozens of
+    # primitive cylinders/spheres each requiring a material and draw call.
+    for i in range(225):
+        var x := _rng.randf_range(-84.0,84.0)
+        var z := _rng.randf_range(-84.0,84.0)
+        if Vector2(x,z).length() < 7.0:
             continue
-        if i%4 == 0:
-            _rock(Vector3(x,height_at(x,z),z),_rng.randf_range(0.32,1.6))
+        var pos := Vector3(x, height_at(x,z)+0.03,z)
+        if i%8 == 0:
+            _spawn_asset(ROCKS[i%ROCKS.size()],pos,_rng.randf_range(0.75,1.7))
         else:
-            var flower_stem := CylinderMesh.new()
-            flower_stem.height = 0.55
-            flower_stem.top_radius = 0.028
-            flower_stem.bottom_radius = 0.04
-            flower_stem.radial_segments = 5
-            var flower := SphereMesh.new()
-            flower.radial_segments = 7
-            flower.rings = 4
-            var stem_pos := Vector3(x,height_at(x,z),z)
-            _mesh(flower_stem,stem_pos+Vector3(0,0.275,0),_mat(Color("5e8152")))
-            var bloom_col: Color = [Color("f4cf72"),Color("e9b5bd"),Color("d9c8e6"),Color("fff3cf")][i%4]
-            _mesh(flower,stem_pos+Vector3(0,0.62,0),_mat(bloom_col),self,Vector3(0.17,0.12,0.17))
+            var id: String = DETAILS[i%DETAILS.size()]
+            _spawn_asset(id,pos,_rng.randf_range(0.72,1.4),true)
+    # Dense waist-height meadow edges rather than isolated decorations.
+    for i in range(145):
+        var z := _rng.randf_range(-46.0,44.0)
+        var side := -1.0 if i%2 == 0 else 1.0
+        var x := sin(z*0.081)*5.0 + side*_rng.randf_range(3.4,14.0)
+        if Vector2(x,z).length() < 5.0:
+            continue
+        var m: String = DETAILS[i%DETAILS.size()]
+        _spawn_asset(m,Vector3(x,height_at(x,z)+0.02,z),_rng.randf_range(0.7,1.22),true)
 
 func _create_landmark() -> void:
     # A stone waypoint in the starting clearing.
@@ -246,7 +282,7 @@ func _create_landmark() -> void:
         var angle := float(i) * TAU / 8
         var x := 7.5 + cos(angle)*2.4
         var z := 2.0 + sin(angle)*2.4
-        _rock(Vector3(x,height_at(x,z),z),0.8)
+        _spawn_asset(ROCKS[i%ROCKS.size()],Vector3(x,height_at(x,z),z),0.65)
     var base := CylinderMesh.new()
     base.top_radius = 0.72
     base.bottom_radius = 0.88
