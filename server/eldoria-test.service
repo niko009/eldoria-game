@@ -1,0 +1,21 @@
+[Unit]
+Description=Eldoria Godot ENet LAN pre-alpha host (UDP 7777)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mbacus
+Group=mbacus
+WorkingDirectory=/srv/bacus/apps/eldoria-test-server
+ExecStart=/srv/bacus/apps/eldoria-test-server/godot --headless --path /srv/bacus/apps/eldoria-test-server/client -- --dedicated-server
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/srv/bacus/apps/eldoria-test-server
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

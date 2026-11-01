@@ -2,10 +2,12 @@ config_version=5
 
 [application]
 config/name="Eldoria Prototype"
+config/icon="res://icon.svg"
 run/main_scene="res://Main.tscn"
 config/features=PackedStringArray("4.5", "GL Compatibility")
 
 [rendering]
+textures/vram_compression/import_etc2_astc=true
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 textures/default_filters/use_nearest_mipmap_filter=false
