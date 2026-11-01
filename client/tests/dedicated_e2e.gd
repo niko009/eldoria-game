@@ -32,10 +32,16 @@ func _run() -> void:
     if absf(game.input_driver.yaw) < 0.05:
         _fail("camera look input not applied")
         return
-    Input.action_press("move_right" if role == "A" else "move_left")
+    if role == "A":
+        Input.action_press("move_right")
+    else:
+        game.input_driver.press_direction(Vector2(-1, 0)) # simulate Android button path
     for n in range(110):
         await process_frame
-    Input.action_release("move_right" if role == "A" else "move_left")
+    if role == "A":
+        Input.action_release("move_right")
+    else:
+        game.input_driver.release_direction(Vector2(-1, 0))
     for n in range(70):
         await process_frame
     if game.players[mine].position.distance_to(initial) < 1.0:
@@ -66,10 +72,10 @@ func _run() -> void:
         game._interact()
         for n in range(55):
             await process_frame
-        Input.action_press("move_back")
+        game.input_driver.press_direction(Vector2(0, 1))
         for n in range(95):
             await process_frame
-        Input.action_release("move_back")
+        game.input_driver.release_direction(Vector2(0, 1))
         for n in range(60):
             await process_frame
         print("CROSS-PLATFORM PROTOCOL REJOIN PASS B")
