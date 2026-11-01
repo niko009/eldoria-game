@@ -12,6 +12,9 @@ func _run() -> void:
     game = SCENE.instantiate()
     root.add_child(game)
     await process_frame
+    var host_ip := OS.get_environment("ELDORIA_SERVER_IP")
+    if not host_ip.is_empty():
+        game.ip_input.text = host_ip
     game._join()
     if not await _await_players(2, 400):
         _fail(role + " initial two-client connection")
