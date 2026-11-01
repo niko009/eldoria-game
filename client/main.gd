@@ -1,28 +1,50 @@
 extends Node3D
 
+# One Godot scene, one replication protocol and one set of mechanics for all exports.
+# The current ENet session is an MVP transport, not the planned authoritative .NET protocol.
 const PORT := 7777
+const INPUT_SCRIPT := preload("res://platform_input.gd")
+const DISPLAY_SCRIPT := preload("res://display_settings.gd")
+const GRAPHICS_SCRIPT := preload("res://graphics_profile.gd")
+const MOVE_SPEED := 6.0
+
 var peer := ENetMultiplayerPeer.new()
 var players := {}
+var emote_counts := {}
 var own_id := 0
+var is_dedicated := false
 var camera: Camera3D
 var info: Label
 var ip_input: LineEdit
-var move_input := Vector2.ZERO
-var move_speed := 6.0
+var input_driver: Node
+var mobile_controls: Control
+var player_ui: CanvasLayer
+var sunlight: DirectionalLight3D
+var foliage: Array[SphereMesh] = []
+var graphics_quality := 1
 
 func _ready() -> void:
-    _world()
-    _ui()
+    is_dedicated = OS.get_cmdline_user_args().has("--dedicated-server")
     multiplayer.peer_connected.connect(_on_join)
     multiplayer.peer_disconnected.connect(_on_leave)
     multiplayer.connected_to_server.connect(_connected)
     multiplayer.connection_failed.connect(_connection_failed)
     multiplayer.server_disconnected.connect(_server_disconnected)
+    graphics_quality = GRAPHICS_SCRIPT.default_quality(is_dedicated)
+    _world()
+    GRAPHICS_SCRIPT.apply(graphics_quality, sunlight, foliage)
+    input_driver = INPUT_SCRIPT.new()
+    add_child(input_driver)
+    if not is_dedicated:
+        _ui()
+    else:
+        # A separate headless Godot process can host the exact same world.
+        _host()
 
 func _world() -> void:
-    var light := DirectionalLight3D.new()
-    light.rotation_degrees = Vector3(-55, 35, 0)
-    add_child(light)
+    sunlight = DirectionalLight3D.new()
+    sunlight.rotation_degrees = Vector3(-55, 35, 0)
+    add_child(sunlight)
     var env := WorldEnvironment.new()
     env.environment = Environment.new()
     env.environment.background_mode = Environment.BG_COLOR
@@ -30,7 +52,7 @@ func _world() -> void:
     add_child(env)
     var ground := MeshInstance3D.new()
     var mesh := PlaneMesh.new()
-    mesh.size = Vector2(160,160)
+    mesh.size = Vector2(160, 160)
     ground.mesh = mesh
     var mat := StandardMaterial3D.new()
     mat.albedo_color = Color("527e50")
@@ -43,36 +65,39 @@ func _world() -> void:
         trunk.bottom_radius = .32
         trunk.height = 3
         tree.mesh = trunk
-        tree.position = Vector3(sin(i*8.1)*35,1.5,cos(i*5.3)*35)
+        tree.position = Vector3(sin(i * 8.1) * 35, 1.5, cos(i * 5.3) * 35)
         var tm := StandardMaterial3D.new()
         tm.albedo_color = Color("76583b")
         tree.material_override = tm
         add_child(tree)
         var leaves := MeshInstance3D.new()
-        leaves.mesh = SphereMesh.new()
-        leaves.scale = Vector3(1.7,2.3,1.7)
-        leaves.position = tree.position + Vector3(0,2.7,0)
+        var leaves_mesh := SphereMesh.new()
+        foliage.append(leaves_mesh)
+        leaves.mesh = leaves_mesh
+        leaves.scale = Vector3(1.7, 2.3, 1.7)
+        leaves.position = tree.position + Vector3(0, 2.7, 0)
         var lm := StandardMaterial3D.new()
         lm.albedo_color = Color("285c39")
         leaves.material_override = lm
         add_child(leaves)
     camera = Camera3D.new()
-    camera.position = Vector3(0,16,22)
-    camera.rotation_degrees.x = -35
-    camera.current = true
+    camera.position = Vector3(0, 7, 14)
+    camera.current = not is_dedicated
     add_child(camera)
 
 func _ui() -> void:
-    var ui := CanvasLayer.new()
-    add_child(ui)
+    player_ui = CanvasLayer.new()
+    add_child(player_ui)
     var panel := VBoxContainer.new()
-    panel.position = Vector2(24,24)
-    ui.add_child(panel)
+    panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+    panel.position = Vector2(24, 24)
+    player_ui.add_child(panel)
     var title := Label.new()
-    title.text = "ELDORIA  /  ONLINE PROTOTYPE"
+    title.text = "ELDORIA / CROSS-PLATFORM PRE-ALPHA"
     panel.add_child(title)
     ip_input = LineEdit.new()
     ip_input.text = "127.0.0.1"
+    ip_input.placeholder_text = "Server IPv4 address"
     ip_input.custom_minimum_size.x = 240
     panel.add_child(ip_input)
     var host := Button.new()
@@ -83,57 +108,112 @@ func _ui() -> void:
     join.text = "Join world"
     join.pressed.connect(_join)
     panel.add_child(join)
-    info = Label.new()
-    info.text = "Host or join. WASD to move."
-    panel.add_child(info)
-    var mobile := Control.new()
-    mobile.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-    mobile.offset_left = 24
-    mobile.offset_top = -190
-    mobile.offset_right = 230
-    mobile.offset_bottom = -16
-    ui.add_child(mobile)
-    for entry in [["▲",Vector2(65,0),Vector2(0,-1)],["▼",Vector2(65,112),Vector2(0,1)],["◀",Vector2(0,56),Vector2(-1,0)],["▶",Vector2(130,56),Vector2(1,0)]]:
-        var button := Button.new()
-        button.text = entry[0]
-        button.position = entry[1]
-        button.custom_minimum_size = Vector2(58,52)
-        button.button_down.connect(func(): move_input += entry[2])
-        button.button_up.connect(func(): move_input -= entry[2])
-        mobile.add_child(button)
     var disconnect := Button.new()
     disconnect.text = "Disconnect"
     disconnect.pressed.connect(_disconnect)
     panel.add_child(disconnect)
+    var emote := Button.new()
+    emote.text = "Wave (E)"
+    emote.pressed.connect(_interact)
+    panel.add_child(emote)
+    info = Label.new()
+    info.text = "Host or join. WASD / right mouse drag / E."
+    panel.add_child(info)
+
+    if OS.get_name() != "Android":
+        var settings := HBoxContainer.new()
+        panel.add_child(settings)
+        var fullscreen := Button.new()
+        fullscreen.text = "Fullscreen (F11)"
+        fullscreen.pressed.connect(_toggle_fullscreen)
+        settings.add_child(fullscreen)
+        var resolution := OptionButton.new()
+        for size in DISPLAY_SCRIPT.RESOLUTIONS:
+            resolution.add_item("%d x %d" % [size.x, size.y])
+        resolution.select(0)
+        resolution.item_selected.connect(func(index: int) -> void:
+            DISPLAY_SCRIPT.set_windowed_resolution(DISPLAY_SCRIPT.RESOLUTIONS[index])
+        )
+        settings.add_child(resolution)
+
+    mobile_controls = Control.new()
+    mobile_controls.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+    mobile_controls.offset_left = 24
+    mobile_controls.offset_top = -228
+    mobile_controls.offset_right = 270
+    mobile_controls.offset_bottom = -16
+    mobile_controls.visible = OS.get_name() == "Android"
+    player_ui.add_child(mobile_controls)
+    for entry in [["▲", Vector2(78, 0), Vector2(0, -1)], ["▼", Vector2(78, 128), Vector2(0, 1)], ["◀", Vector2(0, 64), Vector2(-1, 0)], ["▶", Vector2(156, 64), Vector2(1, 0)]]:
+        var button := Button.new()
+        button.text = entry[0]
+        button.position = entry[1]
+        button.custom_minimum_size = Vector2(70, 60)
+        button.add_theme_font_size_override("font_size", 23)
+        button.button_down.connect(func() -> void: input_driver.press_direction(entry[2]))
+        button.button_up.connect(func() -> void: input_driver.release_direction(entry[2]))
+        mobile_controls.add_child(button)
+
+    var touch_emote := Button.new()
+    touch_emote.text = "Wave"
+    touch_emote.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+    touch_emote.offset_left = -145
+    touch_emote.offset_top = -86
+    touch_emote.offset_right = -24
+    touch_emote.offset_bottom = -24
+    touch_emote.visible = OS.get_name() == "Android"
+    touch_emote.pressed.connect(_interact)
+    player_ui.add_child(touch_emote)
+
+    if OS.get_name() == "Android":
+        var quality_button := Button.new()
+        quality_button.text = "Graphics: Low"
+        quality_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+        quality_button.offset_left = -190
+        quality_button.offset_top = -155
+        quality_button.offset_right = -24
+        quality_button.offset_bottom = -100
+        quality_button.pressed.connect(func() -> void:
+            graphics_quality = GRAPHICS_SCRIPT.HIGH if graphics_quality == GRAPHICS_SCRIPT.LOW else GRAPHICS_SCRIPT.LOW
+            GRAPHICS_SCRIPT.apply(graphics_quality, sunlight, foliage)
+            quality_button.text = "Graphics: High" if graphics_quality == GRAPHICS_SCRIPT.HIGH else "Graphics: Low"
+        )
+        player_ui.add_child(quality_button)
 
 func _host() -> void:
     _clear_session()
     peer = ENetMultiplayerPeer.new()
-    if peer.create_server(PORT,10) != OK:
-        info.text = "Cannot host on UDP 7777"
+    if peer.create_server(PORT, 10) != OK:
+        _status("Cannot host on UDP 7777")
         return
     multiplayer.multiplayer_peer = peer
+    if is_dedicated:
+        print("ELDORIA DEDICATED SERVER READY UDP %d" % PORT)
+        return
     own_id = multiplayer.get_unique_id()
-    _spawn(own_id,Vector3(0,1,0))
-    info.text = "Hosting UDP 7777, ID %s" % own_id
+    _spawn(own_id, Vector3(0, 1, 0))
+    _status("Hosting UDP 7777, ID %s" % own_id)
 
 func _join() -> void:
+    if is_dedicated:
+        return
     _clear_session()
     peer = ENetMultiplayerPeer.new()
-    if peer.create_client(ip_input.text.strip_edges(),PORT) != OK:
-        info.text = "Cannot connect"
+    if peer.create_client(ip_input.text.strip_edges(), PORT) != OK:
+        _status("Cannot connect")
         return
     multiplayer.multiplayer_peer = peer
-    info.text = "Connecting..."
+    _status("Connecting...")
 
 func _connected() -> void:
     own_id = multiplayer.get_unique_id()
     request_spawn.rpc_id(1)
-    info.text = "Connected, ID %s" % own_id
+    _status("Connected, ID %s" % own_id)
 
 func _on_join(id: int) -> void:
     if multiplayer.is_server():
-        info.text = "Player %s connected" % id
+        print("ELDORIA PEER CONNECTED %d" % id)
+        _status("Player %s connected" % id)
 
 func _on_leave(id: int) -> void:
     _remove_actor(id)
@@ -148,43 +228,53 @@ func _remove_actor(id: int) -> void:
     if players.has(id):
         players[id].queue_free()
         players.erase(id)
+    emote_counts.erase(id)
 
 func _clear_session() -> void:
     own_id = 0
-    move_input = Vector2.ZERO
+    if input_driver != null:
+        input_driver.clear_touch()
     multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
     peer.close()
     for id in players.keys():
         _remove_actor(id)
 
 func _disconnect() -> void:
+    if is_dedicated:
+        return
     _clear_session()
-    info.text = "Disconnected. Host or join to play."
+    _status("Disconnected. Host or join to play.")
 
 func _connection_failed() -> void:
     _clear_session()
-    info.text = "Connection failed"
+    _status("Connection failed")
 
 func _server_disconnected() -> void:
     _clear_session()
-    info.text = "Server disconnected"
+    _status("Server disconnected")
 
-@rpc("any_peer","reliable")
+func _status(message: String) -> void:
+    if info != null:
+        info.text = message
+
+@rpc("any_peer", "reliable")
 func request_spawn() -> void:
-    if not multiplayer.is_server(): return
+    if not multiplayer.is_server():
+        return
     var id := multiplayer.get_remote_sender_id()
     for existing in players:
-        spawn_remote.rpc_id(id,existing,players[existing].position)
-    var pos := Vector3(float(players.size()*3),1,0)
-    _spawn(id,pos)
-    spawn_remote.rpc(id,pos)
+        spawn_remote.rpc_id(id, existing, players[existing].position)
+    var pos := Vector3(float(players.size() * 3), 1, 0)
+    _spawn(id, pos)
+    spawn_remote.rpc(id, pos)
 
-@rpc("authority","call_remote","reliable")
+@rpc("authority", "call_remote", "reliable")
 func spawn_remote(id: int, pos: Vector3) -> void:
-    _spawn(id,pos)
+    _spawn(id, pos)
 
-func _spawn(id: int,pos: Vector3) -> void:
-    if players.has(id): return
+func _spawn(id: int, pos: Vector3) -> void:
+    if players.has(id):
+        return
     var actor := MeshInstance3D.new()
     actor.name = "Player_%s" % id
     var mesh := CapsuleMesh.new()
@@ -197,31 +287,84 @@ func _spawn(id: int,pos: Vector3) -> void:
     actor.position = pos
     add_child(actor)
     players[id] = actor
+    emote_counts[id] = 0
 
 func _process(delta: float) -> void:
-    if own_id == 0 or not players.has(own_id): return
-    if peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED: return
-    var axis := Input.get_vector("move_left","move_right","move_forward","move_back") + move_input
-    axis = axis.limit_length()
-    var delta_pos := Vector3(axis.x,0,axis.y)*move_speed*delta
+    if is_dedicated or own_id == 0 or not players.has(own_id):
+        return
+    if peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
+        return
+    var axis: Vector2 = input_driver.get_move_vector()
+    var delta_pos := Vector3(axis.x, 0, axis.y).rotated(Vector3.UP, input_driver.yaw) * MOVE_SPEED * delta
     players[own_id].position += delta_pos
-    var target: Vector3 = players[own_id].position + Vector3(0,12,19)
-    camera.position = camera.position.lerp(target,min(1,delta*5))
+    var focus: Vector3 = players[own_id].position + Vector3(0, 1.6, 0)
+    var offset := Vector3(0, -sin(input_driver.pitch) * 13.0, cos(input_driver.pitch) * 13.0)
+    var target: Vector3 = focus + offset.rotated(Vector3.UP, input_driver.yaw)
+    camera.position = camera.position.lerp(target, minf(1.0, delta * 7.0))
+    camera.look_at(focus, Vector3.UP)
     if multiplayer.is_server():
-        sync_position.rpc(own_id,players[own_id].position)
+        sync_position.rpc(own_id, players[own_id].position)
     else:
-        submit_position.rpc_id(1,players[own_id].position)
+        submit_position.rpc_id(1, players[own_id].position)
 
-@rpc("any_peer","unreliable")
+@rpc("any_peer", "unreliable")
 func submit_position(pos: Vector3) -> void:
-    if not multiplayer.is_server(): return
+    if not multiplayer.is_server():
+        return
     var id := multiplayer.get_remote_sender_id()
-    if not players.has(id): return
-    if players[id].position.distance_to(pos) > 4.0: return
+    if not players.has(id):
+        return
+    # Prototype-only sanity check; dedicated .NET server must validate time/speed.
+    if players[id].position.distance_to(pos) > 4.0:
+        return
     players[id].position = pos
-    sync_position.rpc(id,pos)
+    sync_position.rpc(id, pos)
 
-@rpc("authority","call_remote","unreliable")
-func sync_position(id: int,pos: Vector3) -> void:
-    if id == own_id or not players.has(id): return
+@rpc("authority", "call_remote", "unreliable")
+func sync_position(id: int, pos: Vector3) -> void:
+    if id == own_id or not players.has(id):
+        return
     players[id].position = pos
+
+func _interact() -> void:
+    if own_id == 0 or not players.has(own_id):
+        return
+    if multiplayer.is_server():
+        _apply_emote(own_id)
+        broadcast_emote.rpc(own_id)
+    else:
+        request_emote.rpc_id(1)
+
+@rpc("any_peer", "reliable")
+func request_emote() -> void:
+    if not multiplayer.is_server():
+        return
+    var id := multiplayer.get_remote_sender_id()
+    if not players.has(id):
+        return
+    _apply_emote(id)
+    broadcast_emote.rpc(id)
+
+@rpc("authority", "call_remote", "reliable")
+func broadcast_emote(id: int) -> void:
+    _apply_emote(id)
+
+func _apply_emote(id: int) -> void:
+    if not players.has(id):
+        return
+    emote_counts[id] = int(emote_counts.get(id, 0)) + 1
+    var actor: MeshInstance3D = players[id]
+    var mat: StandardMaterial3D = actor.material_override
+    mat.albedo_color = Color("f7a45c") if emote_counts[id] % 2 != 0 else (Color("d6b674") if id == 1 else Color("729ce0"))
+    _status("Player %d waved (%d)" % [id, emote_counts[id]])
+
+func _unhandled_key_input(event: InputEvent) -> void:
+    if not event is InputEventKey or not event.pressed or event.echo:
+        return
+    if event.keycode == KEY_F11 and OS.get_name() != "Android":
+        _toggle_fullscreen()
+    elif event.keycode == KEY_E:
+        _interact()
+
+func _toggle_fullscreen() -> void:
+    DISPLAY_SCRIPT.toggle_fullscreen()
