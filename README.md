@@ -2,7 +2,7 @@
 
 Кроссплатформенная фэнтезийная онлайн-игра с общим постоянным миром, королевствами, автономными NPC, исследованиями, PvP и разрушаемым ландшафтом.
 
-**Статус:** экспериментальный общий Godot 4.5.2 прототип для Windows и Android. Windows ZIP и Android APK v0.1.1 собраны; проверен один headless-сервер и два отдельных сетевых клиента. **Физический Windows + Android запуск ещё не проверен.** См. [TASK-003](docs/TASK-003_CROSS_PLATFORM.md).
+**Статус:** экспериментальный общий Godot 4.5.2 прототип для Windows и Android. Windows ZIP и Android APK v0.1.3 собраны; общий публичный WSS-сервер запущен, два независимых Godot-клиента проверены через интернет-маршрут. **Физический Windows + Android запуск ещё не проверен.** См. [TASK-003](docs/TASK-003_CROSS_PLATFORM.md).
 
 ## Начать здесь
 
@@ -13,7 +13,8 @@
 - [TASK-002 — Android debug APK](docs/TASK-002_ANDROID_BUILD.md) — сборка и проверка подписи пройдены; тест на телефоне ещё не выполнен.
 - [TASK-003 — Windows + Android и выделенный Godot-хост](docs/TASK-003_CROSS_PLATFORM.md) — тесты, команды экспорта и ограничения.
 - [TASK-004 — автоматическое обнаружение игрового сервера](docs/TASK-004_SERVER_DISCOVERY.md) — HTTPS-конфигурация, авто-подключение, тесты и LAN-ограничения.
-- [Страница проекта](https://bacus.dev/projects/eldoria/) — тестовые сборки Windows и Android v0.1.2.
+- [TASK-005 — публичный мультиплеер](docs/TASK-005_PUBLIC_MULTIPLAYER.md) — WebSocket, Cloudflare, сервер и тесты.
+- [Страница проекта](https://bacus.dev/projects/eldoria/) — Windows и Android v0.1.3.
 
 ## Планируемая структура
 

@@ -1,0 +1,22 @@
+[Unit]
+Description=Eldoria public pre-alpha WebSocket world (behind Cloudflare/Caddy)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mbacus
+Group=mbacus
+WorkingDirectory=/srv/bacus/apps/eldoria-test-server
+Environment=ELDORIA_WS_BIND=172.18.0.1
+ExecStart=/srv/bacus/apps/eldoria-test-server/godot --headless --path /srv/bacus/apps/eldoria-test-server/client -- --dedicated-server --websocket
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/srv/bacus/apps/eldoria-test-server
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target
