@@ -1,4 +1,9 @@
-# Test headless ENet host (Godot 4.5.2)
+# Eldoria Godot test hosts (ENet LAN and WebSocket Internet)
+
+Public pre-alpha WSS server: see [TASK-005](../docs/TASK-005_PUBLIC_MULTIPLAYER.md).
+Use `eldoria-ws-test.service` for WSS behind Cloudflare/Caddy. The original `eldoria-test.service` stays LAN-only.
+
+## Legacy LAN ENet service
 
 The production ASP.NET Core authoritative server is **not** implemented.
 This service runs the same scene and GDScript as the Windows/Android clients, in headless mode, with no server player avatar.

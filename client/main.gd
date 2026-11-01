@@ -3,18 +3,22 @@ extends Node3D
 # One Godot scene, one replication protocol and one set of mechanics for all exports.
 # The current ENet session is an MVP transport, not the planned authoritative .NET protocol.
 const PORT := 7777
+const WEBSOCKET_PORT := 7788
+const MAX_PLAYERS := 10
 const INPUT_SCRIPT := preload("res://platform_input.gd")
 const DISPLAY_SCRIPT := preload("res://display_settings.gd")
 const GRAPHICS_SCRIPT := preload("res://graphics_profile.gd")
 const MOVE_SPEED := 6.0
-const CLIENT_VERSION := "0.1.2"
+const CLIENT_VERSION := "0.1.3"
 const SERVER_CONFIG_URL := "https://bacus.dev/projects/eldoria/server.json"
 
-var peer := ENetMultiplayerPeer.new()
+var peer: MultiplayerPeer = ENetMultiplayerPeer.new()
 var players := {}
 var emote_counts := {}
 var own_id := 0
 var is_dedicated := false
+var is_websocket_host := false
+var connected_peers := {}
 var camera: Camera3D
 var info: Label
 var ip_input: LineEdit
@@ -32,6 +36,7 @@ var graphics_quality := 1
 
 func _ready() -> void:
     is_dedicated = OS.get_cmdline_user_args().has("--dedicated-server")
+    is_websocket_host = OS.get_cmdline_user_args().has("--websocket")
     multiplayer.peer_connected.connect(_on_join)
     multiplayer.peer_disconnected.connect(_on_leave)
     multiplayer.connected_to_server.connect(_connected)
@@ -194,13 +199,25 @@ func _ui() -> void:
 
 func _host() -> void:
     _clear_session()
-    peer = ENetMultiplayerPeer.new()
-    if peer.create_server(PORT, 10) != OK:
-        _status("Cannot host on UDP 7777")
-        return
+    if is_websocket_host:
+        var ws_peer := WebSocketMultiplayerPeer.new()
+        ws_peer.handshake_timeout = 5.0
+        peer = ws_peer
+        var ws_bind := OS.get_environment("ELDORIA_WS_BIND")
+        if ws_bind.is_empty():
+            ws_bind = "127.0.0.1"
+        if ws_peer.create_server(WEBSOCKET_PORT, ws_bind) != OK:
+            _status("Cannot host WebSocket TCP 7788")
+            return
+    else:
+        var enet_peer := ENetMultiplayerPeer.new()
+        peer = enet_peer
+        if enet_peer.create_server(PORT, MAX_PLAYERS) != OK:
+            _status("Cannot host UDP 7777")
+            return
     multiplayer.multiplayer_peer = peer
     if is_dedicated:
-        print("ELDORIA DEDICATED SERVER READY UDP %d" % PORT)
+        print("ELDORIA DEDICATED SERVER READY %s" % ("WS TCP 7788" if is_websocket_host else "UDP 7777"))
         return
     own_id = multiplayer.get_unique_id()
     _spawn(own_id, Vector3(0, 1, 0))
@@ -209,6 +226,19 @@ func _host() -> void:
 func _join() -> void:
     # Legacy direct entry only for tests and developer tooling.
     _join_server(ip_input.text.strip_edges(), PORT)
+
+func _join_websocket(url: String) -> void:
+    if is_dedicated:
+        return
+    _clear_session()
+    var ws_peer := WebSocketMultiplayerPeer.new()
+    ws_peer.handshake_timeout = 8.0
+    peer = ws_peer
+    if ws_peer.create_client(url) != OK:
+        _status("Unable to start secure connection. Retry.")
+        return
+    multiplayer.multiplayer_peer = peer
+    _status("Connecting to Eldoria online world...")
 
 func _join_server(host: String, udp_port: int) -> void:
     if is_dedicated:
@@ -248,13 +278,16 @@ func _on_config_received(result: int, response_code: int, _headers: PackedString
     var port_value := int(data.get("port", 0))
     var protocol := String(data.get("protocol", ""))
     var status := String(data.get("status", ""))
-    if int(data.get("schema", -1)) != 1 or protocol != "godot-enet" or port_value < 1 or port_value > 65535:
+    if int(data.get("schema", -1)) != 1 or (protocol != "godot-enet" and protocol != "godot-websocket"):
         _status("Unsupported Eldoria server configuration.")
         return
-    if address.is_empty() or address.length() > 253 or address.contains("/") or address.contains(":") or address.contains(" "):
+    if protocol == "godot-enet" and (port_value < 1 or port_value > 65535):
+        _status("Unsupported Eldoria server configuration.")
+        return
+    if protocol == "godot-enet" and (address.is_empty() or address.length() > 253 or address.contains("/") or address.contains(":") or address.contains(" ")):
         _status("Invalid server address in configuration.")
         return
-    if not address.is_valid_ip_address() and not _is_valid_host_name(address):
+    if protocol == "godot-enet" and not address.is_valid_ip_address() and not _is_valid_host_name(address):
         _status("Invalid server hostname in configuration.")
         return
     if String(data.get("client_version", "")) != CLIENT_VERSION:
@@ -263,12 +296,24 @@ func _on_config_received(result: int, response_code: int, _headers: PackedString
     if status != "lan" and status != "public":
         _status("Eldoria server is unavailable. Retry later.")
         return
-    discovered_host = address
-    discovered_port = port_value
     connect_mode = status
-    config_ready = true
-    print("ELDORIA CONFIG READY %s:%d (%s)" % [address, port_value, status])
-    _join_server(address, port_value)
+    if protocol == "godot-websocket":
+        var websocket_url := String(data.get("url", ""))
+        var allow_local_test := not OS.get_environment("ELDORIA_CONFIG_URL").is_empty()
+        if websocket_url != "wss://bacus.dev/eldoria/ws" and not (allow_local_test and websocket_url.begins_with("ws://127.0.0.1:")):
+            _status("Untrusted WebSocket endpoint in server configuration.")
+            return
+        discovered_host = websocket_url
+        discovered_port = 443
+        config_ready = true
+        print("ELDORIA CONFIG READY %s (public)" % websocket_url)
+        _join_websocket(websocket_url)
+    else:
+        discovered_host = address
+        discovered_port = port_value
+        config_ready = true
+        print("ELDORIA CONFIG READY %s:%d (%s)" % [address, port_value, status])
+        _join_server(address, port_value)
 
 func _is_valid_host_name(value: String) -> bool:
     # No URL syntax, injection or arbitrary text; only hostname tokens.
@@ -284,10 +329,15 @@ func _connected() -> void:
 
 func _on_join(id: int) -> void:
     if multiplayer.is_server():
+        if connected_peers.size() >= MAX_PLAYERS:
+            multiplayer.multiplayer_peer.disconnect_peer(id)
+            return
+        connected_peers[id] = true
         print("ELDORIA PEER CONNECTED %d" % id)
         _status("Player %s connected" % id)
 
 func _on_leave(id: int) -> void:
+    connected_peers.erase(id)
     _remove_actor(id)
     if multiplayer.is_server():
         despawn_remote.rpc(id)
@@ -304,6 +354,7 @@ func _remove_actor(id: int) -> void:
 
 func _clear_session() -> void:
     own_id = 0
+    connected_peers.clear()
     if input_driver != null:
         input_driver.clear_touch()
     multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
