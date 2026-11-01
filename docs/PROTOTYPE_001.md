@@ -15,3 +15,5 @@ Procedural placeholder flat terrain, trees, capsule characters, third-person ele
 4. Replace placeholder visuals with licensed assets and generated terrain.
 
 The bacus.dev Eldoria page intentionally keeps the APK download disabled until an actual build is verified.
+
+**2026-11-01 update:** a reproducible **headless** two-process ENet test with movement, disconnect and reconnect was added. See [TASK-001_VERIFICATION.md](TASK-001_VERIFICATION.md). This does not constitute a visual desktop test or a physical Android device test.

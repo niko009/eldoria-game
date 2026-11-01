@@ -16,8 +16,8 @@ func _ready() -> void:
     multiplayer.peer_connected.connect(_on_join)
     multiplayer.peer_disconnected.connect(_on_leave)
     multiplayer.connected_to_server.connect(_connected)
-    multiplayer.connection_failed.connect(func(): info.text = "Connection failed")
-    multiplayer.server_disconnected.connect(func(): info.text = "Server disconnected")
+    multiplayer.connection_failed.connect(_connection_failed)
+    multiplayer.server_disconnected.connect(_server_disconnected)
 
 func _world() -> void:
     var light := DirectionalLight3D.new()
@@ -87,8 +87,11 @@ func _ui() -> void:
     info.text = "Host or join. WASD to move."
     panel.add_child(info)
     var mobile := Control.new()
-    mobile.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
-    mobile.position = Vector2(30, 460)
+    mobile.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+    mobile.offset_left = 24
+    mobile.offset_top = -190
+    mobile.offset_right = 230
+    mobile.offset_bottom = -16
     ui.add_child(mobile)
     for entry in [["▲",Vector2(65,0),Vector2(0,-1)],["▼",Vector2(65,112),Vector2(0,1)],["◀",Vector2(0,56),Vector2(-1,0)],["▶",Vector2(130,56),Vector2(1,0)]]:
         var button := Button.new()
@@ -98,17 +101,25 @@ func _ui() -> void:
         button.button_down.connect(func(): move_input += entry[2])
         button.button_up.connect(func(): move_input -= entry[2])
         mobile.add_child(button)
+    var disconnect := Button.new()
+    disconnect.text = "Disconnect"
+    disconnect.pressed.connect(_disconnect)
+    panel.add_child(disconnect)
 
 func _host() -> void:
+    _clear_session()
+    peer = ENetMultiplayerPeer.new()
     if peer.create_server(PORT,10) != OK:
         info.text = "Cannot host on UDP 7777"
         return
     multiplayer.multiplayer_peer = peer
     own_id = multiplayer.get_unique_id()
-    _spawn(own_id,Vector3.ZERO)
+    _spawn(own_id,Vector3(0,1,0))
     info.text = "Hosting UDP 7777, ID %s" % own_id
 
 func _join() -> void:
+    _clear_session()
+    peer = ENetMultiplayerPeer.new()
     if peer.create_client(ip_input.text.strip_edges(),PORT) != OK:
         info.text = "Cannot connect"
         return
@@ -125,9 +136,38 @@ func _on_join(id: int) -> void:
         info.text = "Player %s connected" % id
 
 func _on_leave(id: int) -> void:
+    _remove_actor(id)
+    if multiplayer.is_server():
+        despawn_remote.rpc(id)
+
+@rpc("authority", "call_remote", "reliable")
+func despawn_remote(id: int) -> void:
+    _remove_actor(id)
+
+func _remove_actor(id: int) -> void:
     if players.has(id):
         players[id].queue_free()
         players.erase(id)
+
+func _clear_session() -> void:
+    own_id = 0
+    move_input = Vector2.ZERO
+    multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
+    peer.close()
+    for id in players.keys():
+        _remove_actor(id)
+
+func _disconnect() -> void:
+    _clear_session()
+    info.text = "Disconnected. Host or join to play."
+
+func _connection_failed() -> void:
+    _clear_session()
+    info.text = "Connection failed"
+
+func _server_disconnected() -> void:
+    _clear_session()
+    info.text = "Server disconnected"
 
 @rpc("any_peer","reliable")
 func request_spawn() -> void:
@@ -135,7 +175,7 @@ func request_spawn() -> void:
     var id := multiplayer.get_remote_sender_id()
     for existing in players:
         spawn_remote.rpc_id(id,existing,players[existing].position)
-    var pos := Vector3(float(players.size()*3),0,0)
+    var pos := Vector3(float(players.size()*3),1,0)
     _spawn(id,pos)
     spawn_remote.rpc(id,pos)
 
@@ -154,12 +194,13 @@ func _spawn(id: int,pos: Vector3) -> void:
     var mat := StandardMaterial3D.new()
     mat.albedo_color = Color("d6b674") if id == 1 else Color("729ce0")
     actor.material_override = mat
-    actor.position = pos + Vector3(0,1,0)
+    actor.position = pos
     add_child(actor)
     players[id] = actor
 
 func _process(delta: float) -> void:
     if own_id == 0 or not players.has(own_id): return
+    if peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED: return
     var axis := Input.get_vector("move_left","move_right","move_forward","move_back") + move_input
     axis = axis.limit_length()
     var delta_pos := Vector3(axis.x,0,axis.y)*move_speed*delta
