@@ -7,6 +7,8 @@ const INPUT_SCRIPT := preload("res://platform_input.gd")
 const DISPLAY_SCRIPT := preload("res://display_settings.gd")
 const GRAPHICS_SCRIPT := preload("res://graphics_profile.gd")
 const MOVE_SPEED := 6.0
+const CLIENT_VERSION := "0.1.2"
+const SERVER_CONFIG_URL := "https://bacus.dev/projects/eldoria/server.json"
 
 var peer := ENetMultiplayerPeer.new()
 var players := {}
@@ -16,6 +18,11 @@ var is_dedicated := false
 var camera: Camera3D
 var info: Label
 var ip_input: LineEdit
+var config_request: HTTPRequest
+var discovered_host := ""
+var discovered_port := PORT
+var connect_mode := "lan"
+var config_ready := false
 var input_driver: Node
 var mobile_controls: Control
 var player_ui: CanvasLayer
@@ -37,6 +44,10 @@ func _ready() -> void:
     add_child(input_driver)
     if not is_dedicated:
         _ui()
+        # Exported Windows/Android builds discover the server automatically.
+        # SceneTree test harnesses supply CLI user args and trigger discovery explicitly.
+        if OS.get_cmdline_user_args().is_empty():
+            _fetch_server_config()
     else:
         # A separate headless Godot process can host the exact same world.
         _host()
@@ -86,6 +97,10 @@ func _world() -> void:
     add_child(camera)
 
 func _ui() -> void:
+    config_request = HTTPRequest.new()
+    config_request.timeout = 8.0
+    add_child(config_request)
+    config_request.request_completed.connect(_on_config_received)
     player_ui = CanvasLayer.new()
     add_child(player_ui)
     var panel := VBoxContainer.new()
@@ -95,19 +110,16 @@ func _ui() -> void:
     var title := Label.new()
     title.text = "ELDORIA / CROSS-PLATFORM PRE-ALPHA"
     panel.add_child(title)
+    # Hidden compatibility entry retained for legacy E2E and developer use.
+    # Exported players never have to type a server address.
     ip_input = LineEdit.new()
     ip_input.text = "127.0.0.1"
-    ip_input.placeholder_text = "Server IPv4 address"
-    ip_input.custom_minimum_size.x = 240
+    ip_input.visible = false
     panel.add_child(ip_input)
-    var host := Button.new()
-    host.text = "Host world"
-    host.pressed.connect(_host)
-    panel.add_child(host)
-    var join := Button.new()
-    join.text = "Join world"
-    join.pressed.connect(_join)
-    panel.add_child(join)
+    var connect_button := Button.new()
+    connect_button.text = "Connect / Retry"
+    connect_button.pressed.connect(_fetch_server_config)
+    panel.add_child(connect_button)
     var disconnect := Button.new()
     disconnect.text = "Disconnect"
     disconnect.pressed.connect(_disconnect)
@@ -117,7 +129,7 @@ func _ui() -> void:
     emote.pressed.connect(_interact)
     panel.add_child(emote)
     info = Label.new()
-    info.text = "Host or join. WASD / right mouse drag / E."
+    info.text = "Looking up Eldoria server... (LAN/Wi-Fi)"
     panel.add_child(info)
 
     if OS.get_name() != "Android":
@@ -195,15 +207,75 @@ func _host() -> void:
     _status("Hosting UDP 7777, ID %s" % own_id)
 
 func _join() -> void:
+    # Legacy direct entry only for tests and developer tooling.
+    _join_server(ip_input.text.strip_edges(), PORT)
+
+func _join_server(host: String, udp_port: int) -> void:
     if is_dedicated:
         return
     _clear_session()
     peer = ENetMultiplayerPeer.new()
-    if peer.create_client(ip_input.text.strip_edges(), PORT) != OK:
-        _status("Cannot connect")
+    if peer.create_client(host, udp_port) != OK:
+        _status("Cannot connect to %s:%d" % [host, udp_port])
         return
     multiplayer.multiplayer_peer = peer
-    _status("Connecting...")
+    _status("Connecting to Eldoria server %s:%d (%s)..." % [host, udp_port, connect_mode])
+
+func _fetch_server_config() -> void:
+    if is_dedicated or config_request == null:
+        return
+    config_ready = false
+    var endpoint := SERVER_CONFIG_URL
+    var test_endpoint := OS.get_environment("ELDORIA_CONFIG_URL")
+    if not test_endpoint.is_empty():
+        endpoint = test_endpoint
+    config_request.cancel_request()
+    _status("Finding Eldoria server...")
+    var result := config_request.request(endpoint, ["Cache-Control: no-cache"])
+    if result != OK:
+        _status("Cannot fetch Eldoria server configuration (error %d). Retry." % result)
+
+func _on_config_received(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+    if result != HTTPRequest.RESULT_SUCCESS or response_code != 200 or body.size() > 4096:
+        _status("Server lookup failed (HTTP %d). Check Internet and retry." % response_code)
+        return
+    var json := JSON.new()
+    if json.parse(body.get_string_from_utf8()) != OK or not json.data is Dictionary:
+        _status("Invalid server configuration. Retry.")
+        return
+    var data: Dictionary = json.data
+    var address := String(data.get("host", ""))
+    var port_value := int(data.get("port", 0))
+    var protocol := String(data.get("protocol", ""))
+    var status := String(data.get("status", ""))
+    if int(data.get("schema", -1)) != 1 or protocol != "godot-enet" or port_value < 1 or port_value > 65535:
+        _status("Unsupported Eldoria server configuration.")
+        return
+    if address.is_empty() or address.length() > 253 or address.contains("/") or address.contains(":") or address.contains(" "):
+        _status("Invalid server address in configuration.")
+        return
+    if not address.is_valid_ip_address() and not _is_valid_host_name(address):
+        _status("Invalid server hostname in configuration.")
+        return
+    if String(data.get("client_version", "")) != CLIENT_VERSION:
+        _status("Please update Eldoria client to v%s." % String(data.get("client_version", "?")))
+        return
+    if status != "lan" and status != "public":
+        _status("Eldoria server is unavailable. Retry later.")
+        return
+    discovered_host = address
+    discovered_port = port_value
+    connect_mode = status
+    config_ready = true
+    print("ELDORIA CONFIG READY %s:%d (%s)" % [address, port_value, status])
+    _join_server(address, port_value)
+
+func _is_valid_host_name(value: String) -> bool:
+    # No URL syntax, injection or arbitrary text; only hostname tokens.
+    for c in value:
+        if not "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-".contains(c):
+            return false
+    return not value.begins_with(".") and not value.ends_with(".")
 
 func _connected() -> void:
     own_id = multiplayer.get_unique_id()
@@ -247,7 +319,7 @@ func _disconnect() -> void:
 
 func _connection_failed() -> void:
     _clear_session()
-    _status("Connection failed")
+    _status("Cannot reach Eldoria game server. On LAN, use the same Wi-Fi. Retry.")
 
 func _server_disconnected() -> void:
     _clear_session()
