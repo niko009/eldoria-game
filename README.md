@@ -12,7 +12,8 @@
 - [TASK-001 — проверка двух игроков](docs/TASK-001_VERIFICATION.md) — воспроизводимый сетевой тест и ограничения.
 - [TASK-002 — Android debug APK](docs/TASK-002_ANDROID_BUILD.md) — сборка и проверка подписи пройдены; тест на телефоне ещё не выполнен.
 - [TASK-003 — Windows + Android и выделенный Godot-хост](docs/TASK-003_CROSS_PLATFORM.md) — тесты, команды экспорта и ограничения.
-- [Страница проекта](https://bacus.dev/projects/eldoria/) — тестовые сборки Windows и Android.
+- [TASK-004 — автоматическое обнаружение игрового сервера](docs/TASK-004_SERVER_DISCOVERY.md) — HTTPS-конфигурация, авто-подключение, тесты и LAN-ограничения.
+- [Страница проекта](https://bacus.dev/projects/eldoria/) — тестовые сборки Windows и Android v0.1.2.
 
 ## Планируемая структура
 

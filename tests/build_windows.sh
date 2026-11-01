@@ -5,7 +5,7 @@ GODOT_BIN="${GODOT_BIN:-$HOME/.local/bin/Godot_v4.5.2-stable_linux.x86_64}"
 TEMPLATES="$HOME/.local/share/godot/export_templates/4.5.2.stable"
 JAVA_HOME="${JAVA_HOME:-$HOME/.local/jdk17}"
 OUT="$ROOT/builds/windows"
-ZIP="$ROOT/builds/Eldoria-Windows-0.1.1.zip"
+ZIP="$ROOT/builds/Eldoria-Windows-0.1.2.zip"
 test -x "$GODOT_BIN"
 test -f "$TEMPLATES/windows_release_x86_64.exe"
 test -x "$JAVA_HOME/bin/jar"
@@ -26,12 +26,14 @@ if (machine!==0x8664) throw new Error("Not Windows x86-64: "+machine.toString(16
 console.log("PASS Windows PE x86-64");
 JS
 cat > "$OUT/README.txt" <<'TXT'
-ELDORIA 0.1.1 - Windows x86_64 PRE-ALPHA
+ELDORIA 0.1.2 - Windows x86_64 PRE-ALPHA
 Unzip the whole archive and run Eldoria.exe with Eldoria.pck next to it.
 Windows: WASD (camera-relative), right mouse drag = orbit, E = Wave,
 F11 = fullscreen, and choose a windowed resolution in the UI.
-To join a shared world enter the IPv4 address of an ENet host and click Join world.
-Host must allow UDP 7777 through firewall. A dedicated host may be started with
+The game fetches the current server address from bacus.dev automatically.
+Use Connect / Retry if needed. Current service is LAN-only: devices must
+be on the same network as bacus-server and allow ENet UDP 7777.
+A dedicated host may be started with
 Godot 4.5.2 using: godot --headless --path client -- --dedicated-server
 The current experiment has no persistent .NET backend or authentication.
 This binary is not digitally code-signed: Windows SmartScreen may warn.
