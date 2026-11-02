@@ -31,8 +31,9 @@ func run() -> void:
 	if preview.content_scroll.get_child_count() != 1:
 		push_error("Inventory did not open")
 		failures += 1
-	preview.state.select_item("stone")
-	if preview.state.selected_item != "stone":
+	preview.state.set_stock("plenty")
+	preview.state.select_item("axe")
+	if preview.state.selected_item != "axe":
 		push_error("Item selection failed")
 		failures += 1
 	preview._open("build")

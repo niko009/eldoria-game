@@ -108,6 +108,8 @@ func set_inventory(inventory: Dictionary) -> void:
     state.inventory = validated
     if int(validated.get("axe", 0)) == 0:
         state.equipped_axe = false
+        if state.selected_item == "axe":
+            state.select_item("unarmed")
     state.changed.emit()
 
 func set_health(hp: int, maximum: int) -> void:
@@ -271,7 +273,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
             else:
                 _close()
             get_viewport().set_input_as_handled()
-        elif event.keycode >= KEY_1 and event.keycode <= KEY_4 and active_panel.is_empty():
+        elif event.keycode >= KEY_1 and event.keycode <= KEY_6 and active_panel.is_empty():
             state.select_item(EldoriaHotbar.SLOTS[event.keycode - KEY_1])
 
 func _layout() -> void:

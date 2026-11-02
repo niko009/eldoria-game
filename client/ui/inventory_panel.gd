@@ -34,11 +34,11 @@ func refresh() -> void:
 		slot.tooltip_text = data["name"]
 		if item_id == "axe":
 			slot.disabled = count == 0
-		Style.button(slot, state.selected_item == item_id)
+		Style.button(slot, state.selected_item == item_id and item_id == "axe")
 		slot.custom_minimum_size = Vector2(180, 72)
 		slot.pressed.connect(func() -> void: item_selected.emit(item_id))
 		grid.add_child(slot)
 	if not any_item:
 		add_child(Style.label("Рюкзак пуст. Предметы появятся здесь.", 14, Style.MUTED))
-	add_child(Style.label("Выбрано: %s" % State.ITEMS[state.selected_item]["name"], 14, Style.MUTED))
+	add_child(Style.label("В руках: %s" % State.TOOLS[state.selected_item]["name"], 14, Style.MUTED))
 	add_child(Style.label("Топор: экипирован" if state.equipped_axe else "Топор: не экипирован", 14, Style.MUTED))

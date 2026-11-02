@@ -27,7 +27,7 @@ func _ready() -> void:
 	state = State.new()
 	state.request_build.connect(func(id: String) -> void: _show_notice("Preview: запрос на постройку «%s»" % State.BUILDINGS[id]["name"]))
 	state.request_craft.connect(func(id: String) -> void: _show_notice("Preview: запрос на создание «%s»" % State.RECIPES[id]["name"]))
-	state.request_select_item.connect(func(id: String) -> void: _show_notice("Выбрано: %s" % State.ITEMS[id]["name"]))
+	state.request_select_item.connect(func(id: String) -> void: _show_notice("В руках: %s" % State.TOOLS[id]["name"]))
 	state.request_close.connect(func() -> void: _show_notice("Панель закрыта"))
 	resized.connect(_layout)
 	queue_redraw()
@@ -210,13 +210,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if event.keycode == KEY_ESCAPE:
 		_close()
-	elif event.keycode >= KEY_1 and event.keycode <= KEY_4 and active_panel.is_empty():
+	elif event.keycode >= KEY_1 and event.keycode <= KEY_6 and active_panel.is_empty():
 		state.select_item(EldoriaHotbar.SLOTS[event.keycode - KEY_1])
 
 func _layout() -> void:
 	if preview_tools == null or window_panel == null:
 		return
-	preview_tools.position = Vector2(16, 94)
+	preview_tools.position = Vector2(16, 166)
 	if size.y < 490:
 		preview_tools.columns = 4
 	else:

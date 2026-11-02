@@ -18,6 +18,8 @@ var preview_mode := true
 var status_panel: PanelContainer
 var status_detail: Label
 var health_detail: Label
+var resources_panel: PanelContainer
+var resource_counts: Dictionary = {}
 var hotbar: EldoriaHotbar
 var touch_layer: Control
 var joystick: Control
@@ -36,6 +38,29 @@ func _ready() -> void:
 	status_column.add_child(status_detail)
 	health_detail = Style.label("", 16, Style.GOLD)
 	status_column.add_child(health_detail)
+
+	# Always-visible server-backed resources: never part of the equipment hotbar.
+	resources_panel = PanelContainer.new()
+	resources_panel.name = "ResourceCounters"
+	resources_panel.add_theme_stylebox_override("panel", Style.panel(Color("172026", 0.84), Color("6e6c5d"), 12))
+	add_child(resources_panel)
+	var resources_row := HBoxContainer.new()
+	resources_row.add_theme_constant_override("separation", 13)
+	resources_panel.add_child(resources_row)
+	for kind in ["wood", "stone", "herb"]:
+		var cell := HBoxContainer.new()
+		cell.name = "Resource_%s" % kind
+		cell.add_theme_constant_override("separation", 5)
+		resources_row.add_child(cell)
+		var icon := Style.label(State.ITEMS[kind]["symbol"], 20,
+			{"wood": Color("dfac79"), "stone": Color("b9cad2"), "herb": Color("9dd8a5")}[kind])
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cell.add_child(icon)
+		var quantity := Style.label("0", 17, Style.TEXT)
+		quantity.name = "Count"
+		cell.add_child(quantity)
+		cell.tooltip_text = State.ITEMS[kind]["name"]
+		resource_counts[kind] = quantity
 
 	top_actions = HBoxContainer.new()
 	top_actions.add_theme_constant_override("separation", 6)
@@ -82,6 +107,9 @@ func refresh() -> void:
 	health_detail.text = ("HP: %d / %d" % [state.health, state.max_health]) if state.health_known else "HP: —"
 	if state.health_known and state.health <= 0:
 		health_detail.text = "HP: 0 · Возрождение..."
+	for kind in ["wood", "stone", "herb"]:
+		var counter: Label = resource_counts[kind]
+		counter.text = str(state.amount(kind))
 	touch_layer.visible = show_touch_controls
 	_layout()
 
@@ -92,6 +120,8 @@ func _layout() -> void:
 	var compact := size.x < 950 or size.y < 490
 	status_panel.position = Vector2(insets.x, insets.y)
 	status_panel.size = Vector2(minf(280, size.x * 0.37), 95)
+	resources_panel.position = Vector2(insets.x, insets.y + status_panel.size.y + 8)
+	resources_panel.size = resources_panel.get_combined_minimum_size()
 	top_actions.position = Vector2(maxf(insets.x, size.x - top_actions.get_combined_minimum_size().x - insets.z), insets.y)
 	hotbar.position = Vector2((size.x - hotbar.get_combined_minimum_size().x) * 0.5, size.y - hotbar.get_combined_minimum_size().y - insets.w)
 	joystick.position = Vector2(insets.x, size.y - 108 - insets.w)

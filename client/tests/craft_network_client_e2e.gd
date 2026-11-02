@@ -56,7 +56,7 @@ func _run() -> void:
         if not game.live_ui.state.equipped_axe:
             _fail("authoritative equipment ACK not received")
             return
-        game.live_ui.state.select_item("wood")
+        game.live_ui.state.select_item("unarmed")
         for i in range(150):
             await process_frame
             if not game.live_ui.state.equipped_axe:
