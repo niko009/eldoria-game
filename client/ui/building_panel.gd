@@ -2,11 +2,13 @@ extends VBoxContainer
 class_name EldoriaBuildingPanel
 
 signal build_requested(building_id: String)
+signal preview_requested(building_id: String)
 
 const Style = preload("res://ui/ui_style.gd")
 const State = preload("res://ui/mock_game_ui_state.gd")
 var state: MockGameUiState
 var selected := "campfire"
+var preview_available := false
 
 func _ready() -> void:
 	add_theme_constant_override("separation", 8)
@@ -37,6 +39,12 @@ func refresh() -> void:
 		var owned := state.amount(item_id)
 		add_child(Style.label("%s  %d / %d" % [State.ITEMS[item_id]["name"], owned, required], 15, Style.TEXT if owned >= required else Color("e89883")))
 	var action := Button.new()
+	if preview_available:
+		var preview_button := Button.new()
+		preview_button.text = "Показать место"
+		Style.button(preview_button)
+		preview_button.pressed.connect(func() -> void: preview_requested.emit(selected))
+		add_child(preview_button)
 	action.text = "Разместить · Preview"
 	Style.button(action)
 	action.disabled = not state.can_afford(entry["cost"]) or state.loading

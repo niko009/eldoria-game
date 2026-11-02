@@ -17,12 +17,13 @@ const DISPLAY_SCRIPT := preload("res://display_settings.gd")
 const GRAPHICS_SCRIPT := preload("res://graphics_profile.gd")
 const FOREST_SCRIPT := preload("res://forest_world.gd")
 const ACTOR_SCRIPT := preload("res://animated_actor.gd")
+const LIVE_UI_SCRIPT := preload("res://ui/live_ui.gd")
 const AVATAR_PROFILE := preload("res://avatar_profile.gd")
 const JUMP_MOTION := preload("res://jump_motion.gd")
 const UPDATE_SCRIPT := preload("res://update_manager.gd")
 const MOVE_SPEED := 6.0
-const CLIENT_VERSION := "0.5.2"
-# Published v0.5.2 multiplayer client. Development builds may toggle this to true.
+const CLIENT_VERSION := "0.5.3"
+# TASK-021B UI integration; public server version must match before release.
 
 const DEVELOPMENT_BUILD := false
 const SERVER_CONFIG_URL := "https://bacus.dev/projects/eldoria/server.json"
@@ -93,6 +94,8 @@ var config_ready := false
 var input_driver: Node
 var mobile_controls: Control
 var player_ui: CanvasLayer
+var live_ui: Control
+var legacy_ui_controls: Array[Control] = []
 var sunlight: DirectionalLight3D
 var foliage: Array[SphereMesh] = []
 var graphics_quality := 1
@@ -397,6 +400,23 @@ func _ui() -> void:
         get_node("Eldoria_Forest").apply_detail_quality(graphics_quality == GRAPHICS_SCRIPT.HIGH)
         quality_button.text = "Graphics: High" if graphics_quality == GRAPHICS_SCRIPT.HIGH else "Graphics: Low"
     )
+    # Real game UI. Keep the old developer controls in the scene for tests,
+    # but do not show them over the new HUD in exported builds.
+    if OS.get_cmdline_user_args().is_empty() or OS.get_cmdline_user_args().has("--test-live-ui"):
+        for child in player_ui.get_children():
+            if child is Control and child != build_feedback_label:
+                legacy_ui_controls.append(child)
+                child.visible = false
+        live_ui = LIVE_UI_SCRIPT.new()
+        live_ui.name = "LiveUI"
+        player_ui.add_child(live_ui)
+        live_ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+        live_ui.joystick_moved.connect(input_driver.set_joystick)
+        live_ui.action_requested.connect(_live_action)
+        live_ui.build_requested.connect(_live_build)
+        live_ui.preview_requested.connect(_live_preview)
+        live_ui.set_avatar(selected_avatar)
+        live_ui.set_inventory(_empty_inventory())
 
 func _init_updater() -> void:
     updater = UPDATE_SCRIPT.new()
@@ -746,6 +766,8 @@ func _remove_actor(id: int) -> void:
 
 func _clear_session() -> void:
     own_id = 0
+    if live_ui != null:
+        live_ui.set_inventory(_empty_inventory())
     last_ping_at_msec = 0
     if telemetry != null:
         telemetry.set_enabled(telemetry.enabled)
@@ -793,6 +815,8 @@ func _server_disconnected() -> void:
 func _status(message: String) -> void:
     if info != null:
         info.text = message
+    if live_ui != null:
+        live_ui.set_status(message)
 
 @rpc("any_peer", "reliable")
 func request_spawn(choice: int = 0, identity_token: String = "") -> void:
@@ -861,6 +885,8 @@ func _choose_avatar(choice: int) -> void:
     if not AVATAR_PROFILE.valid(choice):
         return
     selected_avatar = choice
+    if live_ui != null:
+        live_ui.set_avatar(choice)
     if AVATAR_PROFILE.save_choice(choice) != OK:
         _status("Could not save avatar preference.")
     if own_id == 0:
@@ -906,6 +932,8 @@ func _set_avatar_for_peer(id: int, choice: int) -> bool:
 
 
 func _physics_process(delta: float) -> void:
+    if live_ui != null and not live_ui.active_panel.is_empty():
+        return
     if is_dedicated or own_id == 0 or not players.has(own_id):
         return
     if peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
@@ -1034,6 +1062,8 @@ func _reset_resources() -> void:
 # cost, distance, world bounds, terrain gradient and solid intersections.
 func _show_build_feedback(message: String) -> void:
     _status(message)
+    if live_ui != null:
+        live_ui.show_message(message)
     if message.contains("built successfully") and mobile_build_mode:
         _set_mobile_build_mode(false)
     if build_feedback_label != null:
@@ -1107,7 +1137,7 @@ func _set_mobile_build_mode(enabled: bool) -> void:
         var screen_height := get_viewport().get_visible_rect().size.y
         mobile_build_panel.offset_top = maxf(-390.0,16.0-screen_height)
         mobile_build_panel.offset_bottom = mobile_build_panel.offset_top+134.0
-        mobile_build_panel.visible = enabled and _mobile_ui()
+        mobile_build_panel.visible = enabled and _mobile_ui() and live_ui == null
     if mobile_build_toggle != null:
         mobile_build_toggle.text = "Build: ON" if enabled else "Build mode"
         mobile_build_toggle.visible = _mobile_ui() and not enabled
@@ -1435,6 +1465,8 @@ func inventory_snapshot(inventory: Dictionary) -> void:
     for kind in validated.keys():
         validated[kind] = clampi(int(inventory.get(kind,0)),0,1000000)
     player_inventories[own_id] = validated
+    if live_ui != null:
+        live_ui.set_inventory(validated)
     _refresh_gather_hud()
 
 @rpc("authority", "call_remote", "reliable")
@@ -1554,6 +1586,8 @@ func _apply_emote(id: int) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
     if not event is InputEventKey or not event.pressed or event.echo:
         return
+    if live_ui != null and not live_ui.active_panel.is_empty() and event.keycode != KEY_F11:
+        return
     if event.keycode == KEY_F11 and OS.get_name() != "Android":
         _toggle_fullscreen()
     elif event.keycode == KEY_E:
@@ -1569,3 +1603,48 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 func _toggle_fullscreen() -> void:
     DISPLAY_SCRIPT.toggle_fullscreen()
+
+func _live_build(kind: String) -> void:
+    if kind != "campfire" and kind != "tent":
+        return
+    if build_selector != null:
+        build_selector.select(0 if kind == "campfire" else 1)
+    _try_build()
+
+func _live_preview(kind: String) -> void:
+    if kind != "campfire" and kind != "tent":
+        return
+    if build_selector != null:
+        build_selector.select(0 if kind == "campfire" else 1)
+    if not preview_enabled:
+        _toggle_build_preview()
+    else:
+        _update_build_preview()
+
+func _live_action(kind: String) -> void:
+    match kind:
+        "gather":
+            _try_gather()
+        "jump":
+            _try_jump()
+        "sprint":
+            sprint_active = not sprint_active
+        "reconnect":
+            _disconnect()
+            _fetch_server_config()
+        "disconnect":
+            _disconnect()
+        "quality":
+            graphics_quality = GRAPHICS_SCRIPT.HIGH if graphics_quality == GRAPHICS_SCRIPT.LOW else GRAPHICS_SCRIPT.LOW
+            GRAPHICS_SCRIPT.apply(graphics_quality, sunlight, foliage)
+            get_node("Eldoria_Forest").apply_detail_quality(graphics_quality == GRAPHICS_SCRIPT.HIGH)
+            if live_ui != null:
+                live_ui.show_message("Graphics: %s" % ("Low" if graphics_quality == GRAPHICS_SCRIPT.LOW else "High"))
+        "sound":
+            _toggle_sound()
+        "telemetry":
+            _toggle_telemetry()
+        "avatar":
+            _choose_avatar((selected_avatar + 1) % AVATAR_PROFILE.LABELS.size())
+        "preview":
+            _toggle_build_preview()

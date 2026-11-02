@@ -6,6 +6,7 @@ signal craft_requested(recipe_id: String)
 const Style = preload("res://ui/ui_style.gd")
 const State = preload("res://ui/mock_game_ui_state.gd")
 var state: MockGameUiState
+var craft_enabled := true
 
 func _ready() -> void:
 	add_theme_constant_override("separation", 8)
@@ -27,10 +28,10 @@ func refresh() -> void:
 		var owned := state.amount(item_id)
 		add_child(Style.label("%s  %d / %d" % [State.ITEMS[item_id]["name"], owned, required], 15, Style.TEXT if owned >= required else Color("e89883")))
 	var action := Button.new()
-	action.text = "Создать · Preview"
+	action.text = "Создать · Preview" if craft_enabled else "Пока недоступно"
 	Style.button(action)
-	action.disabled = not state.can_afford(recipe["cost"]) or state.loading
+	action.disabled = not craft_enabled or not state.can_afford(recipe["cost"]) or state.loading
 	action.pressed.connect(func() -> void: craft_requested.emit("axe"))
 	add_child(action)
 	if action.disabled:
-		add_child(Style.label("Недостаточно ресурсов" if not state.loading else "Подождите…", 13, Style.MUTED))
+		add_child(Style.label("Крафт появится после TASK-020" if not craft_enabled else ("Недостаточно ресурсов" if not state.loading else "Подождите…"), 13, Style.MUTED))

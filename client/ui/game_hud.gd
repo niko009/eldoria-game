@@ -6,6 +6,7 @@ signal open_building
 signal open_crafting
 signal item_selected(item_id: String)
 signal action_requested(action_id: String)
+signal open_settings
 
 const Style = preload("res://ui/ui_style.gd")
 const State = preload("res://ui/mock_game_ui_state.gd")
@@ -13,6 +14,7 @@ const HotbarScene = preload("res://ui/Hotbar.tscn")
 
 var state: MockGameUiState
 var show_touch_controls := true
+var preview_mode := true
 var status_panel: PanelContainer
 var status_detail: Label
 var hotbar: EldoriaHotbar
@@ -28,14 +30,14 @@ func _ready() -> void:
 	add_child(status_panel)
 	var status_column := VBoxContainer.new()
 	status_panel.add_child(status_column)
-	status_column.add_child(Style.label("ELDORIA  ·  PREVIEW", 18, Style.GOLD))
+	status_column.add_child(Style.label("ELDORIA  ·  " + ("PREVIEW" if preview_mode else "ONLINE"), 18, Style.GOLD))
 	status_detail = Style.label("", 13, Style.MUTED)
 	status_column.add_child(status_detail)
 
 	top_actions = HBoxContainer.new()
 	top_actions.add_theme_constant_override("separation", 6)
 	add_child(top_actions)
-	for pair in [["Рюкзак", "inventory"], ["Строить", "build"], ["Крафт", "craft"]]:
+	for pair in [["Рюкзак", "inventory"], ["Строить", "build"], ["Крафт", "craft"], ["⚙", "settings"]]:
 		var button := Button.new()
 		button.text = pair[0]
 		Style.button(button)
@@ -110,6 +112,7 @@ func _open(kind: String) -> void:
 		"inventory": open_inventory.emit()
 		"build": open_building.emit()
 		"craft": open_crafting.emit()
+		"settings": open_settings.emit()
 
 func _touch_action(kind: String) -> void:
 	if kind == "inventory":
