@@ -10,7 +10,7 @@ function artifact(filename){
 }
 const manifest={
  schema:1,version,
- notes:"Новый лес Eldoria, обновления Windows и Android.",
+ notes:process.argv.slice(3).join(" ").trim() || "Новая версия Eldoria.",
  windows:artifact("Eldoria-Windows-"+version+".zip"),
  android:artifact("Eldoria-"+version+"-debug.apk")
 };

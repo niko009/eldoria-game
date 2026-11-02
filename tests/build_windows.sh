@@ -5,7 +5,7 @@ GODOT_BIN="${GODOT_BIN:-$HOME/.local/bin/Godot_v4.5.2-stable_linux.x86_64}"
 TEMPLATES="$HOME/.local/share/godot/export_templates/4.5.2.stable"
 JAVA_HOME="${JAVA_HOME:-$HOME/.local/jdk17}"
 OUT="$ROOT/builds/windows"
-ZIP="$ROOT/builds/Eldoria-Windows-0.3.0.zip"
+ZIP="$ROOT/builds/Eldoria-Windows-0.3.1.zip"
 test -x "$GODOT_BIN"
 test -f "$TEMPLATES/windows_release_x86_64.exe"
 test -x "$JAVA_HOME/bin/jar"
@@ -26,14 +26,14 @@ if (machine!==0x8664) throw new Error("Not Windows x86-64: "+machine.toString(16
 console.log("PASS Windows PE x86-64");
 JS
 cp "$ROOT/tools/EldoriaUpdater.ps1" "$OUT/EldoriaUpdater.ps1"
-printf '%s' "0.3.0" > "$OUT/version.txt"
+printf '%s' "0.3.1" > "$OUT/version.txt"
 cat > "$OUT/Play Eldoria.cmd" <<'CMD'
 @echo off
 cd /d "%~dp0"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0EldoriaUpdater.ps1" -GameDir "%~dp0"
 CMD
 cat > "$OUT/README.txt" <<'TXT'
-ELDORIA 0.3.0 - Windows x86_64 PRE-ALPHA
+ELDORIA 0.3.1 - Windows x86_64 PRE-ALPHA
 Unzip the archive to a writable folder (do not run from inside ZIP).
 Run "Play Eldoria.cmd" for automatic update check + launch.
 You can also run Eldoria.exe directly; the game will check for updates on startup

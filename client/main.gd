@@ -11,7 +11,7 @@ const GRAPHICS_SCRIPT := preload("res://graphics_profile.gd")
 const FOREST_SCRIPT := preload("res://forest_world.gd")
 const UPDATE_SCRIPT := preload("res://update_manager.gd")
 const MOVE_SPEED := 6.0
-const CLIENT_VERSION := "0.3.0"
+const CLIENT_VERSION := "0.3.1"
 const SERVER_CONFIG_URL := "https://bacus.dev/projects/eldoria/server.json"
 
 var peer: MultiplayerPeer = ENetMultiplayerPeer.new()
@@ -24,6 +24,10 @@ var connected_peers := {}
 var updater: Node
 var update_button: Button
 var update_info: Label
+var last_sent_position := Vector3.INF
+var send_accumulator := 0.0
+var fps_label: Label
+var fps_accumulator := 0.0
 var camera: Camera3D
 var info: Label
 var ip_input: LineEdit
@@ -109,6 +113,9 @@ func _ui() -> void:
     emote.text = "Wave (E)"
     emote.pressed.connect(_interact)
     panel.add_child(emote)
+    fps_label = Label.new()
+    fps_label.text = "FPS: --"
+    panel.add_child(fps_label)
     info = Label.new()
     info.text = "Connecting to the online world..."
     panel.add_child(info)
@@ -166,21 +173,23 @@ func _ui() -> void:
     touch_emote.pressed.connect(_interact)
     player_ui.add_child(touch_emote)
 
+    var quality_button := Button.new()
+    quality_button.text = "Graphics: Low" if graphics_quality == GRAPHICS_SCRIPT.LOW else "Graphics: High"
     if OS.get_name() == "Android":
-        var quality_button := Button.new()
-        quality_button.text = "Graphics: Low"
         quality_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
         quality_button.offset_left = -190
         quality_button.offset_top = -155
         quality_button.offset_right = -24
         quality_button.offset_bottom = -100
-        quality_button.pressed.connect(func() -> void:
-            graphics_quality = GRAPHICS_SCRIPT.HIGH if graphics_quality == GRAPHICS_SCRIPT.LOW else GRAPHICS_SCRIPT.LOW
-            GRAPHICS_SCRIPT.apply(graphics_quality, sunlight, foliage)
-            get_node("Eldoria_Forest").apply_detail_quality(graphics_quality == GRAPHICS_SCRIPT.HIGH)
-            quality_button.text = "Graphics: High" if graphics_quality == GRAPHICS_SCRIPT.HIGH else "Graphics: Low"
-        )
         player_ui.add_child(quality_button)
+    else:
+        panel.add_child(quality_button)
+    quality_button.pressed.connect(func() -> void:
+        graphics_quality = GRAPHICS_SCRIPT.HIGH if graphics_quality == GRAPHICS_SCRIPT.LOW else GRAPHICS_SCRIPT.LOW
+        GRAPHICS_SCRIPT.apply(graphics_quality, sunlight, foliage)
+        get_node("Eldoria_Forest").apply_detail_quality(graphics_quality == GRAPHICS_SCRIPT.HIGH)
+        quality_button.text = "Graphics: High" if graphics_quality == GRAPHICS_SCRIPT.HIGH else "Graphics: Low"
+    )
 
 func _init_updater() -> void:
     updater = UPDATE_SCRIPT.new()
@@ -360,6 +369,8 @@ func _remove_actor(id: int) -> void:
 
 func _clear_session() -> void:
     own_id = 0
+    last_sent_position = Vector3.INF
+    send_accumulator = 0.0
     connected_peers.clear()
     if input_driver != null:
         input_driver.clear_touch()
@@ -418,23 +429,38 @@ func _spawn(id: int, pos: Vector3) -> void:
     players[id] = actor
     emote_counts[id] = 0
 
-func _process(delta: float) -> void:
+func _physics_process(delta: float) -> void:
     if is_dedicated or own_id == 0 or not players.has(own_id):
         return
     if peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
         return
     var axis: Vector2 = input_driver.get_move_vector()
     var delta_pos := Vector3(axis.x, 0, axis.y).rotated(Vector3.UP, input_driver.yaw) * MOVE_SPEED * delta
-    players[own_id].position += delta_pos
+    var world: Node3D = get_node("Eldoria_Forest")
+    players[own_id].position = world.move_actor(players[own_id].position, delta_pos)
     var focus: Vector3 = players[own_id].position + Vector3(0, 1.6, 0)
     var offset := Vector3(0, -sin(input_driver.pitch) * 13.0, cos(input_driver.pitch) * 13.0)
     var target: Vector3 = focus + offset.rotated(Vector3.UP, input_driver.yaw)
     camera.position = camera.position.lerp(target, minf(1.0, delta * 7.0))
     camera.look_at(focus, Vector3.UP)
-    if multiplayer.is_server():
-        sync_position.rpc(own_id, players[own_id].position)
-    else:
-        submit_position.rpc_id(1, players[own_id].position)
+    send_accumulator += delta
+    var at: Vector3 = players[own_id].position
+    if send_accumulator >= 0.05:
+        send_accumulator = fmod(send_accumulator,0.05)
+        if at.distance_squared_to(last_sent_position) > 0.00004:
+            if multiplayer.is_server():
+                sync_position.rpc(own_id, at)
+            else:
+                submit_position.rpc_id(1, at)
+            last_sent_position = at
+
+func _process(delta: float) -> void:
+    if fps_label == null:
+        return
+    fps_accumulator += delta
+    if fps_accumulator >= 0.65:
+        fps_accumulator = 0.0
+        fps_label.text = "FPS: %d | %s" % [Engine.get_frames_per_second(), "Low" if graphics_quality == GRAPHICS_SCRIPT.LOW else "High"]
 
 @rpc("any_peer", "unreliable")
 func submit_position(pos: Vector3) -> void:
@@ -443,11 +469,20 @@ func submit_position(pos: Vector3) -> void:
     var id := multiplayer.get_remote_sender_id()
     if not players.has(id):
         return
-    # Prototype-only sanity check; dedicated .NET server must validate time/speed.
-    if players[id].position.distance_to(pos) > 4.0:
+    # The same deterministic obstacle layout runs on the dedicated server.
+    # Reject tunneling across tree trunks/rocks and impossible terrain height.
+    var world: Node3D = get_node("Eldoria_Forest")
+    if not world.valid_remote_step(players[id].position,pos):
+        correct_own_position.rpc_id(id,players[id].position)
         return
     players[id].position = pos
     sync_position.rpc(id, pos)
+
+@rpc("authority", "call_remote", "reliable")
+func correct_own_position(pos: Vector3) -> void:
+    if own_id != 0 and players.has(own_id):
+        players[own_id].position = pos
+        last_sent_position = pos
 
 @rpc("authority", "call_remote", "unreliable")
 func sync_position(id: int, pos: Vector3) -> void:
