@@ -19,10 +19,10 @@ const AVATAR_PROFILE := preload("res://avatar_profile.gd")
 const JUMP_MOTION := preload("res://jump_motion.gd")
 const UPDATE_SCRIPT := preload("res://update_manager.gd")
 const MOVE_SPEED := 6.0
-const CLIENT_VERSION := "0.5.0"
-# Published v0.5.0 multiplayer client. Development builds may toggle this to true.
-# TASK-015 development build: do not auto-connect or update against live v0.5.0.
-const DEVELOPMENT_BUILD := true
+const CLIENT_VERSION := "0.5.1"
+# Published v0.5.1 multiplayer client. Development builds may toggle this to true.
+
+const DEVELOPMENT_BUILD := false
 const SERVER_CONFIG_URL := "https://bacus.dev/projects/eldoria/server.json"
 
 var peer: MultiplayerPeer = ENetMultiplayerPeer.new()
@@ -46,6 +46,11 @@ var preview_last_update_msec := 0
 var preview_valid := false
 var preview_spot := Vector3.INF
 var harvest_visuals: Node3D
+var mobile_build_panel: PanelContainer
+var mobile_build_picker: OptionButton
+var mobile_build_toggle: Button
+var mobile_build_mode := false
+var sound_button: Button
 var last_gather_at := {}
 var inventory_label: Label
 var resource_label: Label
@@ -96,6 +101,7 @@ func _ready() -> void:
     harvest_visuals = HARVEST_VFX_SCRIPT.new()
     harvest_visuals.name = "HarvestVisuals"
     add_child(harvest_visuals)
+    _load_sound_preference()
     _reset_resources()
     GRAPHICS_SCRIPT.apply(graphics_quality, sunlight, foliage)
     get_node("Eldoria_Forest").apply_detail_quality(graphics_quality == GRAPHICS_SCRIPT.HIGH)
@@ -110,7 +116,7 @@ func _ready() -> void:
         # SceneTree test harnesses supply CLI user args and trigger discovery explicitly.
         if OS.get_cmdline_user_args().is_empty():
             if DEVELOPMENT_BUILD:
-                _status("DEV TASK-015: connect to your test server only. Live v0.5.0 unchanged.")
+                _status("Development build; connect only to your test server.")
             else:
                 _fetch_server_config()
     else:
@@ -214,6 +220,10 @@ func _ui() -> void:
     resource_label = Label.new()
     resource_label.text = "Near: none"
     panel.add_child(resource_label)
+    sound_button = Button.new()
+    sound_button.text = "Sound: ON" if harvest_visuals.sound_enabled else "Sound: OFF"
+    sound_button.pressed.connect(_toggle_sound)
+    panel.add_child(sound_button)
     var emote := Button.new()
     emote.text = "Wave (E)"
     emote.pressed.connect(_interact)
@@ -256,7 +266,7 @@ func _ui() -> void:
     mobile_controls.offset_top = -222
     mobile_controls.offset_right = 218
     mobile_controls.offset_bottom = -24
-    mobile_controls.visible = OS.get_name() == "Android"
+    mobile_controls.visible = _mobile_ui()
     mobile_controls.moved.connect(input_driver.set_joystick)
     player_ui.add_child(mobile_controls)
 
@@ -267,7 +277,7 @@ func _ui() -> void:
     sprint_button.offset_top = -225
     sprint_button.offset_right = -24
     sprint_button.offset_bottom = -169
-    sprint_button.visible = OS.get_name() == "Android"
+    sprint_button.visible = _mobile_ui()
     sprint_button.pressed.connect(func() -> void:
         sprint_active = not sprint_active
         sprint_button.text = "Sprint: ON" if sprint_active else "Sprint: OFF"
@@ -281,30 +291,56 @@ func _ui() -> void:
     gather_mobile.offset_top = -164
     gather_mobile.offset_right = -210
     gather_mobile.offset_bottom = -100
-    gather_mobile.visible = OS.get_name() == "Android"
+    gather_mobile.visible = _mobile_ui()
     gather_mobile.pressed.connect(_try_gather)
     player_ui.add_child(gather_mobile)
 
-    var build_mobile := Button.new()
-    build_mobile.text = "Build"
-    build_mobile.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-    build_mobile.offset_left = -340
-    build_mobile.offset_top = -240
-    build_mobile.offset_right = -210
-    build_mobile.offset_bottom = -177
-    build_mobile.visible = OS.get_name() == "Android"
-    build_mobile.pressed.connect(_try_build)
-    player_ui.add_child(build_mobile)
-    var preview_mobile := Button.new()
-    preview_mobile.text = "Preview"
-    preview_mobile.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-    preview_mobile.offset_left = -190
-    preview_mobile.offset_top = -300
-    preview_mobile.offset_right = -24
-    preview_mobile.offset_bottom = -243
-    preview_mobile.visible = OS.get_name() == "Android"
-    preview_mobile.pressed.connect(_toggle_build_preview)
-    player_ui.add_child(preview_mobile)
+    # One explicit construction mode instead of two tiny overlapping actions.
+    mobile_build_toggle = Button.new()
+    mobile_build_toggle.text = "Build mode"
+    mobile_build_toggle.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+    mobile_build_toggle.offset_left = -340
+    mobile_build_toggle.offset_top = -240
+    mobile_build_toggle.offset_right = -210
+    mobile_build_toggle.offset_bottom = -177
+    mobile_build_toggle.visible = _mobile_ui()
+    mobile_build_toggle.pressed.connect(func() -> void: _set_mobile_build_mode(not mobile_build_mode))
+    player_ui.add_child(mobile_build_toggle)
+
+    mobile_build_panel = PanelContainer.new()
+    mobile_build_panel.name = "AndroidBuildingMode"
+    mobile_build_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+    mobile_build_panel.offset_left = -414
+    mobile_build_panel.offset_top = -390
+    mobile_build_panel.offset_right = -24
+    mobile_build_panel.offset_bottom = -256
+    mobile_build_panel.visible = false
+    player_ui.add_child(mobile_build_panel)
+    var build_column := VBoxContainer.new()
+    mobile_build_panel.add_child(build_column)
+    var build_caption := Label.new()
+    build_caption.text = "BUILD MODE — look around to move the marker"
+    build_column.add_child(build_caption)
+    mobile_build_picker = OptionButton.new()
+    mobile_build_picker.custom_minimum_size.y = 48
+    mobile_build_picker.add_item("Campfire: 3 wood + 2 stone")
+    mobile_build_picker.add_item("Tent: 5 wood + 2 herbs")
+    mobile_build_picker.item_selected.connect(_mobile_select_building)
+    build_column.add_child(mobile_build_picker)
+    var action_row := HBoxContainer.new()
+    build_column.add_child(action_row)
+    var place_button := Button.new()
+    place_button.name = "MobilePlace"
+    place_button.text = "PLACE"
+    place_button.custom_minimum_size = Vector2(168,48)
+    place_button.pressed.connect(_mobile_place_building)
+    action_row.add_child(place_button)
+    var cancel_button := Button.new()
+    cancel_button.name = "MobileCancel"
+    cancel_button.text = "CANCEL"
+    cancel_button.custom_minimum_size = Vector2(168,48)
+    cancel_button.pressed.connect(func() -> void: _set_mobile_build_mode(false))
+    action_row.add_child(cancel_button)
     var jump_button := Button.new()
     jump_button.text = "Jump"
     jump_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
@@ -312,7 +348,7 @@ func _ui() -> void:
     jump_button.offset_top = -88
     jump_button.offset_right = -210
     jump_button.offset_bottom = -24
-    jump_button.visible = OS.get_name() == "Android"
+    jump_button.visible = _mobile_ui()
     jump_button.pressed.connect(_try_jump)
     player_ui.add_child(jump_button)
 
@@ -323,13 +359,13 @@ func _ui() -> void:
     touch_emote.offset_top = -86
     touch_emote.offset_right = -24
     touch_emote.offset_bottom = -24
-    touch_emote.visible = OS.get_name() == "Android"
+    touch_emote.visible = _mobile_ui()
     touch_emote.pressed.connect(_interact)
     player_ui.add_child(touch_emote)
 
     var quality_button := Button.new()
     quality_button.text = "Graphics: Low" if graphics_quality == GRAPHICS_SCRIPT.LOW else "Graphics: High"
-    if OS.get_name() == "Android":
+    if _mobile_ui():
         quality_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
         quality_button.offset_left = -190
         quality_button.offset_top = -155
@@ -596,6 +632,9 @@ func _clear_session() -> void:
     send_accumulator = 0.0
     connected_peers.clear()
     _remove_preview()
+    mobile_build_mode = false
+    if mobile_build_panel != null:
+        mobile_build_panel.visible = false
     if harvest_visuals != null:
         harvest_visuals.clear_effects()
     last_remote_ticks.clear()
@@ -864,6 +903,8 @@ func _reset_resources() -> void:
 # cost, distance, world bounds, terrain gradient and solid intersections.
 func _show_build_feedback(message: String) -> void:
     _status(message)
+    if message.contains("built successfully") and mobile_build_mode:
+        _set_mobile_build_mode(false)
     if build_feedback_label != null:
         build_feedback_label.text = message
         build_feedback_label.visible = true
@@ -903,6 +944,54 @@ func _find_build_target(kind: String, origin: Vector3, yaw: float) -> Vector3:
             if _is_valid_build_spot(kind,spot,origin):
                 return spot
     return Vector3.INF
+
+func _mobile_ui() -> bool:
+    return OS.get_name() == "Android" or OS.get_cmdline_user_args().has("--test-mobile-ui")
+
+func _load_sound_preference() -> void:
+    var cfg := ConfigFile.new()
+    cfg.load("user://eldoria-sound.cfg")
+    harvest_visuals.set_sound_enabled(bool(cfg.get_value("audio","enabled",true)))
+
+func _toggle_sound() -> void:
+    harvest_visuals.set_sound_enabled(not harvest_visuals.sound_enabled)
+    if sound_button != null:
+        sound_button.text = "Sound: ON" if harvest_visuals.sound_enabled else "Sound: OFF"
+    var cfg := ConfigFile.new()
+    cfg.set_value("audio","enabled",harvest_visuals.sound_enabled)
+    cfg.save("user://eldoria-sound.cfg")
+
+func _mobile_select_building(index: int) -> void:
+    if build_selector != null:
+        build_selector.select(index)
+    if preview_enabled:
+        _update_build_preview()
+
+func _set_mobile_build_mode(enabled: bool) -> void:
+    if is_dedicated:
+        return
+    mobile_build_mode = enabled
+    if mobile_build_panel != null:
+        # Fit even short landscape phone viewports; don't clip the selector.
+        var screen_height := get_viewport().get_visible_rect().size.y
+        mobile_build_panel.offset_top = maxf(-390.0,16.0-screen_height)
+        mobile_build_panel.offset_bottom = mobile_build_panel.offset_top+134.0
+        mobile_build_panel.visible = enabled and _mobile_ui()
+    if mobile_build_toggle != null:
+        mobile_build_toggle.text = "Build: ON" if enabled else "Build mode"
+        mobile_build_toggle.visible = _mobile_ui() and not enabled
+    if enabled:
+        if mobile_build_picker != null and build_selector != null:
+            mobile_build_picker.select(build_selector.selected)
+        preview_enabled = true
+        _update_build_preview()
+    else:
+        _remove_preview()
+
+func _mobile_place_building() -> void:
+    if not mobile_build_mode:
+        return
+    _try_build()
 
 func _toggle_build_preview() -> void:
     if is_dedicated:
@@ -1052,6 +1141,7 @@ func _build_on_server(id: int, kind: String, spot: Vector3) -> bool:
         _notify_build_result(id,"Could not save building. No resources were spent.")
         return false
     _place_building(id_new,record)
+    _play_build_sound(record)
     for remote_peer in connected_peers.keys():
         building_created.rpc_id(int(remote_peer),id_new,record)
     if id == own_id:
@@ -1107,6 +1197,15 @@ func building_snapshot(snapshot: Dictionary) -> void:
 @rpc("authority","call_remote","reliable")
 func building_created(id: int, record: Dictionary) -> void:
     _place_building(id,record)
+    _play_build_sound(record)
+
+func _play_build_sound(record: Dictionary) -> void:
+    if harvest_visuals == null:
+        return
+    var world: Node3D = get_node("Eldoria_Forest")
+    var x := float(record["x"])
+    var z := float(record["z"])
+    harvest_visuals.play_sound("build",Vector3(x,world.height_at(x,z),z))
 
 func _try_gather() -> void:
     if own_id == 0 or not players.has(own_id):
