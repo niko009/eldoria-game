@@ -7,6 +7,9 @@ const COSTS := {
 const RADII := {"campfire":1.25,"tent":2.0}
 var kind := ""
 var building_id := 0
+var is_preview := false
+var preview_valid := false
+var _ghost_material: StandardMaterial3D
 
 func setup(id: int, type: String, location: Vector3) -> void:
     building_id = id
@@ -34,6 +37,23 @@ func _ready() -> void:
         _campfire()
     else:
         _tent()
+    if is_preview:
+        set_preview_valid(preview_valid)
+
+func set_preview_valid(valid: bool) -> void:
+    preview_valid = valid
+    if DisplayServer.get_name() == "headless":
+        return
+    if _ghost_material == null:
+        _ghost_material = StandardMaterial3D.new()
+        _ghost_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+        _ghost_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+        _ghost_material.no_depth_test = false
+        _ghost_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    _ghost_material.albedo_color = Color(0.24,0.92,0.52,0.42) if valid else Color(1.0,0.32,0.27,0.48)
+    for child in get_children():
+        if child is MeshInstance3D:
+            child.material_override = _ghost_material
 
 func _material(color: Color, metallic: float = 0.0) -> StandardMaterial3D:
     var mat := StandardMaterial3D.new()

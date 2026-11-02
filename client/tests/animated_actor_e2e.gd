@@ -22,7 +22,7 @@ func _run() -> void:
         if not actor.animator.has_animation("Idle"):
             _fail("missing idle clip")
             return
-        for clip in ["Walking_A", "Running_A", "Cheer"]:
+        for clip in ["Walking_A", "Running_A", "Cheer", "PickUp", "1H_Melee_Attack_Chop"]:
             if not actor.animator.has_animation(clip):
                 _fail("missing animation " + clip)
                 return
@@ -50,6 +50,17 @@ func _run() -> void:
             if facing.dot(direction) < 0.99:
                 _fail("character facing away from movement id=%d, dir=%s, facing=%s" % [id,direction,facing])
                 return
+        actor.gather("wood")
+        if actor.current_clip != "1H_Melee_Attack_Chop":
+            _fail("wood harvesting did not play chopping animation")
+            return
+        if actor.animator.get_animation("1H_Melee_Attack_Chop").loop_mode != Animation.LOOP_NONE:
+            _fail("chopping animation loops forever")
+            return
+        actor.gather("herb")
+        if actor.current_clip != "PickUp":
+            _fail("herb harvesting did not play pickup animation")
+            return
         actor.celebrate()
         if actor.current_clip != "Cheer":
             _fail("wave should play Cheer animation")

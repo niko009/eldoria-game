@@ -6,7 +6,7 @@ const AVATARS := preload("res://avatar_profile.gd")
 const KNIGHT := preload("res://assets/characters/Knight.glb")
 const ROGUE := preload("res://assets/characters/Rogue_Hooded.glb")
 const MAGE := preload("res://assets/characters/Mage.glb")
-const CLIPS := ["Idle", "Walking_A", "Running_A", "Cheer", "Jump_Start", "Jump_Idle", "Jump_Land", "PickUp"]
+const CLIPS := ["Idle", "Walking_A", "Running_A", "Cheer", "Jump_Start", "Jump_Idle", "Jump_Land", "PickUp", "1H_Melee_Attack_Chop"]
 
 var player_id := 0
 var avatar_choice := -1
@@ -64,7 +64,7 @@ func _create_visual() -> void:
         if animation == null:
             push_error("Missing KayKit animation " + clip)
             continue
-        if clip != "Cheer":
+        if clip not in ["Cheer", "PickUp", "1H_Melee_Attack_Chop"]:
             animation.loop_mode = Animation.LOOP_LINEAR
         else:
             animation.loop_mode = Animation.LOOP_NONE
@@ -125,15 +125,16 @@ func finish_jump() -> void:
     landing_until_msec = Time.get_ticks_msec() + 160
     set_clip("Jump_Land")
 
-func gather() -> void:
+func gather(kind: String = "herb") -> void:
     if headless or animator == null or airborne:
         return
-    var clip := animator.get_animation("PickUp")
+    var chosen := "1H_Melee_Attack_Chop" if kind == "wood" else "PickUp"
+    var clip := animator.get_animation(chosen)
     if clip == null:
         return
     emote_until_msec = Time.get_ticks_msec() + int(clip.length*1000.0)
     current_clip = ""
-    set_clip("PickUp")
+    set_clip(chosen)
 
 func celebrate() -> void:
     if headless or animator == null:
@@ -152,7 +153,7 @@ func _process(_delta: float) -> void:
         set_clip("Jump_Idle")
     if airborne or Time.get_ticks_msec() < landing_until_msec:
         return
-    if Time.get_ticks_msec() > emote_until_msec and current_clip in ["Cheer", "PickUp"]:
+    if Time.get_ticks_msec() > emote_until_msec and current_clip in ["Cheer", "PickUp", "1H_Melee_Attack_Chop"]:
         set_clip("Idle")
     elif Time.get_ticks_msec() > emote_until_msec and last_motion_msec > 0 and Time.get_ticks_msec() - last_motion_msec > 300:
         set_clip("Idle")
