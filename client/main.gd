@@ -11,6 +11,8 @@ const WORLD_SAVE_SCRIPT := preload("res://world_save.gd")
 const POSTGRES_WORLD_STORE_SCRIPT := preload("res://postgres_world_store.gd")
 const BUILDING_SCRIPT := preload("res://building_object.gd")
 const HARVEST_VFX_SCRIPT := preload("res://harvest_vfx.gd")
+const TELEMETRY_SCRIPT := preload("res://performance_telemetry.gd")
+const TELEMETRY_SINK_SCRIPT := preload("res://telemetry_sink.gd")
 const DISPLAY_SCRIPT := preload("res://display_settings.gd")
 const GRAPHICS_SCRIPT := preload("res://graphics_profile.gd")
 const FOREST_SCRIPT := preload("res://forest_world.gd")
@@ -22,7 +24,7 @@ const MOVE_SPEED := 6.0
 const CLIENT_VERSION := "0.5.1"
 # Published v0.5.1 multiplayer client. Development builds may toggle this to true.
 
-const DEVELOPMENT_BUILD := false
+const DEVELOPMENT_BUILD := true
 const SERVER_CONFIG_URL := "https://bacus.dev/projects/eldoria/server.json"
 
 var peer: MultiplayerPeer = ENetMultiplayerPeer.new()
@@ -51,6 +53,13 @@ var mobile_build_picker: OptionButton
 var mobile_build_toggle: Button
 var mobile_build_mode := false
 var sound_button: Button
+var telemetry: Node
+var telemetry_sink: Node
+var telemetry_button: Button
+var last_telemetry_by_peer := {}
+var telemetry_window_start := 0
+var telemetry_window_count := 0
+var last_ping_at_msec := 0
 var last_gather_at := {}
 var inventory_label: Label
 var resource_label: Label
@@ -102,6 +111,10 @@ func _ready() -> void:
     harvest_visuals.name = "HarvestVisuals"
     add_child(harvest_visuals)
     _load_sound_preference()
+    telemetry = TELEMETRY_SCRIPT.new()
+    telemetry.name = "PerformanceTelemetry"
+    add_child(telemetry)
+    _load_telemetry_preference()
     _reset_resources()
     GRAPHICS_SCRIPT.apply(graphics_quality, sunlight, foliage)
     get_node("Eldoria_Forest").apply_detail_quality(graphics_quality == GRAPHICS_SCRIPT.HIGH)
@@ -224,6 +237,10 @@ func _ui() -> void:
     sound_button.text = "Sound: ON" if harvest_visuals.sound_enabled else "Sound: OFF"
     sound_button.pressed.connect(_toggle_sound)
     panel.add_child(sound_button)
+    telemetry_button = Button.new()
+    telemetry_button.text = "Performance data: ON" if telemetry.enabled else "Performance data: OFF"
+    telemetry_button.pressed.connect(_toggle_telemetry)
+    panel.add_child(telemetry_button)
     var emote := Button.new()
     emote.text = "Wave (E)"
     emote.pressed.connect(_interact)
@@ -451,6 +468,103 @@ func _save_world_state() -> bool:
         return false
     return true
 
+func _load_telemetry_preference() -> void:
+    var config := ConfigFile.new()
+    config.load("user://eldoria-telemetry.cfg")
+    # Diagnostics are explicit and can be disabled without affecting gameplay.
+    telemetry.set_enabled(bool(config.get_value("privacy","performance",true)))
+
+func _toggle_telemetry() -> void:
+    telemetry.set_enabled(not telemetry.enabled)
+    var config := ConfigFile.new()
+    config.set_value("privacy","performance",telemetry.enabled)
+    config.save("user://eldoria-telemetry.cfg")
+    if telemetry_button != null:
+        telemetry_button.text = "Performance data: ON" if telemetry.enabled else "Performance data: OFF"
+
+func _configure_telemetry_sink() -> void:
+    if telemetry_sink != null:
+        telemetry_sink.queue_free()
+        telemetry_sink = null
+    var url := OS.get_environment("ELDORIA_PG_API_URL")
+    if url.is_empty():
+        return
+    var secret := OS.get_environment("ELDORIA_PG_API_KEY")
+    var secret_file := OS.get_environment("ELDORIA_PG_API_KEY_FILE")
+    if secret.is_empty() and not secret_file.is_empty():
+        secret = FileAccess.get_file_as_string(secret_file).strip_edges()
+    var sink := TELEMETRY_SINK_SCRIPT.new()
+    sink.name = "TelemetrySink"
+    add_child(sink)
+    if not sink.configure(url,secret):
+        push_warning("Telemetry sink unavailable; gameplay continues normally.")
+        sink.queue_free()
+        return
+    telemetry_sink = sink
+
+func _submit_telemetry() -> void:
+    if telemetry == null or own_id == 0:
+        return
+    var report: Dictionary = telemetry.make_report(graphics_quality,CLIENT_VERSION)
+    if report.is_empty():
+        return
+    if multiplayer.is_server():
+        _receive_telemetry_for(own_id,report)
+    elif peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED:
+        submit_telemetry.rpc_id(1,report)
+
+@rpc("any_peer","reliable")
+func telemetry_ping(client_tick: int) -> void:
+    if multiplayer.is_server():
+        var sender := multiplayer.get_remote_sender_id()
+        if players.has(sender):
+            telemetry_pong.rpc_id(sender,client_tick)
+
+@rpc("authority","call_remote","reliable")
+func telemetry_pong(client_tick: int) -> void:
+    if telemetry != null:
+        var elapsed := Time.get_ticks_msec()-client_tick
+        if elapsed >= 0 and elapsed <= 10000:
+            telemetry.last_rtt_ms = elapsed
+
+@rpc("any_peer","reliable")
+func submit_telemetry(report: Dictionary) -> void:
+    if multiplayer.is_server():
+        _receive_telemetry_for(multiplayer.get_remote_sender_id(),report)
+
+func _receive_telemetry_for(sender: int, report: Dictionary) -> bool:
+    if not multiplayer.is_server() or not players.has(sender) or telemetry_sink == null:
+        return false
+    var now := Time.get_ticks_msec()
+    if telemetry_window_start == 0 or now-telemetry_window_start >= 60000:
+        telemetry_window_start = now
+        telemetry_window_count = 0
+    # A global guard also limits abuse via rapid reconnects.
+    if telemetry_window_count >= 30:
+        return false
+    if last_telemetry_by_peer.has(sender) and now-int(last_telemetry_by_peer[sender]) < 45000:
+        return false
+    if report.size()!=9:
+        return false
+    if str(report.get("version",""))!=CLIENT_VERSION or str(report.get("platform","")) not in ["windows","android","test"]:
+        return false
+    if str(report.get("quality","")) not in ["low","high"]:
+        return false
+    for number in ["fps_avg","fps_low_5","frame_p95_ms"]:
+        var x := float(report.get(number,0))
+        if not is_finite(x) or x <= 0 or x > 2000:
+            return false
+    var memory_mb := int(report.get("memory_mb",-1))
+    var rtt_ms := int(report.get("rtt_ms",-1))
+    var samples := int(report.get("samples",-1))
+    if memory_mb < 1 or memory_mb > 65536 or rtt_ms < 0 or rtt_ms > 10000 or samples < 60 or samples > 7200:
+        return false
+    if not telemetry_sink.enqueue(report):
+        return false
+    last_telemetry_by_peer[sender] = now
+    telemetry_window_count += 1
+    return true
+
 func _host() -> void:
     _clear_session()
     if is_websocket_host:
@@ -478,6 +592,7 @@ func _host() -> void:
         if is_dedicated:
             get_tree().quit(1)
         return
+    _configure_telemetry_sink()
     if is_dedicated:
         print("ELDORIA DEDICATED SERVER READY %s" % ("WS TCP 7788" if is_websocket_host else "UDP 7777"))
         return
@@ -593,6 +708,8 @@ func _connected() -> void:
     if identity.is_empty() and OS.get_cmdline_user_args().is_empty():
         identity = AVATAR_PROFILE.read_token()
     request_spawn.rpc_id(1, selected_avatar, identity)
+    if telemetry != null:
+        telemetry.set_enabled(telemetry.enabled)
     _status("Connected, ID %s" % own_id)
 
 func _on_join(id: int) -> void:
@@ -606,6 +723,7 @@ func _on_join(id: int) -> void:
 
 func _on_leave(id: int) -> void:
     connected_peers.erase(id)
+    last_telemetry_by_peer.erase(id)
     player_identity_keys.erase(id)
     _remove_actor(id)
     # SceneMultiplayer propagates peer_disconnected to all clients already.
@@ -628,6 +746,9 @@ func _remove_actor(id: int) -> void:
 
 func _clear_session() -> void:
     own_id = 0
+    last_ping_at_msec = 0
+    if telemetry != null:
+        telemetry.set_enabled(telemetry.enabled)
     last_sent_position = Vector3.INF
     send_accumulator = 0.0
     connected_peers.clear()
@@ -823,6 +944,16 @@ func _physics_process(delta: float) -> void:
             last_sent_position = at
 
 func _process(delta: float) -> void:
+    if not is_dedicated and telemetry != null and own_id != 0 and players.has(own_id):
+        telemetry.sample_frame(delta)
+        if Time.get_ticks_msec() - last_ping_at_msec > 15000 and last_ping_at_msec > 0:
+            last_ping_at_msec = Time.get_ticks_msec()
+            if not multiplayer.is_server():
+                telemetry_ping.rpc_id(1,last_ping_at_msec)
+        elif last_ping_at_msec == 0:
+            last_ping_at_msec = Time.get_ticks_msec()
+        if telemetry.ready_to_report():
+            _submit_telemetry()
     if fps_label == null:
         return
     fps_accumulator += delta

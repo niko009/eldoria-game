@@ -53,6 +53,27 @@ assert.equal(r.status,400,'invalid hash must be rejected');
 console.log('POSTGRES API PASS: auth 401, schema, atomic PUT, stale revision 409, invalid input 400');
 })().catch(e=>{console.error(e);process.exitCode=1});
 JS
+ELDORIA_TEST_INTERNAL_KEY="$ELDORIA_TEST_INTERNAL_KEY" node <<'JS'
+const assert=require('node:assert/strict');
+(async()=>{
+ const base='http://127.0.0.1:19091';
+ const auth={'X-Eldoria-Server-Key':process.env.ELDORIA_TEST_INTERNAL_KEY,'Content-Type':'application/json'};
+ const report={version:'0.5.1',platform:'android',quality:'low',
+   fps_avg:35.4,fps_low_5:19.2,frame_p95_ms:52.1,memory_mb:277,rtt_ms:74,samples:1700};
+ let res=await fetch(base+'/v1/telemetry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(report)});
+ assert.equal(res.status,401,'internal telemetry requires key');
+ res=await fetch(base+'/v1/telemetry',{method:'POST',headers:auth,body:JSON.stringify({...report,fps_avg:9000})});
+ assert.equal(res.status,400,'invalid telemetry must be rejected');
+ res=await fetch(base+'/v1/telemetry',{method:'POST',headers:auth,body:JSON.stringify(report)});
+ assert.equal(res.status,202,'valid telemetry must be stored');
+ res=await fetch(base+'/v1/telemetry/summary',{headers:auth});
+ assert.equal(res.status,200);
+ const rows=await res.json();
+ assert.ok(rows.some(r=>r.platform==='android' && r.quality==='low' && r.reports>=1),'summary not aggregating');
+ assert.ok(!JSON.stringify(rows).includes('identity_hash') && !JSON.stringify(rows).includes('player_id'));
+ console.log('TELEMETRY POSTGRES API PASS 401/400/202 + 14-day aggregate summary, no identifying fields');
+})().catch(e=>{console.error(e);process.exitCode=1})
+JS
 IDENTITY="$(printf 'a%.0s' {1..64})"
 "$GODOT_BIN" --headless --path "$ROOT/client" --editor --quit >"$LOG_DIR/postgres-import.log" 2>&1
 for step in initial restored; do
@@ -103,6 +124,39 @@ for step in initial restored; do
     grep -q "DEPLETION ${step^^} PASS" "$LOG_DIR/postgres-forest-$step.log"
     grep "DEPLETION ${step^^} PASS" "$LOG_DIR/postgres-forest-$step.log"
 done
+# Real client -> Godot dedicated server -> private .NET HTTP -> PostgreSQL.
+ELDORIA_TEST_INTERNAL_KEY="$ELDORIA_TEST_INTERNAL_KEY" node <<'JS'
+const assert=require('node:assert/strict');
+(async()=>{
+ const headers={'X-Eldoria-Server-Key':process.env.ELDORIA_TEST_INTERNAL_KEY};
+ const rows=await (await fetch('http://127.0.0.1:19091/v1/telemetry/summary',{headers})).json();
+ const target=rows.find(r=>r.platform==='test');
+ require('fs').writeFileSync('/tmp/eldoria-task018-before-count',String(target?.reports||0));
+})().catch(e=>{console.error(e);process.exitCode=1});
+JS
+ELDORIA_PG_API_URL="$API_URL" ELDORIA_PG_API_KEY="$ELDORIA_TEST_INTERNAL_KEY" timeout 42 \
+    "$GODOT_BIN" --headless --path "$ROOT/client" -- --dedicated-server \
+    >"$LOG_DIR/telemetry-dedicated-server.log" 2>&1 &
+server=$!
+sleep 1
+timeout 35 "$GODOT_BIN" --headless --path "$ROOT/client" \
+    --script res://tests/telemetry_network_e2e.gd -- --test >"$LOG_DIR/telemetry-network-client.log" 2>&1
+grep -q 'TELEMETRY NETWORK CLIENT PASS' "$LOG_DIR/telemetry-network-client.log"
+sleep 0.7
+kill "$server" 2>/dev/null || true
+wait "$server" 2>/dev/null || true
+server=""
+ELDORIA_TEST_INTERNAL_KEY="$ELDORIA_TEST_INTERNAL_KEY" node <<'JS'
+const assert=require('node:assert/strict'),fs=require('node:fs');
+(async()=>{
+ const headers={'X-Eldoria-Server-Key':process.env.ELDORIA_TEST_INTERNAL_KEY};
+ const rows=await (await fetch('http://127.0.0.1:19091/v1/telemetry/summary',{headers})).json();
+ const count=rows.find(r=>r.platform==='test')?.reports||0;
+ const before=Number(fs.readFileSync('/tmp/eldoria-task018-before-count','utf8'));
+ assert.equal(count-before,1,'invalid/duplicate client reports bypassed authoritative rate limits');
+ console.log('TELEMETRY NETWORK PASS: Godot ENet -> Godot authoritative server -> .NET HTTP -> PostgreSQL; spam/replay rejected');
+})().catch(e=>{console.error(e);process.exitCode=1})
+JS
 set +e
 ELDORIA_PG_API_URL="$API_URL" ELDORIA_PG_API_KEY="WRONG_TEST_SECRET_DO_NOT_ACCEPT_2026" \
  timeout 14 "$GODOT_BIN" --headless --path "$ROOT/client" -- --dedicated-server \
