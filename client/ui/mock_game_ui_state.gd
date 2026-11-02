@@ -27,6 +27,7 @@ var selected_avatar := "knight"
 var connection_status := "Автономный просмотр"
 var loading := false
 var near_campfire := true # Standalone Preview starts at a sample crafting station.
+var equipped_axe := false
 
 func amount(item_id: String) -> int:
 	return int(inventory.get(item_id, 0))
@@ -39,6 +40,8 @@ func can_afford(cost: Dictionary) -> bool:
 
 func select_item(item_id: String) -> void:
 	if not ITEMS.has(item_id):
+		return
+	if item_id == "axe" and amount("axe") < 1:
 		return
 	selected_item = item_id
 	request_select_item.emit(item_id)

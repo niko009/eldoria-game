@@ -49,6 +49,24 @@ func _run() -> void:
         quit(8)
         return
     ui.set_inventory({"wood": 4, "stone": 3, "axe": 1})
+    var equips: Array[bool] = []
+    ui.equip_requested.connect(func(equip: bool) -> void: equips.append(equip))
+    ui.state.select_item("axe")
+    if equips.is_empty() or not equips[-1]:
+        push_error("Axe slot did not request equipment")
+        quit(10)
+        return
+    ui.set_equipped_axe(true)
+    if not ui.state.equipped_axe:
+        push_error("Equipment ACK didn't update UI")
+        quit(11)
+        return
+    ui.state.select_item("wood")
+    if equips[-1] or ui.state.selected_item != "wood":
+        push_error("Hotbar didn't request unequip")
+        quit(12)
+        return
+    ui.set_equipped_axe(false)
     ui._craft("axe")
     if requested[0] != 1:
         push_error("Duplicate stone axe request allowed by client")

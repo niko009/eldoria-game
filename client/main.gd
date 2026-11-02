@@ -33,6 +33,7 @@ var players := {}
 var player_choices := {}
 var resource_remaining := {}
 var player_inventories := {}
+var equipped_axes := {} # Ephemeral server-authoritative equipment, reset on reconnect.
 var player_identity_keys := {}
 var persistent_profiles := {}
 var world_store: RefCounted
@@ -425,6 +426,7 @@ func _ui() -> void:
         live_ui.action_requested.connect(_live_action)
         live_ui.build_requested.connect(_live_build)
         live_ui.craft_requested.connect(_try_craft_axe)
+        live_ui.equip_requested.connect(_try_equip_axe)
         live_ui.preview_requested.connect(_live_preview)
         live_ui.set_avatar(selected_avatar)
         live_ui.set_inventory(_empty_inventory())
@@ -765,6 +767,7 @@ func despawn_remote(id: int) -> void:
     _remove_actor(id)
 
 func _remove_actor(id: int) -> void:
+    equipped_axes.erase(id)
     if players.has(id):
         players[id].queue_free()
         players.erase(id)
@@ -777,7 +780,9 @@ func _remove_actor(id: int) -> void:
 
 func _clear_session() -> void:
     own_id = 0
+    equipped_axes.clear()
     if live_ui != null:
+        live_ui.set_equipped_axe(false)
         live_ui.set_inventory(_empty_inventory())
         live_ui.set_near_campfire(false)
     last_ping_at_msec = 0
@@ -863,11 +868,13 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
     var pos := Vector3(float(players.size() * 3), 1, 0)
     _spawn(id, pos, validated)
     player_inventories[id] = _empty_inventory()
+    equipped_axes[id] = false
     if not identity_hash.is_empty() and persistent_profiles.has(identity_hash):
         player_inventories[id] = persistent_profiles[identity_hash]["inventory"].duplicate(true)
     spawn_remote.rpc(id, pos, validated)
     resource_snapshot.rpc_id(id, resource_remaining)
     inventory_snapshot.rpc_id(id, player_inventories[id])
+    axe_equip_snapshot.rpc_id(id, false)
     building_snapshot.rpc_id(id, placed_buildings)
 
 @rpc("authority", "call_remote", "reliable")
@@ -1282,8 +1289,39 @@ func _craft_axe_on_server(id: int) -> bool:
         inventory_snapshot(inv)
     else:
         inventory_snapshot.rpc_id(id, inv)
-    _notify_build_result(id, "Stone axe crafted! Each chop now collects 2 wood.")
+    _notify_build_result(id, "Stone axe crafted! Select slot 4 to equip it.")
     return true
+
+func _try_equip_axe(equip: bool) -> void:
+    if own_id == 0 or not players.has(own_id):
+        return
+    if multiplayer.is_server():
+        _set_axe_equipped_on_server(own_id, equip)
+    else:
+        request_equip_axe.rpc_id(1, equip)
+
+@rpc("any_peer", "reliable")
+func request_equip_axe(equip: bool) -> void:
+    if multiplayer.is_server():
+        _set_axe_equipped_on_server(multiplayer.get_remote_sender_id(), equip)
+
+func _set_axe_equipped_on_server(id: int, equip: bool) -> bool:
+    if not multiplayer.is_server() or not players.has(id):
+        return false
+    if equip and int(player_inventories.get(id, {}).get("axe", 0)) != 1:
+        _notify_build_result(id, "Craft a stone axe before equipping.")
+        return false
+    equipped_axes[id] = equip
+    if id == own_id:
+        axe_equip_snapshot(equip)
+    else:
+        axe_equip_snapshot.rpc_id(id, equip)
+    return true
+
+@rpc("authority", "call_remote", "reliable")
+func axe_equip_snapshot(equipped: bool) -> void:
+    if live_ui != null:
+        live_ui.set_equipped_axe(equipped)
 
 func _try_build() -> void:
     if own_id == 0 or not players.has(own_id):
@@ -1485,7 +1523,8 @@ func _gather_on_server(player_id: int, resource_id: int) -> bool:
     var kind: String = entry["kind"]
     if kind not in ["wood","stone","herb"]:
         return false
-    var chop_amount := 2 if kind == "wood" and int(player_inventories.get(player_id,{}).get("axe",0))>0 else 1
+    var has_equipped_axe: bool = bool(equipped_axes.get(player_id, false)) and int(player_inventories.get(player_id, {}).get("axe", 0)) == 1
+    var chop_amount := 2 if kind == "wood" and has_equipped_axe else 1
     chop_amount = mini(chop_amount, int(resource_remaining[resource_id]))
     resource_remaining[resource_id] = int(resource_remaining[resource_id])-chop_amount
     world.set_resource_quantity(resource_id,int(resource_remaining[resource_id]))
@@ -1547,6 +1586,8 @@ func inventory_snapshot(inventory: Dictionary) -> void:
     player_inventories[own_id] = validated
     if live_ui != null:
         live_ui.set_inventory(validated)
+        if int(validated.get("axe", 0)) == 0:
+            live_ui.set_equipped_axe(false)
     _refresh_gather_hud()
 
 @rpc("authority", "call_remote", "reliable")

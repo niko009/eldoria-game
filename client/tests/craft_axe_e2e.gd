@@ -47,6 +47,12 @@ func _run() -> void:
     if game._craft_axe_on_server(id):
         _fail("duplicate stone axe crafted")
         return
+    if game.equipped_axes.get(id, false):
+        _fail("axe auto-equipped before player selected it")
+        return
+    if not game._set_axe_equipped_on_server(id, true):
+        _fail("owned axe cannot be equipped")
+        return
     # Upgraded axe must gather 2 wood in a single server-validated action.
     var wood: Dictionary = {}
     for entry in world.resources:
@@ -64,6 +70,10 @@ func _run() -> void:
         return
     if int(game.resource_remaining[wood["id"]])!=before-2 or int(game.player_inventories[id]["wood"])!=4:
         _fail("axe didn't collect 2 wood per chop")
+        return
+    game._set_axe_equipped_on_server(id, false)
+    if game.equipped_axes.get(id, false):
+        _fail("unequipped axe remained active")
         return
     print("CRAFT AXE INITIAL PASS location/materials, one axe only, two-wood harvesting, saved transaction")
     game._disconnect()

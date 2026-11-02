@@ -75,7 +75,7 @@ func _ready() -> void:
 func refresh() -> void:
 	if state == null or status_panel == null:
 		return
-	status_detail.text = "%s  ·  %s" % [state.selected_avatar.capitalize(), state.connection_status]
+	status_detail.text = "%s · %s · %s" % [state.selected_avatar.capitalize(), "Топор в руках" if state.equipped_axe else "Без топора", state.connection_status]
 	touch_layer.visible = show_touch_controls
 	_layout()
 

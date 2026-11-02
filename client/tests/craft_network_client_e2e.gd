@@ -48,6 +48,23 @@ func _run() -> void:
         if game.live_ui.state.amount("axe") != 1:
             _fail("UI didn't reflect server-authoritative crafted axe")
             return
+        game.live_ui.state.select_item("axe")
+        for i in range(150):
+            await process_frame
+            if game.live_ui.state.equipped_axe:
+                break
+        if not game.live_ui.state.equipped_axe:
+            _fail("authoritative equipment ACK not received")
+            return
+        game.live_ui.state.select_item("wood")
+        for i in range(150):
+            await process_frame
+            if not game.live_ui.state.equipped_axe:
+                break
+        if game.live_ui.state.equipped_axe:
+            _fail("unequip ACK missing")
+            return
+        game.live_ui.state.select_item("axe")
         game.request_craft_axe.rpc_id(1)
         for i in range(120):
             await process_frame
@@ -59,6 +76,7 @@ func _run() -> void:
         for i in range(310):
             await process_frame
     else:
+        game.request_equip_axe.rpc_id(1, true) # cannot equip an axe not owned
         game.request_craft_axe.rpc_id(1) # no resources
         for i in range(320):
             await process_frame
@@ -66,6 +84,9 @@ func _run() -> void:
                 break
         if not game.info.text.contains("Need 2 wood") or game.player_inventories[game.own_id].get("axe", 0) != 0:
             _fail("unfunded remote request wasn't rejected: " + game.info.text + " at " + str(game.players[game.own_id].position))
+            return
+        if game.live_ui.state.equipped_axe:
+            _fail("nonowner was allowed to equip")
             return
         # Keep observer present until the host compares both player inventories.
         for i in range(550):

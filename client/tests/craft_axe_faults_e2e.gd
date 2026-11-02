@@ -47,6 +47,9 @@ func _run() -> void:
     if int(game.player_inventories[id].get("axe", 0)) != 1:
         _fail("axe missing after successful retry")
         return
+    if not game._set_axe_equipped_on_server(id, true):
+        _fail("owned axe not equipable")
+        return
     var resource: Dictionary
     for entry in world.resources:
         if entry["kind"] == "wood" and int(game.resource_remaining.get(entry["id"], 0)) >= 2:
@@ -83,6 +86,10 @@ func _run() -> void:
         return
     if game._craft_axe_on_server(id):
         _fail("a duplicate axe was allowed")
+        return
+    game._set_axe_equipped_on_server(id, false)
+    if game.equipped_axes.get(id, false):
+        _fail("unequip failed")
         return
     print("CRAFT AXE FAULTS PASS failed craft/harvest rollback, retry, last wood clamp, no duplicates")
     game._disconnect()

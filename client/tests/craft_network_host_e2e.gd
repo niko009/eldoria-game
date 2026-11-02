@@ -46,6 +46,12 @@ func _run() -> void:
     if game.player_inventories.get(observer, {}) != game._empty_inventory():
         _fail("unauthorized second player's inventory mutated")
         return
+    if game.equipped_axes.get(observer, false):
+        _fail("unowned axe was equipped on server")
+        return
+    if not game.equipped_axes.get(crafter, false):
+        _fail("server never authorized crafter equipment")
+        return
     print("CRAFT NETWORK SERVER PASS authoritative debit, duplicate guard, isolation")
     quit(0)
 func _fail(message: String) -> void:

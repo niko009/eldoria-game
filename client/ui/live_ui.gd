@@ -5,6 +5,7 @@ extends Control
 signal action_requested(action: String)
 signal build_requested(kind: String)
 signal craft_requested
+signal equip_requested(equip: bool)
 signal preview_requested(kind: String)
 signal joystick_moved(direction: Vector2)
 
@@ -35,6 +36,7 @@ func _ready() -> void:
     state.near_campfire = false
     state.connection_status = "Подключение..."
     state.selected_avatar = "knight"
+    state.request_select_item.connect(_selected_item)
     resized.connect(_layout)
 
     hud = HudScene.instantiate()
@@ -103,7 +105,21 @@ func set_inventory(inventory: Dictionary) -> void:
     if state.inventory == validated:
         return
     state.inventory = validated
+    if int(validated.get("axe", 0)) == 0:
+        state.equipped_axe = false
     state.changed.emit()
+
+func set_equipped_axe(equipped: bool) -> void:
+    if state == null:
+        return
+    var value := equipped and state.amount("axe") > 0
+    if state.equipped_axe != value:
+        state.equipped_axe = value
+        state.changed.emit()
+
+func _selected_item(item_id: String) -> void:
+    # UI state is visual only: the actual equipment is acknowledged by server.
+    equip_requested.emit(item_id == "axe")
 
 func set_near_campfire(near: bool) -> void:
     if state != null and state.near_campfire != near:

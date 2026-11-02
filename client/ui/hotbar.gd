@@ -28,7 +28,9 @@ func refresh() -> void:
 		var item_id: String = SLOTS[index]
 		var item: Dictionary = State.ITEMS[item_id]
 		var slot := Button.new()
-		slot.text = "%s\n%d" % [item["symbol"], state.amount(item_id)]
+		slot.text = "%s%s\n%d" % [item["symbol"], " ✓" if item_id == "axe" and state.equipped_axe else "", state.amount(item_id)]
+		if item_id == "axe":
+			slot.disabled = state.amount("axe") == 0
 		slot.tooltip_text = "%d · %s" % [index + 1, item["name"]]
 		slot.custom_minimum_size = Vector2(58, 58)
 		Style.button(slot, state.selected_item == item_id)
