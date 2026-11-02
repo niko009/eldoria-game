@@ -10,13 +10,26 @@ const DISPLAY_SCRIPT := preload("res://display_settings.gd")
 const GRAPHICS_SCRIPT := preload("res://graphics_profile.gd")
 const FOREST_SCRIPT := preload("res://forest_world.gd")
 const ACTOR_SCRIPT := preload("res://animated_actor.gd")
+const AVATAR_PROFILE := preload("res://avatar_profile.gd")
+const JUMP_MOTION := preload("res://jump_motion.gd")
 const UPDATE_SCRIPT := preload("res://update_manager.gd")
 const MOVE_SPEED := 6.0
 const CLIENT_VERSION := "0.4.1"
+# Development protocol differs from published 0.4.1: never auto-join production.
+# Toggle to false and bump CLIENT_VERSION only when a release is approved.
+const DEVELOPMENT_BUILD := true
 const SERVER_CONFIG_URL := "https://bacus.dev/projects/eldoria/server.json"
 
 var peer: MultiplayerPeer = ENetMultiplayerPeer.new()
 var players := {}
+var player_choices := {}
+var resource_remaining := {}
+var player_inventories := {}
+var last_gather_at := {}
+var inventory_label: Label
+var resource_label: Label
+var selected_avatar := 0
+var avatar_selector: OptionButton
 var emote_counts := {}
 var own_id := 0
 var is_dedicated := false
@@ -30,6 +43,9 @@ var send_accumulator := 0.0
 var fps_label: Label
 var fps_accumulator := 0.0
 var sprint_active := false
+var client_jump_start_msec := 0
+var jump_request_msec := 0
+var server_jump_times := {}
 var last_remote_ticks := {}
 var camera: Camera3D
 var info: Label
@@ -56,8 +72,11 @@ func _ready() -> void:
     multiplayer.server_disconnected.connect(_server_disconnected)
     graphics_quality = GRAPHICS_SCRIPT.default_quality(is_dedicated)
     _world()
+    _reset_resources()
     GRAPHICS_SCRIPT.apply(graphics_quality, sunlight, foliage)
     get_node("Eldoria_Forest").apply_detail_quality(graphics_quality == GRAPHICS_SCRIPT.HIGH)
+    if not is_dedicated:
+        selected_avatar = AVATAR_PROFILE.read_choice()
     input_driver = INPUT_SCRIPT.new()
     add_child(input_driver)
     if not is_dedicated:
@@ -66,7 +85,10 @@ func _ready() -> void:
         # Exported Windows/Android builds discover the server automatically.
         # SceneTree test harnesses supply CLI user args and trigger discovery explicitly.
         if OS.get_cmdline_user_args().is_empty():
-            _fetch_server_config()
+            if DEVELOPMENT_BUILD:
+                _status("DEV build — localhost only; production remains v0.4.1.")
+            else:
+                _fetch_server_config()
     else:
         # A separate headless Godot process can host the exact same world.
         _host()
@@ -98,6 +120,17 @@ func _ui() -> void:
     var title := Label.new()
     title.text = "ELDORIA / CROSS-PLATFORM PRE-ALPHA"
     panel.add_child(title)
+    var avatar_row := HBoxContainer.new()
+    panel.add_child(avatar_row)
+    var avatar_title := Label.new()
+    avatar_title.text = "Hero:"
+    avatar_row.add_child(avatar_title)
+    avatar_selector = OptionButton.new()
+    for title_text in AVATAR_PROFILE.LABELS:
+        avatar_selector.add_item(title_text)
+    avatar_selector.select(selected_avatar)
+    avatar_selector.item_selected.connect(_choose_avatar)
+    avatar_row.add_child(avatar_selector)
     # Hidden compatibility entry retained for legacy E2E and developer use.
     # Exported players never have to type a server address.
     ip_input = LineEdit.new()
@@ -105,13 +138,28 @@ func _ui() -> void:
     ip_input.visible = false
     panel.add_child(ip_input)
     var connect_button := Button.new()
-    connect_button.text = "Connect / Retry"
-    connect_button.pressed.connect(_fetch_server_config)
+    connect_button.text = "Join localhost (DEV)" if DEVELOPMENT_BUILD else "Connect / Retry"
+    connect_button.pressed.connect(_join if DEVELOPMENT_BUILD else _fetch_server_config)
+    if DEVELOPMENT_BUILD:
+        var host_button := Button.new()
+        host_button.text = "Host test world (DEV)"
+        host_button.pressed.connect(_host)
+        panel.add_child(host_button)
     panel.add_child(connect_button)
     var disconnect := Button.new()
     disconnect.text = "Disconnect"
     disconnect.pressed.connect(_disconnect)
     panel.add_child(disconnect)
+    var gather_button := Button.new()
+    gather_button.text = "Gather (F)"
+    gather_button.pressed.connect(_try_gather)
+    panel.add_child(gather_button)
+    inventory_label = Label.new()
+    inventory_label.text = "Wood: 0 | Stone: 0 | Herbs: 0"
+    panel.add_child(inventory_label)
+    resource_label = Label.new()
+    resource_label.text = "Near: none"
+    panel.add_child(resource_label)
     var emote := Button.new()
     emote.text = "Wave (E)"
     emote.pressed.connect(_interact)
@@ -179,6 +227,28 @@ func _ui() -> void:
     )
     player_ui.add_child(sprint_button)
 
+    var gather_mobile := Button.new()
+    gather_mobile.text = "Gather"
+    gather_mobile.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+    gather_mobile.offset_left = -340
+    gather_mobile.offset_top = -164
+    gather_mobile.offset_right = -210
+    gather_mobile.offset_bottom = -100
+    gather_mobile.visible = OS.get_name() == "Android"
+    gather_mobile.pressed.connect(_try_gather)
+    player_ui.add_child(gather_mobile)
+
+    var jump_button := Button.new()
+    jump_button.text = "Jump"
+    jump_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+    jump_button.offset_left = -340
+    jump_button.offset_top = -88
+    jump_button.offset_right = -210
+    jump_button.offset_bottom = -24
+    jump_button.visible = OS.get_name() == "Android"
+    jump_button.pressed.connect(_try_jump)
+    player_ui.add_child(jump_button)
+
     var touch_emote := Button.new()
     touch_emote.text = "Wave"
     touch_emote.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
@@ -214,7 +284,7 @@ func _init_updater() -> void:
     add_child(updater)
     updater.update_available.connect(_on_update_available)
     updater.update_status.connect(_on_update_status)
-    if OS.get_cmdline_user_args().is_empty():
+    if OS.get_cmdline_user_args().is_empty() and not DEVELOPMENT_BUILD:
         updater.check_for_updates()
 
 func _on_update_available(version: String, notes: String) -> void:
@@ -248,11 +318,12 @@ func _host() -> void:
             _status("Cannot host UDP 7777")
             return
     multiplayer.multiplayer_peer = peer
+    _reset_resources()
     if is_dedicated:
         print("ELDORIA DEDICATED SERVER READY %s" % ("WS TCP 7788" if is_websocket_host else "UDP 7777"))
         return
     own_id = multiplayer.get_unique_id()
-    _spawn(own_id, Vector3(0, 1, 0))
+    _spawn(own_id, Vector3(0, 1, 0), selected_avatar)
     _status("Hosting UDP 7777, ID %s" % own_id)
 
 func _join() -> void:
@@ -291,6 +362,9 @@ func _fetch_server_config() -> void:
     var test_endpoint := OS.get_environment("ELDORIA_CONFIG_URL")
     if not test_endpoint.is_empty():
         endpoint = test_endpoint
+    if DEVELOPMENT_BUILD and endpoint == SERVER_CONFIG_URL:
+        _status("DEV protocol: production matchmaking disabled.")
+        return
     config_request.cancel_request()
     _status("Finding Eldoria server...")
     var result := config_request.request(endpoint, ["Cache-Control: no-cache"])
@@ -356,7 +430,7 @@ func _is_valid_host_name(value: String) -> bool:
 
 func _connected() -> void:
     own_id = multiplayer.get_unique_id()
-    request_spawn.rpc_id(1)
+    request_spawn.rpc_id(1, selected_avatar)
     _status("Connected, ID %s" % own_id)
 
 func _on_join(id: int) -> void:
@@ -371,8 +445,8 @@ func _on_join(id: int) -> void:
 func _on_leave(id: int) -> void:
     connected_peers.erase(id)
     _remove_actor(id)
-    if multiplayer.is_server():
-        despawn_remote.rpc(id)
+    # SceneMultiplayer propagates peer_disconnected to all clients already.
+    # No extra RPC: a peer may have closed its ENet channel during this signal.
 
 @rpc("authority", "call_remote", "reliable")
 func despawn_remote(id: int) -> void:
@@ -383,7 +457,11 @@ func _remove_actor(id: int) -> void:
         players[id].queue_free()
         players.erase(id)
     emote_counts.erase(id)
+    player_choices.erase(id)
+    player_inventories.erase(id)
+    last_gather_at.erase(id)
     last_remote_ticks.erase(id)
+    server_jump_times.erase(id)
 
 func _clear_session() -> void:
     own_id = 0
@@ -391,6 +469,12 @@ func _clear_session() -> void:
     send_accumulator = 0.0
     connected_peers.clear()
     last_remote_ticks.clear()
+    player_choices.clear()
+    player_inventories.clear()
+    last_gather_at.clear()
+    server_jump_times.clear()
+    client_jump_start_msec = 0
+    jump_request_msec = 0
     if input_driver != null:
         input_driver.clear_touch()
     multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
@@ -417,30 +501,76 @@ func _status(message: String) -> void:
         info.text = message
 
 @rpc("any_peer", "reliable")
-func request_spawn() -> void:
+func request_spawn(choice: int = 0) -> void:
     if not multiplayer.is_server():
         return
     var id := multiplayer.get_remote_sender_id()
-    for existing in players:
-        spawn_remote.rpc_id(id, existing, players[existing].position)
-    var pos := Vector3(float(players.size() * 3), 1, 0)
-    _spawn(id, pos)
-    spawn_remote.rpc(id, pos)
-
-@rpc("authority", "call_remote", "reliable")
-func spawn_remote(id: int, pos: Vector3) -> void:
-    _spawn(id, pos)
-
-func _spawn(id: int, pos: Vector3) -> void:
     if players.has(id):
         return
+    var validated: int = AVATAR_PROFILE.normalized(choice)
+    for existing in players:
+        spawn_remote.rpc_id(id, existing, players[existing].position, int(player_choices.get(existing, 0)))
+    var pos := Vector3(float(players.size() * 3), 1, 0)
+    _spawn(id, pos, validated)
+    player_inventories[id] = _empty_inventory()
+    spawn_remote.rpc(id, pos, validated)
+    resource_snapshot.rpc_id(id, resource_remaining)
+    inventory_snapshot.rpc_id(id, player_inventories[id])
+
+@rpc("authority", "call_remote", "reliable")
+func spawn_remote(id: int, pos: Vector3, choice: int = 0) -> void:
+    _spawn(id, pos, choice)
+
+func _spawn(id: int, pos: Vector3, choice: int = -1) -> void:
+    if players.has(id):
+        return
+    var valid_choice: int = choice if AVATAR_PROFILE.valid(choice) else posmod(id, AVATAR_PROFILE.NAMES.size())
     var actor := ACTOR_SCRIPT.new()
-    actor.configure(id, is_dedicated)
+    actor.configure(id, is_dedicated, valid_choice)
     actor.name = "Player_%s" % id
     actor.position = pos
     add_child(actor)
     players[id] = actor
+    player_choices[id] = valid_choice
     emote_counts[id] = 0
+
+func _choose_avatar(choice: int) -> void:
+    if not AVATAR_PROFILE.valid(choice):
+        return
+    selected_avatar = choice
+    if AVATAR_PROFILE.save_choice(choice) != OK:
+        _status("Could not save avatar preference.")
+    if own_id == 0:
+        return
+    if multiplayer.is_server():
+        _set_avatar_for_peer(own_id, choice)
+        for remote_peer in connected_peers.keys():
+            avatar_changed.rpc_id(int(remote_peer), own_id, choice)
+    else:
+        request_avatar_change.rpc_id(1, choice)
+
+@rpc("any_peer", "reliable")
+func request_avatar_change(choice: int) -> void:
+    if not multiplayer.is_server() or not AVATAR_PROFILE.valid(choice):
+        return
+    var peer_id := multiplayer.get_remote_sender_id()
+    if not players.has(peer_id):
+        return
+    _set_avatar_for_peer(peer_id, choice)
+    avatar_changed.rpc(peer_id, choice)
+
+@rpc("authority", "call_remote", "reliable")
+func avatar_changed(id: int, choice: int) -> void:
+    _set_avatar_for_peer(id, choice)
+
+func _set_avatar_for_peer(id: int, choice: int) -> void:
+    if not players.has(id) or not AVATAR_PROFILE.valid(choice):
+        return
+    player_choices[id] = choice
+    players[id].set_avatar(choice)
+    if id == own_id and avatar_selector != null:
+        avatar_selector.select(choice)
+
 
 func _physics_process(delta: float) -> void:
     if is_dedicated or own_id == 0 or not players.has(own_id):
@@ -454,12 +584,20 @@ func _physics_process(delta: float) -> void:
     var world: Node3D = get_node("Eldoria_Forest")
     var before: Vector3 = players[own_id].position
     var after: Vector3 = world.move_actor(before, delta_pos)
+    if client_jump_start_msec > 0:
+        var elapsed := float(Time.get_ticks_msec()-client_jump_start_msec)/1000.0
+        if elapsed >= JUMP_MOTION.DURATION:
+            client_jump_start_msec = 0
+            players[own_id].finish_jump()
+        else:
+            after.y += JUMP_MOTION.elevation(elapsed)
     players[own_id].position = after
     players[own_id].set_motion((after-before)/maxf(delta,0.001),fast)
     var focus: Vector3 = players[own_id].position + Vector3(0, 1.6, 0)
     var offset := Vector3(0, -sin(input_driver.pitch) * 13.0, cos(input_driver.pitch) * 13.0)
     var target: Vector3 = focus + offset.rotated(Vector3.UP, input_driver.yaw)
-    camera.position = camera.position.lerp(target, minf(1.0, delta * 7.0))
+    var smoothed: Vector3 = camera.position.lerp(target, minf(1.0, delta * 7.0))
+    camera.position = world.camera_safe_target(focus, smoothed)
     camera.look_at(focus, Vector3.UP)
     send_accumulator += delta
     var at: Vector3 = players[own_id].position
@@ -479,6 +617,7 @@ func _process(delta: float) -> void:
     if fps_accumulator >= 0.65:
         fps_accumulator = 0.0
         fps_label.text = "FPS: %d | %s" % [Engine.get_frames_per_second(), "Low" if graphics_quality == GRAPHICS_SCRIPT.LOW else "High"]
+    _refresh_gather_hud()
 
 @rpc("any_peer", "unreliable")
 func submit_position(pos: Vector3) -> void:
@@ -490,7 +629,14 @@ func submit_position(pos: Vector3) -> void:
     # The same deterministic obstacle layout runs on the dedicated server.
     # Reject tunneling across tree trunks/rocks and impossible terrain height.
     var world: Node3D = get_node("Eldoria_Forest")
-    if not world.valid_remote_step(players[id].position,pos):
+    var allowed_jump := 0.0
+    if server_jump_times.has(id):
+        var elapsed: float = float(Time.get_ticks_msec()-int(server_jump_times[id]))/1000.0
+        if elapsed < JUMP_MOTION.DURATION + 0.25:
+            allowed_jump = JUMP_MOTION.elevation(elapsed)
+        else:
+            server_jump_times.erase(id)
+    if not world.valid_remote_step(players[id].position,pos,0.43,allowed_jump):
         correct_own_position.rpc_id(id,players[id].position)
         return
     var before: Vector3 = players[id].position
@@ -520,6 +666,180 @@ func _note_remote_motion(id: int, before: Vector3, after: Vector3) -> void:
     last_remote_ticks[id] = now
     var elapsed := maxf(0.02,float(now-prev)/1000.0)
     players[id].set_motion((after-before)/elapsed)
+    if players[id].airborne and int(Time.get_ticks_msec()-int(players[id].get_meta("jump_start_msec",0))) > int(JUMP_MOTION.DURATION*1000.0):
+        players[id].finish_jump()
+
+
+# The server owns resource quantities and player inventories.
+# This is an in-memory prototype; a permanent world will require persistence.
+func _empty_inventory() -> Dictionary:
+    return {"wood":0, "stone":0, "herb":0}
+
+func _reset_resources() -> void:
+    resource_remaining.clear()
+    var world: Node3D = get_node("Eldoria_Forest")
+    for entry in world.resources:
+        resource_remaining[int(entry["id"])] = int(entry["amount"])
+        world.set_resource_quantity(int(entry["id"]),int(entry["amount"]))
+
+func _try_gather() -> void:
+    if own_id == 0 or not players.has(own_id):
+        return
+    var world: Node3D = get_node("Eldoria_Forest")
+    var target: int = world.nearest_resource(players[own_id].position, 2.7, resource_remaining)
+    if target < 0:
+        _status("No resource in range. Approach a tree, rock or flower.")
+        return
+    if multiplayer.is_server():
+        _gather_on_server(own_id, target)
+    else:
+        request_gather.rpc_id(1,target)
+
+@rpc("any_peer", "reliable")
+func request_gather(resource_id: int) -> void:
+    if not multiplayer.is_server():
+        return
+    _gather_on_server(multiplayer.get_remote_sender_id(),resource_id)
+
+func _gather_on_server(player_id: int, resource_id: int) -> bool:
+    if not multiplayer.is_server() or not players.has(player_id):
+        return false
+    var world: Node3D = get_node("Eldoria_Forest")
+    var entry: Dictionary = world.resource_by_id(resource_id)
+    if entry.is_empty() or int(resource_remaining.get(resource_id,0)) <= 0:
+        return false
+    var pos: Vector3 = players[player_id].position
+    var spot: Vector3 = entry["pos"]
+    if Vector2(pos.x,pos.z).distance_squared_to(Vector2(spot.x,spot.z)) > 2.7*2.7:
+        return false
+    if absf(pos.y - spot.y) > 4.0:
+        return false
+    var now := Time.get_ticks_msec()
+    if last_gather_at.has(player_id) and now-int(last_gather_at[player_id]) < 280:
+        return false
+    last_gather_at[player_id] = now
+    var kind: String = entry["kind"]
+    if kind not in ["wood","stone","herb"]:
+        return false
+    resource_remaining[resource_id] = int(resource_remaining[resource_id])-1
+    world.set_resource_quantity(resource_id,int(resource_remaining[resource_id]))
+    if not player_inventories.has(player_id):
+        player_inventories[player_id] = _empty_inventory()
+    var inventory: Dictionary = player_inventories[player_id]
+    inventory[kind] = int(inventory.get(kind,0))+1
+    player_inventories[player_id] = inventory
+    for remote_peer in connected_peers.keys():
+        resource_changed.rpc_id(int(remote_peer),resource_id,int(resource_remaining[resource_id]))
+    if own_id == player_id:
+        inventory_snapshot(inventory)
+    else:
+        inventory_snapshot.rpc_id(player_id,inventory)
+    for remote_peer in connected_peers.keys():
+        gather_effect.rpc_id(int(remote_peer),player_id,kind)
+    if own_id == player_id:
+        _gather_effect_local(player_id,kind)
+    return true
+
+@rpc("authority", "call_remote", "reliable")
+func resource_snapshot(snapshot: Dictionary) -> void:
+    var world: Node3D = get_node("Eldoria_Forest")
+    for id in snapshot.keys():
+        var number := int(id)
+        if not world.resource_by_id(number).is_empty():
+            resource_remaining[number] = maxi(0,int(snapshot[id]))
+            world.set_resource_quantity(number,int(resource_remaining[number]))
+
+@rpc("authority", "call_remote", "reliable")
+func resource_changed(resource_id: int, amount: int) -> void:
+    var world: Node3D = get_node("Eldoria_Forest")
+    if not world.resource_by_id(resource_id).is_empty():
+        resource_remaining[resource_id] = maxi(0,amount)
+        world.set_resource_quantity(resource_id,int(resource_remaining[resource_id]))
+
+@rpc("authority", "call_remote", "reliable")
+func inventory_snapshot(inventory: Dictionary) -> void:
+    if own_id == 0 or not players.has(own_id):
+        return
+    var validated := _empty_inventory()
+    for kind in validated.keys():
+        validated[kind] = clampi(int(inventory.get(kind,0)),0,1000000)
+    player_inventories[own_id] = validated
+    _refresh_gather_hud()
+
+@rpc("authority", "call_remote", "reliable")
+func gather_effect(player_id: int, kind: String) -> void:
+    _gather_effect_local(player_id,kind)
+
+func _gather_effect_local(player_id: int, kind: String) -> void:
+    if players.has(player_id):
+        players[player_id].gather()
+    if player_id == own_id:
+        _status("Collected %s" % kind)
+
+func _refresh_gather_hud() -> void:
+    if inventory_label == null or resource_label == null:
+        return
+    var inv: Dictionary = player_inventories.get(own_id,_empty_inventory())
+    inventory_label.text = "Wood: %d | Stone: %d | Herbs: %d" % [int(inv.get("wood",0)),int(inv.get("stone",0)),int(inv.get("herb",0))]
+    if own_id == 0 or not players.has(own_id):
+        resource_label.text = "Near: none"
+        return
+    var world: Node3D = get_node("Eldoria_Forest")
+    var resource_id: int = world.nearest_resource(players[own_id].position,2.7,resource_remaining)
+    if resource_id < 0:
+        resource_label.text = "Near: none"
+    else:
+        var entry: Dictionary = world.resource_by_id(resource_id)
+        resource_label.text = "Nearby: %s (%d left) — F / Gather" % [String(entry["kind"]),int(resource_remaining.get(resource_id,0))]
+
+func _try_jump() -> void:
+    if own_id == 0 or not players.has(own_id):
+        return
+    var now := Time.get_ticks_msec()
+    if jump_request_msec > 0 and now - jump_request_msec < JUMP_MOTION.COOLDOWN_MSEC:
+        return
+    if client_jump_start_msec != 0:
+        return
+    jump_request_msec = now
+    if multiplayer.is_server():
+        _accept_jump(own_id)
+    else:
+        request_jump.rpc_id(1)
+
+@rpc("any_peer", "reliable")
+func request_jump() -> void:
+    if not multiplayer.is_server():
+        return
+    _accept_jump(multiplayer.get_remote_sender_id())
+
+func _accept_jump(id: int) -> void:
+    if not players.has(id):
+        return
+    var now := Time.get_ticks_msec()
+    if server_jump_times.has(id) and now-int(server_jump_times[id]) < JUMP_MOTION.COOLDOWN_MSEC:
+        return
+    var world: Node3D = get_node("Eldoria_Forest")
+    var pos: Vector3 = players[id].position
+    if absf(pos.y-world.height_at(pos.x,pos.z)-1.0) > 0.22:
+        return
+    server_jump_times[id] = now
+    if id == own_id:
+        _jump_started_local(id)
+    for remote_peer in connected_peers.keys():
+        jump_started.rpc_id(int(remote_peer),id)
+
+@rpc("authority", "call_remote", "reliable")
+func jump_started(id: int) -> void:
+    _jump_started_local(id)
+
+func _jump_started_local(id: int) -> void:
+    if not players.has(id):
+        return
+    var now := Time.get_ticks_msec()
+    players[id].set_meta("jump_start_msec", now)
+    players[id].start_jump()
+    if id == own_id:
+        client_jump_start_msec = now
 
 func _interact() -> void:
     if own_id == 0 or not players.has(own_id):
@@ -558,6 +878,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
         _toggle_fullscreen()
     elif event.keycode == KEY_E:
         _interact()
+    elif event.keycode == KEY_SPACE:
+        _try_jump()
+    elif event.keycode == KEY_F:
+        _try_gather()
 
 func _toggle_fullscreen() -> void:
     DISPLAY_SCRIPT.toggle_fullscreen()
