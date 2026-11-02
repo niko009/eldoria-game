@@ -14,7 +14,7 @@ func _run() -> void:
     if game.own_id == 0 or not game.players.has(game.own_id):
         _fail("could not join dedicated Godot server")
         return
-    var report := {"version":"0.5.1","platform":"test","quality":"low",
+    var report := {"version":game.CLIENT_VERSION,"platform":"test","quality":"low",
         "fps_avg":47.1,"fps_low_5":24.5,"frame_p95_ms":40.8,
         "memory_mb":240,"rtt_ms":25,"samples":1700}
     game.submit_telemetry.rpc_id(1,report)
