@@ -80,7 +80,9 @@ func set_motion(velocity: Vector3, sprinting: bool = false) -> void:
         return
     last_motion_msec = Time.get_ticks_msec()
     if flat.length_squared() > 0.04:
-        var target_yaw := atan2(-flat.x, -flat.z)
+        # KayKit characters face local +Z, unlike Godot's usual -Z forward.
+        # Rotate their +Z-facing model toward the actual motion vector.
+        var target_yaw := atan2(flat.x, flat.z)
         rotation.y = lerp_angle(rotation.y, target_yaw, 0.24)
     if Time.get_ticks_msec() < emote_until_msec:
         return

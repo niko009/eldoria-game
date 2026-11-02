@@ -40,6 +40,16 @@ func _run() -> void:
         if actor.current_clip != "Running_A":
             _fail("running clip not activated")
             return
+        # KayKit models face +Z in their original pose. Confirm the face follows
+        # actual movement instead of walking backwards on all four axes.
+        for direction in [Vector3.FORWARD, Vector3.BACK, Vector3.LEFT, Vector3.RIGHT]:
+            actor.rotation.y = atan2(direction.x, direction.z) + 0.22
+            for turn in range(10):
+                actor.set_motion(direction * 4.0)
+            var facing: Vector3 = Vector3.BACK.rotated(Vector3.UP, actor.rotation.y)
+            if facing.dot(direction) < 0.99:
+                _fail("character facing away from movement id=%d, dir=%s, facing=%s" % [id,direction,facing])
+                return
         actor.celebrate()
         if actor.current_clip != "Cheer":
             _fail("wave should play Cheer animation")

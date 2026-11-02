@@ -2,7 +2,7 @@
 
 Кроссплатформенная фэнтезийная онлайн-игра с общим постоянным миром, королевствами, автономными NPC, исследованиями, PvP и разрушаемым ландшафтом.
 
-**Статус:** экспериментальный общий Godot 4.5.2 прототип для Windows и Android. Windows ZIP и Android APK v0.4.0 содержат 3 анимированных CC0 персонажа KayKit, 3D-лес Quaternius, физические препятствия и автообновление; общий публичный WSS-сервер запущен, два независимых Godot-клиента проверены через интернет-маршрут. **Физический Windows + Android запуск ещё не проверен.** См. [TASK-003](docs/TASK-003_CROSS_PLATFORM.md).
+**Статус:** экспериментальный общий Godot 4.5.2 прототип для Windows и Android. Windows ZIP и Android APK v0.4.1 содержат 3 анимированных CC0 персонажа KayKit, 3D-лес Quaternius, физические препятствия и автообновление; общий публичный WSS-сервер запущен, два независимых Godot-клиента проверены через интернет-маршрут. **Физический Windows + Android запуск ещё не проверен.** См. [TASK-003](docs/TASK-003_CROSS_PLATFORM.md).
 
 ## Начать здесь
 
@@ -14,11 +14,12 @@
 - [TASK-003 — Windows + Android и выделенный Godot-хост](docs/TASK-003_CROSS_PLATFORM.md) — тесты, команды экспорта и ограничения.
 - [TASK-004 — автоматическое обнаружение игрового сервера](docs/TASK-004_SERVER_DISCOVERY.md) — HTTPS-конфигурация, авто-подключение, тесты и LAN-ограничения.
 - [TASK-005 — публичный мультиплеер](docs/TASK-005_PUBLIC_MULTIPLAYER.md) — WebSocket, Cloudflare, сервер и тесты.
+- [TASK-010 — исправление ориентации v0.4.1](docs/TASK-010_CHARACTER_ORIENTATION.md) — модели больше не ходят спиной вперёд.
 - [TASK-009 — анимированные персонажи v0.4.0](docs/TASK-009_ANIMATED_CHARACTERS.md) — Knight, Rogue, Mage, idle/walk/run/cheer, сетевые тесты.
 - [TASK-008 — коллизии объектов и оптимизация FPS v0.3.1](docs/TASK-008_COLLISION_FPS.md) — столкновения, пакетная отрисовка и тесты.
 - [TASK-007 — Quaternius CC0 3D-лес v0.3.0](docs/TASK-007_IMPORT_FOREST.md) — реальные модели, лицензии и проверки.
 - [TASK-006 — процедурный 3D лес и автообновления](docs/TASK-006_FOREST_AND_UPDATES.md) — ограничения, обновления и тесты.
-- [Страница проекта](https://bacus.dev/projects/eldoria/) — Windows и Android v0.4.0.
+- [Страница проекта](https://bacus.dev/projects/eldoria/) — Windows и Android v0.4.1.
 
 ## Планируемая структура
 

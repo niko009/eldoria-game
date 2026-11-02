@@ -12,7 +12,7 @@ const FOREST_SCRIPT := preload("res://forest_world.gd")
 const ACTOR_SCRIPT := preload("res://animated_actor.gd")
 const UPDATE_SCRIPT := preload("res://update_manager.gd")
 const MOVE_SPEED := 6.0
-const CLIENT_VERSION := "0.4.0"
+const CLIENT_VERSION := "0.4.1"
 const SERVER_CONFIG_URL := "https://bacus.dev/projects/eldoria/server.json"
 
 var peer: MultiplayerPeer = ENetMultiplayerPeer.new()
