@@ -15,6 +15,9 @@ var batch_transforms: Dictionary = {}
 var batch_nodes: Array[MultiMeshInstance3D] = []
 var obstacle_positions: Array[Vector2] = []
 var obstacle_radii: Array[float] = []
+var resources: Array[Dictionary] = []
+var _batch_nodes_by_key := {}
+var _batch_original_transforms := {}
 var _low_quality := false
 const ASSET_ROOT := "res://assets/nature/"
 const TREE_MODELS := ["CommonTree_1", "CommonTree_2", "CommonTree_3", "Pine_1", "Pine_2", "Pine_3", "TwistedTree_1", "TwistedTree_2"]
@@ -219,13 +222,60 @@ func _spawn_asset(id: String, where: Vector3, scale_value: float, optional: bool
         batch_transforms[group] = []
     var xform := Transform3D(Basis(Vector3.UP, angle).scaled(Vector3.ONE * scale_value), where)
     batch_transforms[group].append(xform)
+    var instance_index: int = batch_transforms[group].size()-1
     if id in TREE_MODELS:
         _add_obstacle(Vector2(where.x, where.z), (0.70 if id.begins_with("Twisted") else 0.57) * scale_value)
+        _record_resource("wood", where, 4)
     elif id in ROCKS:
         _add_obstacle(Vector2(where.x, where.z), 1.06 * scale_value)
+        _record_resource("stone", where, 3)
+    elif id in ["Flower_3_Group", "Bush_Common_Flowers", "Mushroom_Common"]:
+        _record_resource("herb", where, 1, group, instance_index)
     if optional:
         asset_detail_count += 1
     return true
+
+func _record_resource(kind: String, where: Vector3, amount: int, group: String = "", index: int = -1) -> void:
+    resources.append({"id": resources.size()+1, "kind":kind, "pos":where,
+        "amount":amount, "group":group, "index":index})
+
+func set_resource_quantity(resource_id: int, amount: int) -> void:
+    var entry := resource_by_id(resource_id)
+    # Trees and boulders remain solid, even after their resources run out.
+    # Small herbs disappear when harvested.
+    if entry.is_empty() or entry["kind"] != "herb":
+        return
+    var group: String = entry["group"]
+    if not _batch_nodes_by_key.has(group):
+        return
+    var index: int = entry["index"]
+    var batch: MultiMeshInstance3D = _batch_nodes_by_key[group]
+    var original: Transform3D = _batch_original_transforms[group][index]
+    if amount > 0:
+        batch.multimesh.set_instance_transform(index,original)
+    else:
+        batch.multimesh.set_instance_transform(index,
+            Transform3D(Basis().scaled(Vector3.ZERO),original.origin))
+
+func resource_by_id(resource_id: int) -> Dictionary:
+    if resource_id < 1 or resource_id > resources.size():
+        return {}
+    return resources[resource_id-1]
+
+func nearest_resource(position: Vector3, radius: float, remaining: Dictionary) -> int:
+    var best_id := -1
+    var best_distance := radius * radius
+    var from2 := Vector2(position.x,position.z)
+    for resource in resources:
+        var id: int = resource["id"]
+        if int(remaining.get(id,0)) <= 0:
+            continue
+        var pos: Vector3 = resource["pos"]
+        var distance := from2.distance_squared_to(Vector2(pos.x,pos.z))
+        if distance < best_distance and absf(position.y-pos.y) < 5.0:
+            best_distance = distance
+            best_id = id
+    return best_id
 
 func _add_obstacle(pos: Vector2, radius: float) -> void:
     obstacle_positions.append(pos)
@@ -247,8 +297,12 @@ func _flush_batches() -> void:
         multimesh.transform_format = MultiMesh.TRANSFORM_3D
         multimesh.mesh = mesh_node.mesh
         multimesh.instance_count = transforms.size()
+        var originals: Array[Transform3D] = []
         for i in range(transforms.size()):
-            multimesh.set_instance_transform(i, transforms[i] * mesh_node.transform)
+            var original_transform: Transform3D = transforms[i] * mesh_node.transform
+            multimesh.set_instance_transform(i, original_transform)
+            originals.append(original_transform)
+        _batch_original_transforms[key] = originals
         var draw := MultiMeshInstance3D.new()
         draw.name = "Batch_" + String(key).replace("#","_")
         draw.multimesh = multimesh
@@ -259,6 +313,7 @@ func _flush_batches() -> void:
             draw.visibility_range_end = 155.0
         add_child(draw)
         batch_nodes.append(draw)
+        _batch_nodes_by_key[key] = draw
         root_node.free()
 
 func apply_detail_quality(high: bool) -> void:
@@ -311,11 +366,11 @@ func move_actor(current: Vector3, direction: Vector3, radius: float = 0.43) -> V
             flat += step*safe
     return Vector3(flat.x, height_at(flat.x,flat.y)+1.0, flat.y)
 
-func valid_remote_step(current: Vector3, requested: Vector3, radius: float = 0.43) -> bool:
+func valid_remote_step(current: Vector3, requested: Vector3, radius: float = 0.43, allowed_jump_height: float = 0.0) -> bool:
     if current.distance_to(requested) > 4.0:
         return false
     var safe := move_actor(current, requested-current, radius)
-    return Vector2(safe.x,safe.z).distance_to(Vector2(requested.x,requested.z)) < 0.08 and absf(safe.y-requested.y) < 0.17
+    return Vector2(safe.x,safe.z).distance_to(Vector2(requested.x,requested.z)) < 0.08 and absf((requested.y-safe.y)-allowed_jump_height) < (0.7 if allowed_jump_height > 0.001 else 0.17)
 
 func _create_trees() -> void:
     # Keep the playable spawn glade and trail open; foreground forest is now
@@ -368,6 +423,9 @@ func _create_rocks_and_flowers() -> void:
             continue
         var m: String = DETAILS[i%DETAILS.size()]
         _spawn_asset(m,Vector3(x,height_at(x,z)+0.02,z),_rng.randf_range(0.7,1.22),true)
+    # Readily accessible starter herbs make gathering discoverable on spawn.
+    for pos2 in [Vector2(-1.8,1.5),Vector2(1.8,-1.5),Vector2(4.5,1.9)]:
+        _spawn_asset("Flower_3_Group",Vector3(pos2.x,height_at(pos2.x,pos2.y),pos2.y),1.0,true)
 
 func _create_landmark() -> void:
     # A stone waypoint in the starting clearing.
@@ -392,3 +450,47 @@ func _create_landmark() -> void:
     lamp.omni_range = 10.0
     lamp.position = Vector3(7.5,3.6,2)
     add_child(lamp)
+
+# Keep the chase camera in front of solid trunks, boulders and the terrain.
+# This is a deterministic approximation; foliage itself is not a solid object.
+func camera_safe_target(focus: Vector3, requested: Vector3) -> Vector3:
+    var path := requested - focus
+    var desired_length := path.length()
+    if desired_length < 0.01:
+        return requested
+    var limit_t := 1.0
+    var segment2 := Vector2(path.x, path.z)
+    var flat_squared := segment2.length_squared()
+    if flat_squared > 0.0001:
+        var start2 := Vector2(focus.x,focus.z)
+        for i in range(obstacle_positions.size()):
+            var radius: float = obstacle_radii[i] + 0.35
+            var offset: Vector2 = obstacle_positions[i] - start2
+            var dot_t := clampf(offset.dot(segment2) / flat_squared,0.0,1.0)
+            if (start2+segment2*dot_t).distance_squared_to(obstacle_positions[i]) > radius*radius:
+                continue
+            var obstacle_height := 4.0 if obstacle_radii[i] > 1.2 else 12.0
+            var line_height := focus.y + path.y * dot_t
+            var base_height := height_at(obstacle_positions[i].x, obstacle_positions[i].y)
+            if line_height < base_height - 0.5 or line_height > base_height + obstacle_height:
+                continue
+            # Binary search for the first intersection with an obstacle circle.
+            var safe_t := 0.0
+            var unsafe_t := dot_t
+            for j in range(11):
+                var middle := (safe_t + unsafe_t)*0.5
+                if (start2+segment2*middle).distance_squared_to(obstacle_positions[i]) < radius*radius:
+                    unsafe_t = middle
+                else:
+                    safe_t = middle
+            limit_t = minf(limit_t, maxf(0.12,safe_t-0.02))
+    # Even without trees, the line may cut through sloped ground.
+    for sample in range(1,37):
+        var t := float(sample)/36.0
+        if t >= limit_t:
+            break
+        var at := focus + path*t
+        if at.y < height_at(at.x,at.z)+0.35:
+            limit_t = maxf(0.12,t-0.035)
+            break
+    return focus + path*limit_t
