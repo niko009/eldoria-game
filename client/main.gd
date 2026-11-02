@@ -9,6 +9,7 @@ const INPUT_SCRIPT := preload("res://platform_input.gd")
 const JOYSTICK_SCRIPT := preload("res://mobile_joystick.gd")
 const WORLD_SAVE_SCRIPT := preload("res://world_save.gd")
 const POSTGRES_WORLD_STORE_SCRIPT := preload("res://postgres_world_store.gd")
+const BUILDING_SCRIPT := preload("res://building_object.gd")
 const DISPLAY_SCRIPT := preload("res://display_settings.gd")
 const GRAPHICS_SCRIPT := preload("res://graphics_profile.gd")
 const FOREST_SCRIPT := preload("res://forest_world.gd")
@@ -17,10 +18,9 @@ const AVATAR_PROFILE := preload("res://avatar_profile.gd")
 const JUMP_MOTION := preload("res://jump_motion.gd")
 const UPDATE_SCRIPT := preload("res://update_manager.gd")
 const MOVE_SPEED := 6.0
-const CLIENT_VERSION := "0.4.1"
-# Development protocol differs from published 0.4.1: never auto-join production.
-# Toggle to false and bump CLIENT_VERSION only when a release is approved.
-const DEVELOPMENT_BUILD := true
+const CLIENT_VERSION := "0.5.0"
+# Published v0.5.0 multiplayer client. Development builds may toggle this to true.
+const DEVELOPMENT_BUILD := false
 const SERVER_CONFIG_URL := "https://bacus.dev/projects/eldoria/server.json"
 
 var peer: MultiplayerPeer = ENetMultiplayerPeer.new()
@@ -31,6 +31,10 @@ var player_inventories := {}
 var player_identity_keys := {}
 var persistent_profiles := {}
 var world_store: RefCounted
+var placed_buildings: Dictionary = {}
+var building_nodes: Dictionary = {}
+var next_building_id := 1
+var build_selector: OptionButton
 var last_gather_at := {}
 var inventory_label: Label
 var resource_label: Label
@@ -92,7 +96,7 @@ func _ready() -> void:
         # SceneTree test harnesses supply CLI user args and trigger discovery explicitly.
         if OS.get_cmdline_user_args().is_empty():
             if DEVELOPMENT_BUILD:
-                _status("DEV build — localhost only; production remains v0.4.1.")
+                _status("DEV build — localhost only; production remains v0.5.0.")
             else:
                 _fetch_server_config()
     else:
@@ -161,6 +165,16 @@ func _ui() -> void:
     gather_button.text = "Gather (F)"
     gather_button.pressed.connect(_try_gather)
     panel.add_child(gather_button)
+    var build_row := HBoxContainer.new()
+    panel.add_child(build_row)
+    build_selector = OptionButton.new()
+    build_selector.add_item("Campfire (3 wood, 2 stone)")
+    build_selector.add_item("Tent (5 wood, 2 herbs)")
+    build_row.add_child(build_selector)
+    var build_button := Button.new()
+    build_button.text = "Build (B)"
+    build_button.pressed.connect(_try_build)
+    build_row.add_child(build_button)
     inventory_label = Label.new()
     inventory_label.text = "Wood: 0 | Stone: 0 | Herbs: 0"
     panel.add_child(inventory_label)
@@ -238,6 +252,16 @@ func _ui() -> void:
     gather_mobile.pressed.connect(_try_gather)
     player_ui.add_child(gather_mobile)
 
+    var build_mobile := Button.new()
+    build_mobile.text = "Build"
+    build_mobile.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+    build_mobile.offset_left = -340
+    build_mobile.offset_top = -240
+    build_mobile.offset_right = -210
+    build_mobile.offset_bottom = -177
+    build_mobile.visible = OS.get_name() == "Android"
+    build_mobile.pressed.connect(_try_build)
+    player_ui.add_child(build_mobile)
     var jump_button := Button.new()
     jump_button.text = "Jump"
     jump_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
@@ -313,7 +337,11 @@ func _configure_world_persistence() -> bool:
         return true
     if not api_url.is_empty():
         world_store = POSTGRES_WORLD_STORE_SCRIPT.new()
-        if not world_store.configure(api_url, OS.get_environment("ELDORIA_PG_API_KEY")):
+        var internal_key := OS.get_environment("ELDORIA_PG_API_KEY")
+        var internal_key_file := OS.get_environment("ELDORIA_PG_API_KEY_FILE")
+        if internal_key.is_empty() and not internal_key_file.is_empty():
+            internal_key = FileAccess.get_file_as_string(internal_key_file).strip_edges()
+        if not world_store.configure(api_url, internal_key):
             push_error("Invalid PostgreSQL persistence endpoint: "+world_store.last_error)
             return false
     else:
@@ -326,6 +354,7 @@ func _configure_world_persistence() -> bool:
         push_error("Cannot load Eldoria save: "+world_store.last_error)
         return false
     persistent_profiles = world_store.profiles.duplicate(true)
+    _load_buildings(world_store.buildings)
     for id in world_store.depleted.keys():
         resource_remaining[int(id)] = int(world_store.depleted[id])
         world.set_resource_quantity(int(id),int(resource_remaining[int(id)]))
@@ -336,6 +365,7 @@ func _save_world_state() -> bool:
     if world_store == null:
         return true
     world_store.profiles = persistent_profiles.duplicate(true)
+    world_store.buildings = placed_buildings.duplicate(true)
     var world: Node3D = get_node("Eldoria_Forest")
     if not world_store.save_snapshot(resource_remaining,world):
         push_error("ELDORIA PERSISTENCE SAVE ERROR: "+world_store.last_error)
@@ -524,6 +554,7 @@ func _clear_session() -> void:
     connected_peers.clear()
     last_remote_ticks.clear()
     player_choices.clear()
+    _clear_buildings()
     player_inventories.clear()
     player_identity_keys.clear()
     last_gather_at.clear()
@@ -595,6 +626,7 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
     spawn_remote.rpc(id, pos, validated)
     resource_snapshot.rpc_id(id, resource_remaining)
     inventory_snapshot.rpc_id(id, player_inventories[id])
+    building_snapshot.rpc_id(id, placed_buildings)
 
 @rpc("authority", "call_remote", "reliable")
 func spawn_remote(id: int, pos: Vector3, choice: int = 0) -> void:
@@ -776,6 +808,137 @@ func _reset_resources() -> void:
     for entry in world.resources:
         resource_remaining[int(entry["id"])] = int(entry["amount"])
         world.set_resource_quantity(int(entry["id"]),int(entry["amount"]))
+
+
+# Authoritative building: the client proposes a point, but server validates
+# cost, distance, world bounds, terrain gradient and solid intersections.
+func _try_build() -> void:
+    if own_id == 0 or not players.has(own_id):
+        return
+    var kind: String = "tent" if build_selector != null and build_selector.selected == 1 else "campfire"
+    var origin: Vector3 = players[own_id].position
+    var ahead := Vector3(0,0,-3.5).rotated(Vector3.UP,input_driver.yaw)
+    var target := Vector3(origin.x+ahead.x,0,origin.z+ahead.z)
+    target.y = get_node("Eldoria_Forest").height_at(target.x,target.z)
+    if multiplayer.is_server():
+        _build_on_server(own_id,kind,target)
+    else:
+        request_build.rpc_id(1,kind,target)
+
+@rpc("any_peer", "reliable")
+func request_build(kind: String, spot: Vector3) -> void:
+    if not multiplayer.is_server():
+        return
+    _build_on_server(multiplayer.get_remote_sender_id(),kind,spot)
+
+func _is_valid_build_spot(kind: String, spot: Vector3, actor_pos: Vector3) -> bool:
+    if not BUILDING_SCRIPT.is_valid_kind(kind):
+        return false
+    if not is_finite(spot.x) or not is_finite(spot.y) or not is_finite(spot.z):
+        return false
+    var flat := Vector2(spot.x,spot.z)
+    var distance := flat.distance_to(Vector2(actor_pos.x,actor_pos.z))
+    if distance < 2.1 or distance > 6.5 or flat.length() > 75.0:
+        return false
+    var world: Node3D = get_node("Eldoria_Forest")
+    if absf(spot.y-world.height_at(spot.x,spot.z)) > 0.14:
+        return false
+    var radius: float = BUILDING_SCRIPT.RADII[kind]
+    if world.collides_at(flat,radius+0.45):
+        return false
+    for other in placed_buildings.values():
+        var existing := Vector2(float(other["x"]),float(other["z"]))
+        if existing.distance_to(flat) < radius + float(BUILDING_SCRIPT.RADII[other["kind"]]) + 0.7:
+            return false
+    # Four corners need a reasonably level ground; no suspended shelters.
+    for dir in [Vector2.RIGHT,Vector2.LEFT,Vector2.UP,Vector2.DOWN]:
+        var offset: Vector2 = flat + dir*radius
+        if absf(world.height_at(offset.x,offset.y)-spot.y) > 0.72:
+            return false
+    return true
+
+func _build_on_server(id: int, kind: String, spot: Vector3) -> bool:
+    if not multiplayer.is_server() or not players.has(id):
+        return false
+    if placed_buildings.size() >= 300 or not _is_valid_build_spot(kind,spot,players[id].position):
+        return false
+    var inv: Dictionary = player_inventories.get(id,{})
+    if not BUILDING_SCRIPT.affordable(kind,inv):
+        return false
+    var old_inv := inv.duplicate(true)
+    var id_new := next_building_id
+    var record := {"kind":kind,"x":snappedf(spot.x,0.01),
+        "z":snappedf(spot.z,0.01)}
+    next_building_id += 1
+    placed_buildings[id_new] = record
+    for item in BUILDING_SCRIPT.COSTS[kind].keys():
+        inv[item] = int(inv.get(item,0))-int(BUILDING_SCRIPT.COSTS[kind][item])
+    player_inventories[id] = inv
+    if player_identity_keys.has(id):
+        var identity: String = player_identity_keys[id]
+        persistent_profiles[identity]["inventory"] = inv.duplicate(true)
+    if not _save_world_state():
+        placed_buildings.erase(id_new)
+        next_building_id = id_new
+        player_inventories[id] = old_inv
+        if player_identity_keys.has(id):
+            persistent_profiles[player_identity_keys[id]]["inventory"] = old_inv.duplicate(true)
+        return false
+    _place_building(id_new,record)
+    for remote_peer in connected_peers.keys():
+        building_created.rpc_id(int(remote_peer),id_new,record)
+    if id == own_id:
+        inventory_snapshot(inv)
+    else:
+        inventory_snapshot.rpc_id(id,inv)
+    return true
+
+func _clear_buildings() -> void:
+    for node in building_nodes.values():
+        if is_instance_valid(node):
+            node.queue_free()
+    building_nodes.clear()
+    placed_buildings.clear()
+    next_building_id = 1
+
+func _load_buildings(saved: Dictionary) -> void:
+    _clear_buildings()
+    var world: Node3D = get_node("Eldoria_Forest")
+    for key in saved.keys():
+        var record: Dictionary = saved[key]
+        var new_id := int(key)
+        if not BUILDING_SCRIPT.is_valid_kind(str(record.get("kind",""))):
+            continue
+        var position := Vector3(float(record.get("x",0)),
+            world.height_at(float(record.get("x",0)),float(record.get("z",0))),
+            float(record.get("z",0)))
+        _place_building(new_id,{"kind":record["kind"],"x":position.x,"z":position.z})
+
+func _place_building(id: int, record: Dictionary) -> void:
+    if placed_buildings.has(id) and building_nodes.has(id):
+        return
+    var kind: String = record["kind"]
+    if not BUILDING_SCRIPT.is_valid_kind(kind):
+        return
+    var world: Node3D = get_node("Eldoria_Forest")
+    var x := float(record["x"])
+    var z := float(record["z"])
+    var place := Vector3(x,world.height_at(x,z),z)
+    var obj := BUILDING_SCRIPT.new()
+    obj.setup(id,kind,place)
+    obj.name = "Build_%d_%s" % [id,kind]
+    add_child(obj)
+    building_nodes[id] = obj
+    placed_buildings[id] = {"kind":kind,"x":x,"z":z}
+    next_building_id = maxi(next_building_id,id+1)
+
+@rpc("authority","call_remote","reliable")
+func building_snapshot(snapshot: Dictionary) -> void:
+    _load_buildings(snapshot)
+
+@rpc("authority","call_remote","reliable")
+func building_created(id: int, record: Dictionary) -> void:
+    _place_building(id,record)
 
 func _try_gather() -> void:
     if own_id == 0 or not players.has(own_id):
@@ -990,6 +1153,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
         _try_jump()
     elif event.keycode == KEY_F:
         _try_gather()
+    elif event.keycode == KEY_B:
+        _try_build()
 
 func _toggle_fullscreen() -> void:
     DISPLAY_SCRIPT.toggle_fullscreen()

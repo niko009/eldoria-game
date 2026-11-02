@@ -10,6 +10,7 @@ var api_key := ""
 var revision := 0
 var profiles: Dictionary = {}
 var depleted: Dictionary = {}
+var buildings: Dictionary = {}
 var last_error := ""
 var _connected := false
 
@@ -94,6 +95,7 @@ func _request(method: HTTPClient.Method, body: String = "") -> Dictionary:
 func load_snapshot(world: Node3D) -> bool:
     profiles.clear()
     depleted.clear()
+    buildings.clear()
     var snapshot := _request(HTTPClient.METHOD_GET)
     if snapshot.is_empty():
         return false
@@ -139,6 +141,24 @@ func load_snapshot(world: Node3D) -> bool:
             last_error = "Invalid player avatar"
             return false
         profiles[hash_key] = {"avatar":avatar,"inventory":inventory}
+    var build_data: Variant = snapshot.get("buildings",{})
+    if not build_data is Dictionary or build_data.size() > 300:
+        last_error = "Invalid building snapshot"
+        return false
+    for id in build_data.keys():
+        if not str(id).is_valid_int() or int(id) < 1:
+            last_error = "Invalid building ID"
+            return false
+        var record: Variant = build_data[id]
+        if not record is Dictionary or not str(record.get("kind","")) in ["tent","campfire"]:
+            last_error = "Invalid building entry"
+            return false
+        var x := float(record.get("x",INF))
+        var z := float(record.get("z",INF))
+        if not is_finite(x) or not is_finite(z) or absf(x)>75 or absf(z)>75:
+            last_error = "Invalid building coordinates"
+            return false
+        buildings[int(id)] = {"kind":record["kind"],"x":x,"z":z}
     return true
 
 func save_snapshot(remaining: Dictionary, world: Node3D) -> bool:
@@ -156,7 +176,7 @@ func save_snapshot(remaining: Dictionary, world: Node3D) -> bool:
             depleted_only[str(id)] = amount
     var snapshot := {
         "schema":1, "world_seed":WORLD_SEED,"revision":revision,
-        "profiles":profiles,"depleted":depleted_only}
+        "profiles":profiles,"depleted":depleted_only,"buildings":buildings}
     var response := _request(HTTPClient.METHOD_PUT,JSON.stringify(snapshot))
     if response.is_empty() or not response.has("revision"):
         return false

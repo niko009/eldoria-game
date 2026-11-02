@@ -9,6 +9,7 @@ var save_path := ""
 var last_error := ""
 var profiles: Dictionary = {}
 var depleted: Dictionary = {}
+var buildings: Dictionary = {}
 
 func configure(path: String) -> bool:
     save_path = path.strip_edges()
@@ -23,6 +24,7 @@ func configure(path: String) -> bool:
 func load_snapshot(world: Node3D) -> bool:
     depleted.clear()
     profiles.clear()
+    buildings.clear()
     if save_path.is_empty():
         last_error = "No save path configured"
         return false
@@ -46,7 +48,8 @@ func load_snapshot(world: Node3D) -> bool:
         return false
     var resource_data: Variant = doc.get("depleted",{})
     var player_data: Variant = doc.get("profiles",{})
-    if not resource_data is Dictionary or not player_data is Dictionary:
+    var build_data: Variant = doc.get("buildings",{})
+    if not resource_data is Dictionary or not player_data is Dictionary or not build_data is Dictionary or build_data.size() > 300:
         last_error = "Invalid snapshot data"
         return false
     for key in resource_data.keys():
@@ -64,6 +67,20 @@ func load_snapshot(world: Node3D) -> bool:
             return false
         if amount < int(entry["amount"]):
             depleted[id] = amount
+    for key in build_data.keys():
+        if not str(key).is_valid_int() or int(key) < 1 or int(key) > 100000:
+            last_error = "Invalid building id"
+            return false
+        var rec: Variant = build_data[key]
+        if not rec is Dictionary or not str(rec.get("kind","")) in ["tent","campfire"]:
+            last_error = "Invalid building data"
+            return false
+        var x := float(rec.get("x",INF))
+        var z := float(rec.get("z",INF))
+        if not is_finite(x) or not is_finite(z) or absf(x) > 75 or absf(z) > 75:
+            last_error = "Invalid building position"
+            return false
+        buildings[int(key)] = {"kind":rec["kind"],"x":x,"z":z}
     if player_data.size() > 5000:
         last_error = "Too many player profiles"
         return false
@@ -103,7 +120,7 @@ func save_snapshot(remaining: Dictionary, world: Node3D) -> bool:
         var value := clampi(int(remaining[key]),0,int(entry["amount"]))
         if value < int(entry["amount"]):
             depleted_only[str(id)] = value
-    var doc := {"schema":SCHEMA, "world_seed":WORLD_SEED, "depleted":depleted_only, "profiles":profiles}
+    var doc := {"schema":SCHEMA, "world_seed":WORLD_SEED, "depleted":depleted_only, "profiles":profiles,"buildings":buildings}
     var temporary := save_path + ".tmp"
     var file := FileAccess.open(temporary,FileAccess.WRITE)
     if file == null:
