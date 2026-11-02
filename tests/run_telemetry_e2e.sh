@@ -21,7 +21,10 @@ server_pid=$!
 sleep 1.5
 timeout 30 "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/telemetry_network_e2e.gd -- --test >"$LOG_DIR/task018-network-client.log" 2>&1
 grep -q 'TELEMETRY NETWORK CLIENT PASS' "$LOG_DIR/task018-network-client.log"
-sleep 0.7
+for attempt in $(seq 1 48); do
+  [ -s "$tmp/telemetry.jsonl" ] && break
+  sleep 0.25
+done
 if grep -E 'SCRIPT ERROR|Parse Error|ERR_UNCONFIGURED' "$LOG_DIR/task018-dedicated.log"; then exit 1; fi
 node - "$tmp/telemetry.jsonl" <<'JS'
 const fs=require('node:fs'),assert=require('node:assert/strict');

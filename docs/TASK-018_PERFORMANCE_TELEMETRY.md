@@ -1,6 +1,6 @@
 # TASK-018 — Performance telemetry / diagnostic analytics (DEV ONLY)
 
-**Status:** developed and tested, not released. Public Windows/Android clients, live Godot WSS server, .NET persistence service and PostgreSQL **remain v0.5.1**.
+**Status:** RELEASED v0.5.2 on Nov 2, 2026. Real public WSS → private API → PostgreSQL verified.
 
 ## Signal path
 Windows / Android Godot → performance sample every ~60 seconds → `submit_telemetry` reliable RPC → **authoritative** Godot dedicated server (validates player & metrics, 45-second per-peer cooldown + 30/min global limit) → bounded async HTTPRequest queue (10 max) → **private loopback** `POST /v1/telemetry` authenticated by server-only key → .NET 10 / Npgsql → `eldoria_telemetry` in PostgreSQL 16.
@@ -35,6 +35,6 @@ ORDER BY reports DESC;
 - `bash tests/run_telemetry_e2e.sh` PASS: real Godot ENet client → Godot dedicated server → internal async HTTP mock. Two identical reports + invalid report produce exactly **one** delivered report. Client sampling, p95/FPS, opt-out and no private fields PASS.
 - `bash tests/run_postgres_e2e.sh` on separate PostgreSQL 16 PASS: authenticated insert, negative validation, 14-day aggregated summary, no identifying fields, plus existing transactional world persistence tests. A later **full Godot-to-real-Postgres end-to-end test** was attempted but its first run exposed an invalid Godot HTTPRequest property; the property was corrected and full Godot→HTTP was subsequently retested against the mock. Do not claim a subsequent full real-Postgres Godot-to-SQL test was run until verified.
 - `bash tests/run_dev_gameplay_e2e.sh` PASS: ENet/WebSocket, character animation, movement, Android joystick, resource depletion, building and OpenGL.
-- No production deployment or actual Android/Windows runtime performance measurement yet.
+- Production deployment completed for v0.5.2. Physical Android/Windows FPS measurements remain pending; one synthetic test record verified the complete production pipeline.
 
 **Next step:** release compatible client + server + private .NET API with SQL migration (after permission); obtain 1–3 days of actual usage; compare Android Low/High FPS and frame p95 to select specific performance optimizations.
