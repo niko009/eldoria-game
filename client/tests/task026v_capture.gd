@@ -51,6 +51,19 @@ func _capture() -> void:
             game.camera.look_at(VIEWS[view][1], Vector3.UP)
             for i in range(12):
                 await process_frame
+            if args.has("--benchmark"):
+                var frames: Array[float] = []
+                var previous := Time.get_ticks_usec()
+                for sample in range(180):
+                    await process_frame
+                    var now := Time.get_ticks_usec()
+                    frames.append(float(now-previous)/1000.0)
+                    previous = now
+                var total := 0.0
+                for frame in frames:
+                    total += frame
+                frames.sort()
+                print("BENCH %s quality=%d avg_fps=%.1f median_ms=%.2f p95_ms=%.2f draws=%d" % [view,quality,180000.0/total,frames[90],frames[170],int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))])
             var image := root.get_texture().get_image()
             var file := "%s/%s_%s_%s%s%s.png" % [output, stage, view, "low" if quality == GRAPHICS.LOW else "high", "_hud" if hud else "", "_fire" if campfire else ""]
             var error := image.save_png(file)

@@ -1,0 +1,16 @@
+Godot Engine v4.5.2.stable.official.6ce3de25a - https://godotengine.org
+OpenGL API 3.3.0 - Build 32.0.101.7088 - Compatibility - Using Device: Intel - Intel(R) UHD Graphics 730
+
+RESOURCE_SIGNATURE count=347 hash=1181774555
+BENCH camp quality=0 avg_fps=31.1 median_ms=31.61 p95_ms=35.82 draws=42
+CAPTURE C:/Users/m.bacus/Documents/test/Eldoria/client/../docs/screenshots/task026v_concept/after_camp_low.png 1280x720
+BENCH camp quality=1 avg_fps=29.2 median_ms=32.54 p95_ms=43.90 draws=261
+CAPTURE C:/Users/m.bacus/Documents/test/Eldoria/client/../docs/screenshots/task026v_concept/after_camp_high.png 1280x720
+BENCH forest quality=0 avg_fps=31.0 median_ms=31.55 p95_ms=38.75 draws=29
+CAPTURE C:/Users/m.bacus/Documents/test/Eldoria/client/../docs/screenshots/task026v_concept/after_forest_low.png 1280x720
+BENCH forest quality=1 avg_fps=29.9 median_ms=31.91 p95_ms=42.47 draws=191
+CAPTURE C:/Users/m.bacus/Documents/test/Eldoria/client/../docs/screenshots/task026v_concept/after_forest_high.png 1280x720
+BENCH lake quality=0 avg_fps=26.4 median_ms=31.63 p95_ms=37.78 draws=32
+CAPTURE C:/Users/m.bacus/Documents/test/Eldoria/client/../docs/screenshots/task026v_concept/after_lake_low.png 1280x720
+BENCH lake quality=1 avg_fps=29.6 median_ms=32.02 p95_ms=44.00 draws=201
+CAPTURE C:/Users/m.bacus/Documents/test/Eldoria/client/../docs/screenshots/task026v_concept/after_lake_high.png 1280x720

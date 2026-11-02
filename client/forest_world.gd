@@ -35,6 +35,14 @@ const ROCKS := ["Rock_Medium_1", "Rock_Medium_2"]
 var _rng := RandomNumberGenerator.new()
 var _terrain_noise := FastNoiseLite.new()
 var sun: DirectionalLight3D
+var _terrain_instance: MeshInstance3D
+var _pond_instance: MeshInstance3D
+var _pond_low: Material
+var _pond_high: Material
+var _path_instance: MeshInstance3D
+var _path_low: Material
+var _ground_low: Material
+var _ground_high: Material
 var environment_node: WorldEnvironment
 
 func _ready() -> void:
@@ -56,6 +64,7 @@ func _ready() -> void:
     _append_grass_resources()
     _flush_batches()
     _create_visual_accents()
+    preload("res://alpine_scenery.gd").build(self)
 
 func height_at(x: float, z: float) -> float:
     var radius := Vector2(x, z).length()
@@ -79,12 +88,8 @@ func _create_sky() -> void:
     environment_node = WorldEnvironment.new()
     var e := Environment.new()
     var sky := Sky.new()
-    var sky_mat := ProceduralSkyMaterial.new()
-    sky_mat.sky_top_color = Color("5b91bf")
-    sky_mat.sky_horizon_color = Color("cadde0")
-    sky_mat.ground_bottom_color = Color("526e72")
-    sky_mat.ground_horizon_color = Color("a8bec0")
-    sky_mat.sun_angle_max = 10.0
+    var sky_mat := ShaderMaterial.new()
+    sky_mat.shader = preload("res://shaders/fantasy_sky.gdshader")
     sky.sky_material = sky_mat
     e.background_mode = Environment.BG_SKY
     e.sky = sky
@@ -115,16 +120,22 @@ func _create_terrain() -> void:
                 var color := Color("506e56").lerp(Color("8ca46b"), clampf(0.48 + hue * 0.37, 0.0, 1.0))
                 if v.y > 3.9:
                     color = color.lerp(Color("89958a"), clampf((v.y - 3.9) / 5.0, 0.0, 0.6))
+                st.set_normal(Vector3(height_at(v.x-0.2,v.z)-height_at(v.x+0.2,v.z),0.4,height_at(v.x,v.z-0.2)-height_at(v.x,v.z+0.2)).normalized())
                 st.set_color(color)
                 st.add_vertex(v)
-    st.generate_normals()
     var terrain := MeshInstance3D.new()
     terrain.name = "Rolling grassland"
     terrain.mesh = st.commit()
+    terrain.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
     var m := _mat(Color.WHITE)
     m.vertex_color_use_as_albedo = true
     m.cull_mode = BaseMaterial3D.CULL_DISABLED
     terrain.material_override = m
+    _terrain_instance = terrain
+    _ground_low = m
+    var ground := ShaderMaterial.new()
+    ground.shader = preload("res://shaders/meadow_ground.gdshader")
+    _ground_high = ground
     add_child(terrain)
 
 # Distant scenery skyline uses a shared mesh rather than thousands of objects.
@@ -164,6 +175,7 @@ func _create_mountain_silhouette() -> void:
     st.generate_normals()
     var back := MeshInstance3D.new()
     back.name = "Misty alpine skyline"
+    back.visible = false # Legacy generation retains gameplay RNG consumption.
     back.mesh = st.commit()
     var material := _mat(Color.WHITE)
     material.vertex_color_use_as_albedo = true
@@ -175,27 +187,37 @@ func _create_mountain_silhouette() -> void:
 func _create_path() -> void:
     var st := SurfaceTool.new()
     st.begin(Mesh.PRIMITIVE_TRIANGLES)
+    var lanes := [-1.0, -0.82, 0.0, 0.82, 1.0]
     for i in range(110):
-        var z0 := -78.0 + float(i) * 1.4
-        var z1 := z0 + 1.4
-        var x0 := sin(z0 * 0.081) * 5.0
-        var x1 := sin(z1 * 0.081) * 5.0
-        var width := 2.15
-        var corners := [Vector3(x0-width, height_at(x0-width,z0)+0.055,z0),
-                        Vector3(x0+width, height_at(x0+width,z0)+0.055,z0),
-                        Vector3(x1+width, height_at(x1+width,z1)+0.055,z1),
-                        Vector3(x1-width, height_at(x1-width,z1)+0.055,z1)]
-        for v in [corners[0], corners[1], corners[2], corners[0], corners[2], corners[3]]:
-            st.set_color(Color("967e5f").lerp(Color("c7ae7b"), 0.3 + sin(v.z * 0.41) * 0.1))
-            st.add_vertex(v)
-    st.generate_normals()
+        for lane in range(4):
+            var corners: Array[Vector3] = []
+            var colors: Array[Color] = []
+            for offset in [Vector2i(0,0),Vector2i(0,1),Vector2i(1,1),Vector2i(1,0)]:
+                var z := -78.0 + float(i+offset.x)*1.4
+                var side: float = lanes[lane+offset.y]
+                var width := 2.15 + sin(z*1.7)*0.14 + sin(z*0.57)*0.15
+                var x := sin(z*0.081)*5.0 + side*width
+                var point := Vector3(x,height_at(x,z)+0.06,z)
+                var hue := _terrain_noise.get_noise_2d(x*2.1,z*2.1)
+                var grass := Color("506e56").lerp(Color("8ca46b"),clampf(0.48+hue*0.37,0.0,1.0))
+                var dirt := Color("9c8157").lerp(Color("bca077"),0.45+sin(z*0.73)*0.1)
+                corners.append(point)
+                colors.append(grass if absf(side)>0.99 else dirt)
+            for index in [0,1,2,0,2,3]:
+                var v := corners[index]
+                st.set_normal(Vector3(height_at(v.x-0.2,v.z)-height_at(v.x+0.2,v.z),0.4,height_at(v.x,v.z-0.2)-height_at(v.x,v.z+0.2)).normalized())
+                st.set_color(colors[index])
+                st.add_vertex(v)
     var path := MeshInstance3D.new()
     path.name = "Old explorer trail"
     path.mesh = st.commit()
+    path.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
     var m := _mat(Color.WHITE)
     m.vertex_color_use_as_albedo = true
     m.cull_mode = BaseMaterial3D.CULL_DISABLED
     path.material_override = m
+    _path_instance = path
+    _path_low = m
     add_child(path)
 
 func _create_water() -> void:
@@ -234,6 +256,11 @@ func _create_water() -> void:
     m.metallic = 0.06
     m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
     pond.material_override = m
+    _pond_instance = pond
+    _pond_low = m
+    var water := ShaderMaterial.new()
+    water.shader = preload("res://shaders/pond_water.gdshader")
+    _pond_high = water
     add_child(pond)
     for i in range(24):
         var angle := TAU * float(i) / 24.0
@@ -468,6 +495,12 @@ func _flush_batches() -> void:
 
 func apply_detail_quality(high: bool) -> void:
     _low_quality = not high
+    if _terrain_instance != null:
+        _terrain_instance.material_override = _ground_high if high else _ground_low
+    if _pond_instance != null:
+        _pond_instance.material_override = _pond_high if high else _pond_low
+    if _path_instance != null:
+        _path_instance.material_override = _ground_high if high else _path_low
     for node in batch_nodes:
         node.visible = high or not node.name.ends_with("_extra")
 

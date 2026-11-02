@@ -73,13 +73,17 @@ func _process(delta: float) -> void:
 
 func _visible_counts(world: Node3D, camera: Camera3D, size: Vector2) -> Vector2i:
     var counts := Vector2i.ZERO
-    for key in world._batch_nodes_by_key:
-        var batch: MultiMeshInstance3D = world._batch_nodes_by_key[key]
+    for batch: MultiMeshInstance3D in world.batch_nodes:
         if not batch.visible:
             continue
-        var is_tree: bool = String(key).begins_with("CommonTree") or String(key).begins_with("Pine") or String(key).begins_with("TwistedTree")
+        var is_tree: bool = "Tree" in batch.name or "Pine" in batch.name or "DistantForest" in batch.name
         for i in range(batch.multimesh.instance_count):
-            var position: Vector3 = batch.multimesh.get_instance_transform(i).origin + Vector3.UP
+            var transform := batch.multimesh.get_instance_transform(i)
+            if absf(transform.basis.determinant()) < 0.00001:
+                continue
+            var position: Vector3 = transform.origin + Vector3.UP
+            if batch.visibility_range_end > 0.0 and camera.global_position.distance_to(position) > batch.visibility_range_end:
+                continue
             if camera.global_position.distance_to(position) > camera.far or camera.is_position_behind(position):
                 continue
             var screen := camera.unproject_position(position)
