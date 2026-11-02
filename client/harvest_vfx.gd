@@ -3,9 +3,16 @@ extends Node3D
 const MAX_FALLING_TREES := 3
 const MAX_PICKUP_BURSTS := 5
 const FALL_SECONDS := 1.25
+const MAX_SOUNDS := 6
+const WOOD_SFX := preload("res://assets/sfx/wood_chop.wav")
+const STONE_SFX := preload("res://assets/sfx/stone_hit.wav")
+const HERB_SFX := preload("res://assets/sfx/herb_rustle.wav")
+const BUILD_SFX := preload("res://assets/sfx/build_place.wav")
 var _falling: Dictionary = {}
 var _bursts: Array[Node3D] = []
 var _particle_mesh: SphereMesh
+var _sounds: Array[AudioStreamPlayer3D] = []
+var sound_enabled := true
 
 func _ready() -> void:
     _particle_mesh = SphereMesh.new()
@@ -78,11 +85,47 @@ func play_pickup(kind: String, spot: Vector3) -> bool:
     add_child(effect)
     _bursts.append(effect)
     effect.emitting = true
+    play_sound(kind,spot)
     get_tree().create_timer(1.0).timeout.connect(func() -> void:
         _bursts.erase(effect)
         if is_instance_valid(effect):
             effect.queue_free())
     return true
+
+func play_sound(kind: String, world_position: Vector3) -> bool:
+    if DisplayServer.get_name() == "headless" or not sound_enabled or _sounds.size() >= MAX_SOUNDS:
+        return false
+    var stream: AudioStream = null
+    match kind:
+        "wood": stream = WOOD_SFX
+        "stone": stream = STONE_SFX
+        "herb": stream = HERB_SFX
+        "build": stream = BUILD_SFX
+        _: return false
+    var audio := AudioStreamPlayer3D.new()
+    audio.name = "Sound_" + kind
+    audio.stream = stream
+    audio.position = world_position
+    audio.unit_size = 3.5
+    audio.max_distance = 25.0
+    audio.volume_db = -8.0
+    add_child(audio)
+    _sounds.append(audio)
+    audio.finished.connect(func() -> void:
+        _sounds.erase(audio)
+        if is_instance_valid(audio):
+            audio.queue_free())
+    audio.play()
+    return true
+
+func set_sound_enabled(enabled: bool) -> void:
+    sound_enabled = enabled
+    if not enabled:
+        for sound in _sounds:
+            if is_instance_valid(sound):
+                sound.stop()
+                sound.queue_free()
+        _sounds.clear()
 
 func clear_effects() -> void:
     for pivot in _falling.values():
@@ -93,6 +136,14 @@ func clear_effects() -> void:
         if is_instance_valid(burst):
             burst.queue_free()
     _bursts.clear()
+    for sound in _sounds:
+        if is_instance_valid(sound):
+            sound.stop()
+            sound.queue_free()
+    _sounds.clear()
+
+func active_sound_count() -> int:
+    return _sounds.size()
 
 func falling_tree_count() -> int:
     return _falling.size()

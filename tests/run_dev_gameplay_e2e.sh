@@ -53,10 +53,12 @@ if command -v Xvfb >/dev/null 2>&1; then
     grep -q "FOREST RESOURCE OPENGL PASS" "$ROOT/tests/logs/forest-resource-opengl.log"
     DISPLAY=":$display_number" timeout 90 "$GODOT_BIN" --path "$ROOT/client" --resolution 900x550 --rendering-method gl_compatibility --audio-driver Dummy --script res://tests/visual_feedback_e2e.gd -- --test > "$ROOT/tests/logs/visual-feedback-opengl.log" 2>&1
     grep -q "VISUAL FEEDBACK OPENGL PASS" "$ROOT/tests/logs/visual-feedback-opengl.log"
+    DISPLAY=":$display_number" timeout 90 "$GODOT_BIN" --path "$ROOT/client" --resolution 720x360 --rendering-method gl_compatibility --audio-driver Dummy --script res://tests/task017_sound_mobile_e2e.gd -- --test-mobile-ui > "$ROOT/tests/logs/task017-mobile-opengl.log" 2>&1
+    grep -q "TASK017 OPENGL PASS" "$ROOT/tests/logs/task017-mobile-opengl.log"
     kill "$xvfb" 2>/dev/null || true
     trap - EXIT
     echo "PASS: real OpenGL MultiMesh resource depletion and restoration"
 else
     echo "NOTE: OpenGL visual test skipped: Xvfb not available."
 fi
-echo "PASS: TASK-011..016 gameplay, VFX, building preview, persistence and mobile controls. No production deployment."
+echo "PASS: TASK-011..017 gameplay, WAV sound, staged tree damage, Android build mode, VFX, PostgreSQL compatibility."

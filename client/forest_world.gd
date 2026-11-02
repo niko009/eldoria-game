@@ -16,6 +16,8 @@ var batch_nodes: Array[MultiMeshInstance3D] = []
 var obstacle_positions: Array[Vector2] = []
 var obstacle_radii: Array[float] = []
 var obstacle_active: Array[bool] = []
+const TREE_DAMAGE := preload("res://tree_damage.gd")
+var damage_markers: Dictionary = {}
 var _resource_exhausted := {}
 var _grass_candidates: Array[Dictionary] = []
 var _grass_cover: Array[Dictionary] = []
@@ -269,6 +271,8 @@ func set_resource_quantity(resource_id: int, amount: int) -> void:
     var entry := resource_by_id(resource_id)
     if entry.is_empty():
         return
+    if entry["kind"] == "wood":
+        _update_tree_damage(resource_id,entry,amount)
     var depleted := amount <= 0
     var before := bool(_resource_exhausted.get(resource_id,false))
     if before == depleted:
@@ -287,6 +291,28 @@ func set_resource_quantity(resource_id: int, amount: int) -> void:
             var n := maxi(0,int(_vegetation_hidden_counts.get(key,0)) + (1 if depleted else -1))
             _vegetation_hidden_counts[key] = n
             _set_batch_instance(str(cover["group"]),int(cover["index"]),n == 0)
+
+func _update_tree_damage(resource_id: int, entry: Dictionary, remaining: int) -> void:
+    if DisplayServer.get_name() == "headless" or int(entry["index"]) < 0:
+        return
+    var hits := clampi(int(entry["amount"])-remaining,0,3)
+    if remaining <= 0 or hits == 0:
+        if damage_markers.has(resource_id):
+            var existing: Node3D = damage_markers[resource_id]
+            existing.queue_free()
+            damage_markers.erase(resource_id)
+        return
+    var marks: Node3D = damage_markers.get(resource_id,null)
+    if marks == null:
+        var original: Transform3D = batch_transforms[entry["group"]][int(entry["index"])]
+        marks = TREE_DAMAGE.new()
+        marks.name = "TreeDamage_%d" % resource_id
+        marks.position = original.origin
+        marks.configure(original.basis.get_scale().x,remaining)
+        add_child(marks)
+        damage_markers[resource_id] = marks
+    else:
+        marks.update_hits(hits)
 
 func _nearby_vegetation(resource_id: int, entry: Dictionary) -> Array:
     if _resource_cover_cache.has(resource_id):

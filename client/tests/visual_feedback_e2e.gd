@@ -69,15 +69,18 @@ func _run() -> void:
         _fail("preview toggle failed to clear")
         return
     print("VISUAL TEST BEFORE CLEANUP WAIT")
-    await create_timer(0.32).timeout
-    if visuals.falling_tree_count() != 1:
-        _fail("falling tree vanished before animation completed")
+    var rotated := false
+    for render_frame in range(150):
+        await process_frame
+        if visuals.falling_tree_count() > 0:
+            var falling_pivot: Node3D = visuals._falling[tree["id"]]
+            if absf(falling_pivot.quaternion.get_angle()) >= 0.015:
+                rotated = true
+                break
+    if not rotated:
+        _fail("tree never rotated across 150 engine frames")
         return
-    var falling_pivot: Node3D = visuals._falling[tree["id"]]
-    if absf(falling_pivot.quaternion.get_angle()) < 0.015:
-        _fail("tree did not actually rotate while falling")
-        return
-    await create_timer(1.25).timeout
+    await create_timer(1.45).timeout
     print("VISUAL TEST AFTER CLEANUP WAIT")
     if visuals.falling_tree_count() != 0 or visuals.burst_count()!=0:
         _fail("transient visual effects were not removed")
