@@ -21,6 +21,7 @@ echo "[TASK-011] authoritative resources"
 bash tests/run_resource_e2e.sh
 bash tests/run_building_e2e.sh
 bash tests/run_craft_network_e2e.sh
+bash tests/run_combat_e2e.sh
 bash tests/run_telemetry_e2e.sh
 # Stone axe crafting persists across real Godot host restarts.
 TMP_AXE=$(mktemp -d)
@@ -30,6 +31,11 @@ rm -rf "$TMP_AXE"
 "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/craft_axe_faults_e2e.gd -- --test \
     > "$ROOT/tests/logs/craft-axe-faults.log" 2>&1
 grep -q 'CRAFT AXE FAULTS PASS' "$ROOT/tests/logs/craft-axe-faults.log"
+TEMP_COMBAT=$(mktemp -d)
+ELDORIA_SAVE_PATH="$TEMP_COMBAT/world.json" "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/first_combat_e2e.gd -- --test \
+    > "$ROOT/tests/logs/first-combat.log" 2>&1
+grep -q 'COMBAT FIRST LOOP PASS' "$ROOT/tests/logs/first-combat.log"
+rm -rf "$TEMP_COMBAT"
 "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/building_ui_e2e.gd -- --test
 echo "[TASK-015] terrain depletion persists across real dedicated server restarts"
 TEMPDIR=$(mktemp -d)

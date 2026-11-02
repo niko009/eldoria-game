@@ -17,15 +17,16 @@ const DISPLAY_SCRIPT := preload("res://display_settings.gd")
 const GRAPHICS_SCRIPT := preload("res://graphics_profile.gd")
 const FOREST_SCRIPT := preload("res://forest_world.gd")
 const ACTOR_SCRIPT := preload("res://animated_actor.gd")
+const WOLF_ACTOR_SCRIPT := preload("res://wolf_actor.gd")
 const LIVE_UI_SCRIPT := preload("res://ui/live_ui.gd")
 const AVATAR_PROFILE := preload("res://avatar_profile.gd")
 const JUMP_MOTION := preload("res://jump_motion.gd")
 const UPDATE_SCRIPT := preload("res://update_manager.gd")
 const MOVE_SPEED := 6.0
-const CLIENT_VERSION := "0.5.4"
-# Development candidate only: incompatible with production v0.5.3 until release.
+const CLIENT_VERSION := "0.5.5-dev"
+# TASK-025 is not released. Never automatically connect this RPC schema to v0.5.4.
 
-const DEVELOPMENT_BUILD := false
+const DEVELOPMENT_BUILD := true
 const SERVER_CONFIG_URL := "https://bacus.dev/projects/eldoria/server.json"
 
 var peer: MultiplayerPeer = ENetMultiplayerPeer.new()
@@ -33,6 +34,20 @@ var players := {}
 var player_choices := {}
 var resource_remaining := {}
 var player_inventories := {}
+var player_health := {}
+var player_respawn_at := {}
+var last_attack_at := {}
+const MAX_HEALTH := 100
+const WOLF_MAX_HEALTH := 60
+const WOLF_SPAWN := Vector3(17, 1, 15)
+var wolf_position := WOLF_SPAWN
+var wolf_health := WOLF_MAX_HEALTH
+var wolf_alive := false
+var wolf_respawn_at := 0
+var wolf_last_hit_at := 0
+var wolf_sync_timer := 0.0
+var wolf_direction := Vector3.ZERO
+var wolf_actor: Node3D
 var equipped_axes := {} # Ephemeral server-authoritative equipment, reset on reconnect.
 var player_identity_keys := {}
 var persistent_profiles := {}
@@ -111,6 +126,11 @@ func _ready() -> void:
     multiplayer.server_disconnected.connect(_server_disconnected)
     graphics_quality = GRAPHICS_SCRIPT.default_quality(is_dedicated)
     _world()
+    if not is_dedicated:
+        wolf_actor = WOLF_ACTOR_SCRIPT.new()
+        wolf_actor.name = "Wolf"
+        add_child(wolf_actor)
+        wolf_actor.visible = false
     harvest_visuals = HARVEST_VFX_SCRIPT.new()
     harvest_visuals.name = "HarvestVisuals"
     add_child(harvest_visuals)
@@ -424,6 +444,7 @@ func _ui() -> void:
         live_ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
         live_ui.joystick_moved.connect(input_driver.set_joystick)
         live_ui.action_requested.connect(_live_action)
+        live_ui.action_requested.connect(_combat_ui_action)
         live_ui.build_requested.connect(_live_build)
         live_ui.craft_requested.connect(_try_craft_axe)
         live_ui.equip_requested.connect(_try_equip_axe)
@@ -618,6 +639,7 @@ func _host() -> void:
             return
     multiplayer.multiplayer_peer = peer
     _reset_resources()
+    _reset_wolf()
     if not _configure_world_persistence():
         push_error("Eldoria save data invalid; refusing to host")
         peer.close()
@@ -631,6 +653,8 @@ func _host() -> void:
         return
     own_id = multiplayer.get_unique_id()
     _spawn(own_id, Vector3(0, 1, 0), selected_avatar)
+    player_health[own_id] = MAX_HEALTH
+    health_snapshot(MAX_HEALTH, MAX_HEALTH)
     _status("Hosting UDP 7777, ID %s" % own_id)
 
 func _join() -> void:
@@ -767,6 +791,9 @@ func despawn_remote(id: int) -> void:
     _remove_actor(id)
 
 func _remove_actor(id: int) -> void:
+    player_health.erase(id)
+    player_respawn_at.erase(id)
+    last_attack_at.erase(id)
     equipped_axes.erase(id)
     if players.has(id):
         players[id].queue_free()
@@ -780,8 +807,15 @@ func _remove_actor(id: int) -> void:
 
 func _clear_session() -> void:
     own_id = 0
+    player_health.clear()
+    player_respawn_at.clear()
+    last_attack_at.clear()
+    wolf_alive = false
+    if wolf_actor != null:
+        wolf_actor.visible = false
     equipped_axes.clear()
     if live_ui != null:
+        live_ui.reset_health()
         live_ui.set_equipped_axe(false)
         live_ui.set_inventory(_empty_inventory())
         live_ui.set_near_campfire(false)
@@ -867,6 +901,7 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
         spawn_remote.rpc_id(id, existing, players[existing].position, int(player_choices.get(existing, 0)))
     var pos := Vector3(float(players.size() * 3), 1, 0)
     _spawn(id, pos, validated)
+    player_health[id] = MAX_HEALTH
     player_inventories[id] = _empty_inventory()
     equipped_axes[id] = false
     if not identity_hash.is_empty() and persistent_profiles.has(identity_hash):
@@ -875,6 +910,12 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
     resource_snapshot.rpc_id(id, resource_remaining)
     inventory_snapshot.rpc_id(id, player_inventories[id])
     axe_equip_snapshot.rpc_id(id, false)
+    health_snapshot.rpc_id(id, MAX_HEALTH, MAX_HEALTH)
+    for existing_id in players:
+        if int(existing_id) != id:
+            health_snapshot_for.rpc_id(id, int(existing_id), int(player_health.get(existing_id, MAX_HEALTH)))
+    health_snapshot_for.rpc(id, MAX_HEALTH)
+    wolf_snapshot.rpc_id(id, wolf_position, wolf_health, wolf_alive, wolf_direction)
     building_snapshot.rpc_id(id, placed_buildings)
 
 @rpc("authority", "call_remote", "reliable")
@@ -953,7 +994,11 @@ func _set_avatar_for_peer(id: int, choice: int) -> bool:
 
 
 func _physics_process(delta: float) -> void:
+    if multiplayer.is_server():
+        _combat_server_tick(delta)
     if live_ui != null and not live_ui.active_panel.is_empty():
+        return
+    if own_id != 0 and int(player_health.get(own_id, MAX_HEALTH)) <= 0:
         return
     if is_dedicated or own_id == 0 or not players.has(own_id):
         return
@@ -1024,6 +1069,9 @@ func submit_position(pos: Vector3) -> void:
     var id := multiplayer.get_remote_sender_id()
     if not players.has(id):
         return
+    if int(player_health.get(id, MAX_HEALTH)) <= 0:
+        correct_own_position.rpc_id(id, players[id].position)
+        return
     # The same deterministic obstacle layout runs on the dedicated server.
     # Reject tunneling across tree trunks/rocks and impossible terrain height.
     var world: Node3D = get_node("Eldoria_Forest")
@@ -1066,6 +1114,159 @@ func _note_remote_motion(id: int, before: Vector3, after: Vector3) -> void:
     players[id].set_motion((after-before)/elapsed)
     if players[id].airborne and int(Time.get_ticks_msec()-int(players[id].get_meta("jump_start_msec",0))) > int(JUMP_MOTION.DURATION*1000.0):
         players[id].finish_jump()
+
+# TASK-025: one server-owned enemy and non-persistent session health.
+# Client RPCs carry no damage or target coordinates. Distance, cooldown,
+# ownership and actual HP are validated exclusively on the host.
+func _reset_wolf() -> void:
+    var world: Node3D = get_node("Eldoria_Forest")
+    wolf_position = Vector3(WOLF_SPAWN.x, world.height_at(WOLF_SPAWN.x, WOLF_SPAWN.z) + 0.1, WOLF_SPAWN.z)
+    wolf_health = WOLF_MAX_HEALTH
+    wolf_alive = true
+    wolf_respawn_at = 0
+    wolf_last_hit_at = 0
+    wolf_sync_timer = 0.0
+    wolf_direction = Vector3.ZERO
+
+func _combat_server_tick(delta: float) -> void:
+    if not multiplayer.is_server() or multiplayer.multiplayer_peer is OfflineMultiplayerPeer:
+        return
+    var now := Time.get_ticks_msec()
+    for id in player_respawn_at.keys():
+        if now < int(player_respawn_at[id]):
+            continue
+        player_respawn_at.erase(id)
+        if not players.has(id):
+            continue
+        var world: Node3D = get_node("Eldoria_Forest")
+        var at := Vector3(0, world.height_at(0, 0) + 1, 0)
+        players[id].position = at
+        player_health[id] = MAX_HEALTH
+        health_snapshot_for.rpc(int(id), MAX_HEALTH)
+        if int(id) == own_id:
+            health_snapshot(MAX_HEALTH, MAX_HEALTH)
+        else:
+            health_snapshot.rpc_id(int(id), MAX_HEALTH, MAX_HEALTH)
+            correct_own_position.rpc_id(int(id), at)
+    if not wolf_alive:
+        if now >= wolf_respawn_at:
+            _reset_wolf()
+            wolf_snapshot.rpc(wolf_position, wolf_health, true, Vector3.ZERO)
+        return
+    var target_id := 0
+    var distance_sq := 14.0 * 14.0
+    for id in player_health:
+        if not players.has(id) or int(player_health[id]) <= 0:
+            continue
+        var pos: Vector3 = players[id].position
+        var flat_distance := Vector2(pos.x - wolf_position.x, pos.z - wolf_position.z).length_squared()
+        if flat_distance < distance_sq:
+            target_id = int(id)
+            distance_sq = flat_distance
+    wolf_direction = Vector3.ZERO
+    if target_id != 0:
+        var destination: Vector3 = players[target_id].position
+        var displacement := Vector3(destination.x - wolf_position.x, 0, destination.z - wolf_position.z)
+        var distance := displacement.length()
+        if distance > 1.5:
+            wolf_direction = displacement.normalized()
+            var step := minf(2.5 * delta, distance - 1.5)
+            var next := wolf_position + wolf_direction * step
+            var world: Node3D = get_node("Eldoria_Forest")
+            next.y = world.height_at(next.x, next.z) + 0.1
+            wolf_position = next
+        elif absf(destination.y - wolf_position.y) <= 2.8 and now - wolf_last_hit_at >= 1500:
+            wolf_last_hit_at = now
+            _damage_player_on_server(target_id, 12)
+    wolf_sync_timer += delta
+    if wolf_sync_timer >= 0.15:
+        wolf_sync_timer = 0.0
+        wolf_snapshot.rpc(wolf_position, wolf_health, wolf_alive, wolf_direction)
+
+func _damage_player_on_server(id: int, damage: int) -> bool:
+    if not multiplayer.is_server() or not players.has(id) or int(player_health.get(id, 0)) <= 0:
+        return false
+    if not wolf_alive or damage <= 0:
+        return false
+    player_health[id] = maxi(0, int(player_health[id]) - damage)
+    var remaining := int(player_health[id])
+    health_snapshot_for.rpc(id, remaining)
+    if id == own_id:
+        health_snapshot(remaining, MAX_HEALTH)
+    else:
+        health_snapshot.rpc_id(id, remaining, MAX_HEALTH)
+    if remaining == 0:
+        player_respawn_at[id] = Time.get_ticks_msec() + 4000
+    return true
+
+func _try_attack() -> void:
+    if own_id == 0 or not players.has(own_id) or int(player_health.get(own_id, MAX_HEALTH)) <= 0:
+        return
+    if multiplayer.is_server():
+        _attack_on_server(own_id)
+    else:
+        request_attack.rpc_id(1)
+
+@rpc("any_peer", "reliable")
+func request_attack() -> void:
+    if multiplayer.is_server():
+        _attack_on_server(multiplayer.get_remote_sender_id())
+
+func _attack_on_server(id: int) -> bool:
+    if not multiplayer.is_server() or not players.has(id) or int(player_health.get(id, 0)) <= 0 or not wolf_alive:
+        return false
+    var now := Time.get_ticks_msec()
+    if now - int(last_attack_at.get(id, now - 1000)) < 650:
+        return false
+    var actor: Vector3 = players[id].position
+    if Vector2(actor.x - wolf_position.x, actor.z - wolf_position.z).length_squared() > 3.0 * 3.0:
+        return false
+    if absf(actor.y - wolf_position.y) > 3.0:
+        return false
+    last_attack_at[id] = now
+    wolf_health = maxi(0, wolf_health - 20)
+    combat_swing.rpc(id)
+    if id == own_id:
+        _play_attack(id)
+    if wolf_health == 0:
+        wolf_alive = false
+        wolf_respawn_at = now + 10000
+    wolf_snapshot.rpc(wolf_position, wolf_health, wolf_alive, wolf_direction)
+    return true
+
+@rpc("authority", "call_remote", "reliable")
+func combat_swing(id: int) -> void:
+    _play_attack(id)
+
+func _play_attack(id: int) -> void:
+    if players.has(id):
+        players[id].melee_attack()
+
+@rpc("authority", "call_remote", "reliable")
+func health_snapshot(hp: int, maximum: int) -> void:
+    if own_id != 0:
+        player_health[own_id] = clampi(hp, 0, MAX_HEALTH)
+    if live_ui != null:
+        live_ui.set_health(hp, maximum)
+
+@rpc("authority", "call_remote", "reliable")
+func health_snapshot_for(id: int, hp: int) -> void:
+    player_health[id] = clampi(hp, 0, MAX_HEALTH)
+
+@rpc("authority", "call_remote", "reliable")
+func wolf_snapshot(at: Vector3, hp: int, alive: bool, direction: Vector3) -> void:
+    if not at.is_finite() or at.length() > 5000:
+        return
+    wolf_position = at
+    wolf_health = clampi(hp, 0, WOLF_MAX_HEALTH)
+    wolf_alive = alive
+    wolf_direction = direction
+    if wolf_actor != null:
+        wolf_actor.update_state(at, wolf_health, wolf_alive, direction)
+
+func _combat_ui_action(kind: String) -> void:
+    if kind == "attack":
+        _try_attack()
 
 
 # The server owns resource quantities and player inventories.
@@ -1231,7 +1432,7 @@ func _update_build_preview() -> void:
         preview_actor.set_preview_valid(allowed)
 
 func _try_craft_axe() -> void:
-    if own_id == 0 or not players.has(own_id):
+    if own_id == 0 or not players.has(own_id) or int(player_health.get(own_id, MAX_HEALTH)) <= 0:
         _show_build_feedback("Connect to the world before crafting.")
         return
     if multiplayer.is_server():
@@ -1260,7 +1461,7 @@ func _near_campfire(id: int) -> bool:
 # Only the authoritative host may spend resources, issue the unique axe,
 # and commit persistent state before acknowledging successful crafting.
 func _craft_axe_on_server(id: int) -> bool:
-    if not multiplayer.is_server() or not players.has(id):
+    if not multiplayer.is_server() or not players.has(id) or int(player_health.get(id, MAX_HEALTH)) <= 0:
         return false
     if not _near_campfire(id):
         _notify_build_result(id, "Craft the stone axe within 4 meters of a campfire.")
@@ -1324,7 +1525,7 @@ func axe_equip_snapshot(equipped: bool) -> void:
         live_ui.set_equipped_axe(equipped)
 
 func _try_build() -> void:
-    if own_id == 0 or not players.has(own_id):
+    if own_id == 0 or not players.has(own_id) or int(player_health.get(own_id, MAX_HEALTH)) <= 0:
         _show_build_feedback("Connect to the world before building.")
         return
     var kind := _build_choice()
@@ -1382,7 +1583,7 @@ func _is_valid_build_spot(kind: String, spot: Vector3, actor_pos: Vector3) -> bo
     return true
 
 func _build_on_server(id: int, kind: String, spot: Vector3) -> bool:
-    if not multiplayer.is_server() or not players.has(id):
+    if not multiplayer.is_server() or not players.has(id) or int(player_health.get(id, MAX_HEALTH)) <= 0:
         return false
     if placed_buildings.size() >= 300:
         _notify_build_result(id,"The world has reached its building limit.")
@@ -1485,7 +1686,7 @@ func _play_build_sound(record: Dictionary) -> void:
     harvest_visuals.play_sound("build",Vector3(x,world.height_at(x,z),z))
 
 func _try_gather() -> void:
-    if own_id == 0 or not players.has(own_id):
+    if own_id == 0 or not players.has(own_id) or int(player_health.get(own_id, MAX_HEALTH)) <= 0:
         return
     var world: Node3D = get_node("Eldoria_Forest")
     var target: int = world.nearest_resource(players[own_id].position, 2.7, resource_remaining)
@@ -1504,7 +1705,7 @@ func request_gather(resource_id: int) -> void:
     _gather_on_server(multiplayer.get_remote_sender_id(),resource_id)
 
 func _gather_on_server(player_id: int, resource_id: int) -> bool:
-    if not multiplayer.is_server() or not players.has(player_id):
+    if not multiplayer.is_server() or not players.has(player_id) or int(player_health.get(player_id, MAX_HEALTH)) <= 0:
         return false
     var world: Node3D = get_node("Eldoria_Forest")
     var entry: Dictionary = world.resource_by_id(resource_id)
@@ -1626,7 +1827,7 @@ func _refresh_gather_hud() -> void:
         resource_label.text = "Nearby: %s (%d left) — F / Gather" % [String(entry["kind"]),int(resource_remaining.get(resource_id,0))]
 
 func _try_jump() -> void:
-    if own_id == 0 or not players.has(own_id):
+    if own_id == 0 or not players.has(own_id) or int(player_health.get(own_id, MAX_HEALTH)) <= 0:
         return
     var now := Time.get_ticks_msec()
     if jump_request_msec > 0 and now - jump_request_msec < JUMP_MOTION.COOLDOWN_MSEC:
@@ -1646,7 +1847,7 @@ func request_jump() -> void:
     _accept_jump(multiplayer.get_remote_sender_id())
 
 func _accept_jump(id: int) -> void:
-    if not players.has(id):
+    if not players.has(id) or int(player_health.get(id, MAX_HEALTH)) <= 0:
         return
     var now := Time.get_ticks_msec()
     if server_jump_times.has(id) and now-int(server_jump_times[id]) < JUMP_MOTION.COOLDOWN_MSEC:
@@ -1723,6 +1924,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
         _try_craft_axe()
     elif event.keycode == KEY_V:
         _toggle_build_preview()
+    elif event.keycode == KEY_J:
+        _try_attack()
+
+func _unhandled_input(event: InputEvent) -> void:
+    if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+        if (live_ui == null or live_ui.active_panel.is_empty()) and not is_dedicated:
+            _try_attack()
 
 func _toggle_fullscreen() -> void:
     DISPLAY_SCRIPT.toggle_fullscreen()

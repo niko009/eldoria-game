@@ -146,6 +146,16 @@ func celebrate() -> void:
     current_clip = ""
     set_clip("Cheer")
 
+func melee_attack() -> void:
+    if headless or animator == null or airborne:
+        return
+    var clip := animator.get_animation("1H_Melee_Attack_Chop")
+    if clip == null:
+        return
+    emote_until_msec = Time.get_ticks_msec() + int(clip.length * 1000.0)
+    current_clip = ""
+    set_clip("1H_Melee_Attack_Chop")
+
 func _process(_delta: float) -> void:
     if headless:
         return

@@ -17,6 +17,7 @@ var show_touch_controls := true
 var preview_mode := true
 var status_panel: PanelContainer
 var status_detail: Label
+var health_detail: Label
 var hotbar: EldoriaHotbar
 var touch_layer: Control
 var joystick: Control
@@ -33,6 +34,8 @@ func _ready() -> void:
 	status_column.add_child(Style.label("ELDORIA  ·  " + ("PREVIEW" if preview_mode else "ONLINE"), 18, Style.GOLD))
 	status_detail = Style.label("", 13, Style.MUTED)
 	status_column.add_child(status_detail)
+	health_detail = Style.label("", 16, Style.GOLD)
+	status_column.add_child(health_detail)
 
 	top_actions = HBoxContainer.new()
 	top_actions.add_theme_constant_override("separation", 6)
@@ -59,7 +62,7 @@ func _ready() -> void:
 	action_buttons = VBoxContainer.new()
 	action_buttons.add_theme_constant_override("separation", 6)
 	touch_layer.add_child(action_buttons)
-	for pair in [["Сбор", "gather"], ["Прыжок", "jump"], ["Бег", "sprint"], ["Рюкзак", "inventory"]]:
+	for pair in [["Удар", "attack"], ["Сбор", "gather"], ["Прыжок", "jump"], ["Бег", "sprint"], ["Рюкзак", "inventory"]]:
 		var button := Button.new()
 		button.text = pair[0]
 		Style.button(button)
@@ -76,6 +79,9 @@ func refresh() -> void:
 	if state == null or status_panel == null:
 		return
 	status_detail.text = "%s · %s · %s" % [state.selected_avatar.capitalize(), "Топор в руках" if state.equipped_axe else "Без топора", state.connection_status]
+	health_detail.text = ("HP: %d / %d" % [state.health, state.max_health]) if state.health_known else "HP: —"
+	if state.health_known and state.health <= 0:
+		health_detail.text = "HP: 0 · Возрождение..."
 	touch_layer.visible = show_touch_controls
 	_layout()
 
@@ -85,7 +91,7 @@ func _layout() -> void:
 	var insets := _safe_insets()
 	var compact := size.x < 950 or size.y < 490
 	status_panel.position = Vector2(insets.x, insets.y)
-	status_panel.size = Vector2(minf(250, size.x * 0.34), 68)
+	status_panel.size = Vector2(minf(280, size.x * 0.37), 95)
 	top_actions.position = Vector2(maxf(insets.x, size.x - top_actions.get_combined_minimum_size().x - insets.z), insets.y)
 	hotbar.position = Vector2((size.x - hotbar.get_combined_minimum_size().x) * 0.5, size.y - hotbar.get_combined_minimum_size().y - insets.w)
 	joystick.position = Vector2(insets.x, size.y - 108 - insets.w)

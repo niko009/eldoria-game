@@ -28,6 +28,9 @@ var connection_status := "Автономный просмотр"
 var loading := false
 var near_campfire := true # Standalone Preview starts at a sample crafting station.
 var equipped_axe := false
+var health := 100
+var max_health := 100
+var health_known := true # Preview only; live adapter clears this until server snapshot.
 
 func amount(item_id: String) -> int:
 	return int(inventory.get(item_id, 0))

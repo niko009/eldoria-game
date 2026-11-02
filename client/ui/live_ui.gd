@@ -33,6 +33,7 @@ func _ready() -> void:
     mouse_filter = Control.MOUSE_FILTER_IGNORE
     state = State.new()
     state.set_stock("empty")
+    state.health_known = false
     state.near_campfire = false
     state.connection_status = "Подключение..."
     state.selected_avatar = "knight"
@@ -108,6 +109,19 @@ func set_inventory(inventory: Dictionary) -> void:
     if int(validated.get("axe", 0)) == 0:
         state.equipped_axe = false
     state.changed.emit()
+
+func set_health(hp: int, maximum: int) -> void:
+    var value := clampi(hp, 0, 100)
+    if state.health != value or not state.health_known:
+        state.health_known = true
+        state.health = value
+        state.max_health = maxi(1, maximum)
+        state.changed.emit()
+
+func reset_health() -> void:
+    if state != null:
+        state.health_known = false
+        state.changed.emit()
 
 func set_equipped_axe(equipped: bool) -> void:
     if state == null:
