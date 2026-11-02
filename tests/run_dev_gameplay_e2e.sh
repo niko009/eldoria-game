@@ -20,6 +20,7 @@ sleep 1
 echo "[TASK-011] authoritative resources"
 bash tests/run_resource_e2e.sh
 bash tests/run_building_e2e.sh
+bash tests/run_telemetry_e2e.sh
 "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/building_ui_e2e.gd -- --test
 echo "[TASK-015] terrain depletion persists across real dedicated server restarts"
 TEMPDIR=$(mktemp -d)
