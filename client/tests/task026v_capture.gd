@@ -27,6 +27,9 @@ func _capture() -> void:
         var fire: Node3D = BUILDING.new()
         fire.setup(1, "campfire", Vector3(2.0, forest.height_at(2.0, -1.0), -1.0))
         game.add_child(fire)
+        var tent: Node3D = BUILDING.new()
+        tent.setup(2, "tent", Vector3(-5.0, forest.height_at(-5.0, -1.0), -1.0))
+        game.add_child(tent)
     var signature := 0
     for item in forest.resources:
         signature = (signature * 31 + int(item["id"]) * 17 + int(item["pos"].x * 100.0) + int(item["pos"].z * 100.0)) % 2147483647
@@ -49,6 +52,9 @@ func _capture() -> void:
             forest.apply_detail_quality(quality == GRAPHICS.HIGH)
             game.camera.position = VIEWS[view][0]
             game.camera.look_at(VIEWS[view][1], Vector3.UP)
+            if args.has("--vista") and view == "camp":
+                game.camera.position = Vector3(10,6,-9)
+                game.camera.look_at(Vector3(-12,1.5,12),Vector3.UP)
             for i in range(12):
                 await process_frame
             if args.has("--benchmark"):
@@ -65,7 +71,7 @@ func _capture() -> void:
                 frames.sort()
                 print("BENCH %s quality=%d avg_fps=%.1f median_ms=%.2f p95_ms=%.2f draws=%d" % [view,quality,180000.0/total,frames[90],frames[170],int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))])
             var image := root.get_texture().get_image()
-            var file := "%s/%s_%s_%s%s%s.png" % [output, stage, view, "low" if quality == GRAPHICS.LOW else "high", "_hud" if hud else "", "_fire" if campfire else ""]
+            var file := "%s/%s_%s_%s%s%s.png" % [output, stage, view, "low" if quality == GRAPHICS.LOW else "high", "_hud" if hud else "", ("_fire" if campfire else "") + ("_vista" if args.has("--vista") else "")]
             var error := image.save_png(file)
             if error != OK:
                 printerr("CAPTURE FAILED %d %s" % [error, file])

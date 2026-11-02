@@ -88,54 +88,96 @@ func _campfire() -> void:
     log_mesh.radial_segments = 7
     for i in range(3):
         _solid(log_mesh,Vector3(0,0.24,0),Color("634333"),Vector3(0,i*60.0,90))
-    var flame := SphereMesh.new()
-    flame.radius = 0.35
-    flame.height = 0.85
+    var flame := CylinderMesh.new()
+    flame.bottom_radius = 0.38
+    flame.top_radius = 0.015
+    flame.height = 0.95
     flame.radial_segments = 9
-    flame.rings = 5
+    flame.rings = 3
     var flame_part := _solid(flame,Vector3(0,0.66,0),Color("ed6a2a"))
-    var flame_material: StandardMaterial3D = flame_part.material_override
-    flame_material.emission_enabled = true
-    flame_material.emission = Color("ff8c36")
-    flame_material.emission_energy_multiplier = 0.8
-    var tip := SphereMesh.new()
-    tip.radius = 0.17
-    tip.height = 0.56
-    tip.radial_segments = 9
-    var tip_part := _solid(tip,Vector3(0,0.96,0),Color("ffe0a0"))
-    var tip_material: StandardMaterial3D = tip_part.material_override
-    tip_material.emission_enabled = true
-    tip_material.emission = Color("ffd38c")
-    tip_material.emission_energy_multiplier = 0.6
+    var flame_material := ShaderMaterial.new()
+    flame_material.shader = preload("res://shaders/camp_flame.gdshader")
+    flame_part.material_override = flame_material
+    flame_part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    var tip := CylinderMesh.new()
+    tip.bottom_radius = 0.19
+    tip.top_radius = 0.01
+    tip.height = 0.72
+    tip.radial_segments = 7
+    tip.rings = 2
+    var tip_part := _solid(tip,Vector3(0.10,0.62,0.12),Color("ffe0a0"))
+    var core := ShaderMaterial.new()
+    core.shader = flame_material.shader
+    core.set_shader_parameter("flame_color",Color("ffda84"))
+    tip_part.material_override = core
+    tip_part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 func _tent() -> void:
-    # Ridge tent consisting of two pitched cloth surfaces and end panels.
+    # Folded canvas with an open entrance; dimensions preserve the building footprint.
     var fabric := SurfaceTool.new()
     fabric.begin(Mesh.PRIMITIVE_TRIANGLES)
-    var a := Vector3(-1.5,0,-1.3)
-    var b := Vector3(1.5,0,-1.3)
-    var c := Vector3(-1.5,0,1.3)
-    var d := Vector3(1.5,0,1.3)
-    var top_front := Vector3(0,2.3,-1.3)
-    var top_back := Vector3(0,2.3,1.3)
-    for tri in [[a,top_front,top_back],[a,top_back,c],
-            [top_front,b,d],[top_front,d,top_back],
-            [a,b,top_front],[c,top_back,d]]:
-        for v in tri:
+    for side in [-1.0,1.0]:
+        for strip in range(4):
+            for row in range(8):
+                var vertices: Array[Vector3] = []
+                for offset in [Vector2i(0,0),Vector2i(1,0),Vector2i(1,1),Vector2i(0,1)]:
+                    var u := float(strip+offset.x)/4.0
+                    var z := -1.3 + float(row+offset.y)*2.6/8.0
+                    var sag := sin(u*PI)*0.15 + sin(z*8.0)*sin(u*PI)*0.045
+                    vertices.append(Vector3(side*u*1.5,2.3*(1.0-u)-sag,z))
+                for i in [0,1,2,0,2,3]:
+                    fabric.set_color(Color("c6ad7c") if row%2 == 0 else Color("bda173"))
+                    fabric.add_vertex(vertices[i])
+    # Rear canvas and two tied-back entrance flaps on the camera-facing side.
+    for triangle in [[Vector3(-1.5,0,-1.3),Vector3(0,2.3,-1.3),Vector3(1.5,0,-1.3)],
+            [Vector3(-1.5,0,1.3),Vector3(0,2.3,1.3),Vector3(-0.62,0.15,1.38)],
+            [Vector3(0,2.3,1.3),Vector3(1.5,0,1.3),Vector3(0.62,0.15,1.38)]]:
+        for v in triangle:
+            fabric.set_color(Color("cdb78c"))
             fabric.add_vertex(v)
     fabric.generate_normals()
     var cloth := MeshInstance3D.new()
     cloth.mesh = fabric.commit()
-    var mat := _material(Color("bcac75"))
+    var mat := _material(Color.WHITE)
+    mat.vertex_color_use_as_albedo = true
     mat.cull_mode = BaseMaterial3D.CULL_DISABLED
     cloth.material_override = mat
     add_child(cloth)
-    var door := BoxMesh.new()
-    door.size = Vector3(0.92,1.32,0.055)
-    _solid(door,Vector3(0,0.66,-1.34),Color("474034"))
+    var floor_mesh := BoxMesh.new()
+    floor_mesh.size = Vector3(2.5,0.04,2.4)
+    _solid(floor_mesh,Vector3(0,0.03,0),Color("514538"))
     var pole := CylinderMesh.new()
-    pole.top_radius = 0.08
-    pole.bottom_radius = 0.08
-    pole.height = 2.65
+    pole.top_radius = 0.07
+    pole.bottom_radius = 0.09
+    pole.height = 2.55
+    pole.radial_segments = 6
     for z in [-1.38,1.38]:
-        _solid(pole,Vector3(0,1.2,z),Color("725037"))
+        _solid(pole,Vector3(0,1.22,z),Color("725037"))
+    # Shared trim mesh keeps ropes and seams to one draw call.
+    var trim := SurfaceTool.new()
+    trim.begin(Mesh.PRIMITIVE_TRIANGLES)
+    for z in [-1.32,1.32]:
+        _beam(trim,Vector3(-1.5,0.03,z),Vector3(0,2.3,z),0.025,Color("79684b"))
+        _beam(trim,Vector3(1.5,0.03,z),Vector3(0,2.3,z),0.025,Color("79684b"))
+        for side in [-1.0,1.0]:
+            var peg := Vector3(side*1.85,0.04,z)
+            _beam(trim,Vector3(side*0.9,0.9,z),peg,0.012,Color("e1cc9c"))
+            _beam(trim,peg,peg+Vector3(0,0.18,0),0.035,Color("654c32"))
+    trim.generate_normals()
+    var details := MeshInstance3D.new()
+    details.mesh = trim.commit()
+    details.material_override = mat
+    add_child(details)
+
+func _beam(surface: SurfaceTool, start: Vector3, finish: Vector3, radius: float, color: Color) -> void:
+    var direction := (finish-start).normalized()
+    var tangent := direction.cross(Vector3.FORWARD).normalized()*radius
+    var other := direction.cross(tangent).normalized()*radius
+    for face in range(4):
+        var angle := float(face)*TAU/4.0
+        var next := float(face+1)*TAU/4.0
+        var a := tangent*cos(angle)+other*sin(angle)
+        var b := tangent*cos(next)+other*sin(next)
+        for point in [start+a,start+b,finish+b,start+a,finish+b,finish+a]:
+            surface.set_color(color)
+            surface.add_vertex(point)
