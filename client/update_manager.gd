@@ -7,7 +7,7 @@ signal update_status(message: String)
 const MANIFEST_URL := "https://bacus.dev/projects/eldoria/latest.json"
 const WINDOWS_BASE := "https://bacus.dev/projects/eldoria/Eldoria-Windows-"
 const ANDROID_BASE := "https://bacus.dev/projects/eldoria/Eldoria-"
-var current_version := "0.4.1"
+var current_version := "0.5.0"
 var latest_version := ""
 var download_url := ""
 var download_sha256 := ""

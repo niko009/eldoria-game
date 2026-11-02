@@ -19,6 +19,7 @@ bash tests/run_avatar_jump_e2e.sh
 sleep 1
 echo "[TASK-011] authoritative resources"
 bash tests/run_resource_e2e.sh
+bash tests/run_building_e2e.sh
 echo "[TASK-012] Android analogue joystick + durable server saves"
 "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/joystick_e2e.gd -- --test
 bash tests/run_persistence_e2e.sh

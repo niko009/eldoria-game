@@ -86,6 +86,14 @@ const assert=require('node:assert/strict');const crypto=require('node:crypto');
  console.log('POSTGRES DATA PASS: hashed player, Mage, private herb inventory, shared depletion, revision='+data.revision);
 })().catch(e=>{console.error(e);process.exitCode=1});
 JS
+# Exercise PostgreSQL-backed campfire/tent durability in two independent host processes.
+for step in initial restored; do
+    ELDORIA_PG_API_URL="$API_URL" ELDORIA_PG_API_KEY="$ELDORIA_TEST_INTERNAL_KEY" timeout 30 \
+      "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/postgres_building_e2e.gd -- --"$step" \
+      >"$LOG_DIR/postgres-build-$step.log" 2>&1
+    grep -q "POSTGRES BUILD ${step^^} PASS" "$LOG_DIR/postgres-build-$step.log"
+    grep "POSTGRES BUILD ${step^^} PASS" "$LOG_DIR/postgres-build-$step.log"
+done
 set +e
 ELDORIA_PG_API_URL="$API_URL" ELDORIA_PG_API_KEY="WRONG_TEST_SECRET_DO_NOT_ACCEPT_2026" \
  timeout 14 "$GODOT_BIN" --headless --path "$ROOT/client" -- --dedicated-server \

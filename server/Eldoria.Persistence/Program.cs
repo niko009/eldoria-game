@@ -8,10 +8,19 @@ if (url.Split(';').Any(value => !Uri.TryCreate(value, UriKind.Absolute, out var 
     || !u.IsLoopback || u.Scheme != Uri.UriSchemeHttp))
     throw new InvalidOperationException("Persistence API must bind to loopback HTTP only.");
 var secret = Environment.GetEnvironmentVariable("ELDORIA_INTERNAL_KEY");
+var secretFile = Environment.GetEnvironmentVariable("ELDORIA_INTERNAL_KEY_FILE");
+if (string.IsNullOrWhiteSpace(secret) && !string.IsNullOrWhiteSpace(secretFile))
+    secret = File.ReadAllText(secretFile).Trim();
 if (string.IsNullOrEmpty(secret) || secret.Length < 24)
     throw new InvalidOperationException("ELDORIA_INTERNAL_KEY must be at least 24 characters.");
 var connectionString = Environment.GetEnvironmentVariable("ELDORIA_POSTGRES_CONNECTION")
     ?? throw new InvalidOperationException("ELDORIA_POSTGRES_CONNECTION is required.");
+var connection = new NpgsqlConnectionStringBuilder(connectionString);
+var postgresPasswordFile = Environment.GetEnvironmentVariable("ELDORIA_POSTGRES_PASSWORD_FILE");
+if (string.IsNullOrWhiteSpace(connection.Password) && !string.IsNullOrWhiteSpace(postgresPasswordFile))
+    connection.Password = File.ReadAllText(postgresPasswordFile).Trim();
+if (string.IsNullOrEmpty(connection.Password))
+    throw new InvalidOperationException("PostgreSQL password is required.");
 const int Seed = 20261101;
 const int MaxProfiles = 5000;
 const int MaxResources = 5000;
@@ -31,6 +40,14 @@ CREATE TABLE IF NOT EXISTS eldoria_players (
     herb integer NOT NULL DEFAULT 0 CHECK (herb BETWEEN 0 AND 1000000),
     PRIMARY KEY (world_seed, identity_hash)
 );
+CREATE TABLE IF NOT EXISTS eldoria_buildings (
+    world_seed integer NOT NULL REFERENCES eldoria_worlds(world_seed) ON DELETE CASCADE,
+    building_id integer NOT NULL CHECK (building_id BETWEEN 1 AND 100000),
+    kind varchar(16) NOT NULL CHECK (kind IN ('campfire', 'tent')),
+    pos_x double precision NOT NULL CHECK (pos_x BETWEEN -75 AND 75),
+    pos_z double precision NOT NULL CHECK (pos_z BETWEEN -75 AND 75),
+    PRIMARY KEY (world_seed, building_id)
+);
 CREATE TABLE IF NOT EXISTS eldoria_resources (
     world_seed integer NOT NULL REFERENCES eldoria_worlds(world_seed) ON DELETE CASCADE,
     resource_id integer NOT NULL CHECK (resource_id BETWEEN 1 AND 100000),
@@ -42,7 +59,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls(url);
 builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
 builder.WebHost.ConfigureKestrel(opts => opts.Limits.MaxRequestBodySize = MaxBytes);
-await using var source = NpgsqlDataSource.Create(connectionString);
+await using var source = NpgsqlDataSource.Create(connection.ConnectionString);
 await using (var conn = await source.OpenConnectionAsync())
 {
     if (Environment.GetEnvironmentVariable("ELDORIA_DB_AUTO_MIGRATE") == "1")
@@ -53,7 +70,8 @@ await using (var conn = await source.OpenConnectionAsync())
     await using var verify = new NpgsqlCommand(
         "SELECT to_regclass('public.eldoria_worlds') IS NOT NULL AND " +
         "to_regclass('public.eldoria_players') IS NOT NULL AND " +
-        "to_regclass('public.eldoria_resources') IS NOT NULL", conn);
+        "to_regclass('public.eldoria_resources') IS NOT NULL AND " +
+        "to_regclass('public.eldoria_buildings') IS NOT NULL", conn);
     if (await verify.ExecuteScalarAsync() is not true)
         throw new InvalidOperationException("Eldoria schema is absent; migrate before starting.");
 }
@@ -123,8 +141,17 @@ app.MapGet("/v1/world/{seed:int}", async (int seed, CancellationToken ct) =>
             profiles[reader.GetString(0)] = new ProfileDto(reader.GetInt16(1),
                 new InventoryDto(reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4)));
     }
+    var buildings = new Dictionary<string, BuildingDto>();
+    await using (var read = new NpgsqlCommand(
+        "SELECT building_id, kind, pos_x, pos_z FROM eldoria_buildings WHERE world_seed=@seed", conn, snapshotTx))
+    {
+        read.Parameters.AddWithValue("seed",seed);
+        await using var reader = await read.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            buildings[reader.GetInt32(0).ToString()] = new BuildingDto(reader.GetString(1),reader.GetDouble(2),reader.GetDouble(3));
+    }
     await snapshotTx.CommitAsync(ct);
-    return Results.Ok(new SnapshotDto(1, seed, revision, depleted, profiles));
+    return Results.Ok(new SnapshotDto(1, seed, revision, depleted, profiles, buildings));
 });
 
 app.MapPut("/v1/world/{seed:int}", async (int seed, SnapshotDto? snapshot, CancellationToken ct) =>
@@ -132,6 +159,11 @@ app.MapPut("/v1/world/{seed:int}", async (int seed, SnapshotDto? snapshot, Cance
     if (seed != Seed || snapshot is null || snapshot.schema != 1 || snapshot.world_seed != Seed
         || snapshot.revision < 0 || snapshot.profiles is null || snapshot.depleted is null
         || snapshot.profiles.Count > MaxProfiles || snapshot.depleted.Count > MaxResources
+        || (snapshot.buildings?.Count ?? 0) > 300
+        || (snapshot.buildings?.Any(pair => !int.TryParse(pair.Key,out var id) || id is < 1 or > 100000
+            || pair.Value is null || pair.Value.kind is not ("tent" or "campfire")
+            || !double.IsFinite(pair.Value.x) || !double.IsFinite(pair.Value.z)
+            || Math.Abs(pair.Value.x) > 75 || Math.Abs(pair.Value.z) > 75) ?? false)
         || snapshot.depleted.Any(kv => !int.TryParse(kv.Key, out var id)
             || id is < 1 or > 100000 || kv.Value is < 0 or > 1000000)
         || snapshot.profiles.Any(kv => !ValidHash(kv.Key) || kv.Value is null
@@ -162,6 +194,7 @@ app.MapPut("/v1/world/{seed:int}", async (int seed, SnapshotDto? snapshot, Cance
         return Results.Conflict(new { error = "stale_world_revision", revision = actual });
     }
     await using (var clear = new NpgsqlCommand(
+        "DELETE FROM eldoria_buildings WHERE world_seed=@seed; " +
         "DELETE FROM eldoria_resources WHERE world_seed=@seed; " +
         "DELETE FROM eldoria_players WHERE world_seed=@seed", conn, tx))
     {
@@ -201,6 +234,24 @@ app.MapPut("/v1/world/{seed:int}", async (int seed, SnapshotDto? snapshot, Cance
             await insert.ExecuteNonQueryAsync(ct);
         }
     }
+    await using (var insert = new NpgsqlCommand(
+        "INSERT INTO eldoria_buildings(world_seed,building_id,kind,pos_x,pos_z) " +
+        "VALUES (@seed,@id,@kind,@x,@z)", conn, tx))
+    {
+        insert.Parameters.AddWithValue("seed",seed);
+        insert.Parameters.Add("id",NpgsqlTypes.NpgsqlDbType.Integer);
+        insert.Parameters.Add("kind",NpgsqlTypes.NpgsqlDbType.Varchar);
+        insert.Parameters.Add("x",NpgsqlTypes.NpgsqlDbType.Double);
+        insert.Parameters.Add("z",NpgsqlTypes.NpgsqlDbType.Double);
+        foreach (var pair in snapshot.buildings ?? new Dictionary<string,BuildingDto>())
+        {
+            insert.Parameters["id"].Value = int.Parse(pair.Key);
+            insert.Parameters["kind"].Value = pair.Value.kind;
+            insert.Parameters["x"].Value = pair.Value.x;
+            insert.Parameters["z"].Value = pair.Value.z;
+            await insert.ExecuteNonQueryAsync(ct);
+        }
+    }
     await using (var update = new NpgsqlCommand(
         "UPDATE eldoria_worlds SET revision=revision+1,updated_at=now() WHERE world_seed=@seed", conn, tx))
     {
@@ -217,5 +268,7 @@ static bool ValidHash(string hash) =>
 
 record InventoryDto(int wood, int stone, int herb);
 record ProfileDto(int avatar, InventoryDto inventory);
+record BuildingDto(string kind, double x, double z);
 record SnapshotDto(int schema, int world_seed, long revision,
-    Dictionary<string, int> depleted, Dictionary<string, ProfileDto> profiles);
+    Dictionary<string, int> depleted, Dictionary<string, ProfileDto> profiles,
+    Dictionary<string, BuildingDto>? buildings = null);

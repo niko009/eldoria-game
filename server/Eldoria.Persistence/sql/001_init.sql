@@ -16,6 +16,15 @@ CREATE TABLE IF NOT EXISTS eldoria_players (
     PRIMARY KEY (world_seed, identity_hash)
 );
 
+CREATE TABLE IF NOT EXISTS eldoria_buildings (
+    world_seed integer NOT NULL REFERENCES eldoria_worlds(world_seed) ON DELETE CASCADE,
+    building_id integer NOT NULL CHECK (building_id BETWEEN 1 AND 100000),
+    kind varchar(16) NOT NULL CHECK (kind IN ('campfire', 'tent')),
+    pos_x double precision NOT NULL CHECK (pos_x BETWEEN -75 AND 75),
+    pos_z double precision NOT NULL CHECK (pos_z BETWEEN -75 AND 75),
+    PRIMARY KEY (world_seed, building_id)
+);
+
 CREATE TABLE IF NOT EXISTS eldoria_resources (
     world_seed integer NOT NULL REFERENCES eldoria_worlds(world_seed) ON DELETE CASCADE,
     resource_id integer NOT NULL CHECK (resource_id BETWEEN 1 AND 100000),
