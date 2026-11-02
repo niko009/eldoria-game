@@ -19,6 +19,9 @@ bash tests/run_avatar_jump_e2e.sh
 sleep 1
 echo "[TASK-011] authoritative resources"
 bash tests/run_resource_e2e.sh
+echo "[TASK-012] Android analogue joystick + durable server saves"
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/joystick_e2e.gd -- --test
+bash tests/run_persistence_e2e.sh
 
 for test_name in camera_profile_e2e gather_validation_e2e collision_perf_e2e forest_update_e2e; do
     "$GODOT_BIN" --headless --path "$ROOT/client" --script "res://tests/$test_name.gd" -- --test
@@ -35,10 +38,12 @@ if command -v Xvfb >/dev/null 2>&1; then
     sleep 0.5
     DISPLAY=":$display_number" timeout 30 "$GODOT_BIN" --path "$ROOT/client" --rendering-method gl_compatibility --audio-driver Dummy --script res://tests/render_probe.gd -- --test >"$ROOT/tests/logs/resource-opengl.log" 2>&1
     grep -q "RESOURCE OPENGL VISUAL PASS" "$ROOT/tests/logs/resource-opengl.log"
+    DISPLAY=":$display_number" timeout 30 "$GODOT_BIN" --path "$ROOT/client" --rendering-method gl_compatibility --audio-driver Dummy --script res://tests/joystick_gui_e2e.gd -- --test > "$ROOT/tests/logs/joystick-opengl.log" 2>&1
+    grep -q "JOYSTICK GUI PASS" "$ROOT/tests/logs/joystick-opengl.log"
     kill "$xvfb" 2>/dev/null || true
     trap - EXIT
     echo "PASS: real OpenGL MultiMesh resource depletion and restoration"
 else
     echo "NOTE: OpenGL visual test skipped: Xvfb not available."
 fi
-echo "PASS: TASK-011 offline gameplay regressions. No production deployment."
+echo "PASS: TASK-011/012 offline gameplay, joystick and persistence regressions. No production deployment."

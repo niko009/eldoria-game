@@ -6,6 +6,8 @@ const PORT := 7777
 const WEBSOCKET_PORT := 7788
 const MAX_PLAYERS := 10
 const INPUT_SCRIPT := preload("res://platform_input.gd")
+const JOYSTICK_SCRIPT := preload("res://mobile_joystick.gd")
+const WORLD_SAVE_SCRIPT := preload("res://world_save.gd")
 const DISPLAY_SCRIPT := preload("res://display_settings.gd")
 const GRAPHICS_SCRIPT := preload("res://graphics_profile.gd")
 const FOREST_SCRIPT := preload("res://forest_world.gd")
@@ -25,6 +27,9 @@ var players := {}
 var player_choices := {}
 var resource_remaining := {}
 var player_inventories := {}
+var player_identity_keys := {}
+var persistent_profiles := {}
+var world_store: RefCounted
 var last_gather_at := {}
 var inventory_label: Label
 var resource_label: Label
@@ -135,10 +140,11 @@ func _ui() -> void:
     # Exported players never have to type a server address.
     ip_input = LineEdit.new()
     ip_input.text = "127.0.0.1"
-    ip_input.visible = false
+    ip_input.placeholder_text = "Test server IP (development only)"
+    ip_input.visible = DEVELOPMENT_BUILD
     panel.add_child(ip_input)
     var connect_button := Button.new()
-    connect_button.text = "Join localhost (DEV)" if DEVELOPMENT_BUILD else "Connect / Retry"
+    connect_button.text = "Join test server (DEV)" if DEVELOPMENT_BUILD else "Connect / Retry"
     connect_button.pressed.connect(_join if DEVELOPMENT_BUILD else _fetch_server_config)
     if DEVELOPMENT_BUILD:
         var host_button := Button.new()
@@ -195,23 +201,16 @@ func _ui() -> void:
         )
         settings.add_child(resolution)
 
-    mobile_controls = Control.new()
+    # Responsive analogue joystick in the lower-left, not four D-pad buttons.
+    mobile_controls = JOYSTICK_SCRIPT.new()
     mobile_controls.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-    mobile_controls.offset_left = 24
-    mobile_controls.offset_top = -228
-    mobile_controls.offset_right = 270
-    mobile_controls.offset_bottom = -16
+    mobile_controls.offset_left = 20
+    mobile_controls.offset_top = -222
+    mobile_controls.offset_right = 218
+    mobile_controls.offset_bottom = -24
     mobile_controls.visible = OS.get_name() == "Android"
+    mobile_controls.moved.connect(input_driver.set_joystick)
     player_ui.add_child(mobile_controls)
-    for entry in [["▲", Vector2(78, 0), Vector2(0, -1)], ["▼", Vector2(78, 128), Vector2(0, 1)], ["◀", Vector2(0, 64), Vector2(-1, 0)], ["▶", Vector2(156, 64), Vector2(1, 0)]]:
-        var button := Button.new()
-        button.text = entry[0]
-        button.position = entry[1]
-        button.custom_minimum_size = Vector2(70, 60)
-        button.add_theme_font_size_override("font_size", 23)
-        button.button_down.connect(func() -> void: input_driver.press_direction(entry[2]))
-        button.button_up.connect(func() -> void: input_driver.release_direction(entry[2]))
-        mobile_controls.add_child(button)
 
     var sprint_button := Button.new()
     sprint_button.text = "Sprint: OFF"
@@ -299,6 +298,39 @@ func _on_update_status(message: String) -> void:
     if update_info != null:
         update_info.text = message
 
+func _configure_world_persistence() -> bool:
+    world_store = null
+    persistent_profiles.clear()
+    # Never write to the published game server by default. Dedicated test
+    # worlds explicitly opt in with an isolated ELDORIA_SAVE_PATH.
+    var file_name := OS.get_environment("ELDORIA_SAVE_PATH").strip_edges()
+    if file_name.is_empty():
+        return true
+    world_store = WORLD_SAVE_SCRIPT.new()
+    if not world_store.configure(file_name):
+        push_error("Cannot initialize Eldoria save directory: "+world_store.last_error)
+        return false
+    var world: Node3D = get_node("Eldoria_Forest")
+    if not world_store.load_snapshot(world):
+        push_error("Cannot load Eldoria save: "+world_store.last_error)
+        return false
+    persistent_profiles = world_store.profiles.duplicate(true)
+    for id in world_store.depleted.keys():
+        resource_remaining[int(id)] = int(world_store.depleted[id])
+        world.set_resource_quantity(int(id),int(resource_remaining[int(id)]))
+    print("ELDORIA PERSISTENCE LOADED profiles=%d depleted=%d" % [persistent_profiles.size(),world_store.depleted.size()])
+    return true
+
+func _save_world_state() -> bool:
+    if world_store == null:
+        return true
+    world_store.profiles = persistent_profiles.duplicate(true)
+    var world: Node3D = get_node("Eldoria_Forest")
+    if not world_store.save_snapshot(resource_remaining,world):
+        push_error("ELDORIA PERSISTENCE SAVE ERROR: "+world_store.last_error)
+        return false
+    return true
+
 func _host() -> void:
     _clear_session()
     if is_websocket_host:
@@ -319,6 +351,13 @@ func _host() -> void:
             return
     multiplayer.multiplayer_peer = peer
     _reset_resources()
+    if not _configure_world_persistence():
+        push_error("Eldoria save data invalid; refusing to host")
+        peer.close()
+        multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
+        if is_dedicated:
+            get_tree().quit(1)
+        return
     if is_dedicated:
         print("ELDORIA DEDICATED SERVER READY %s" % ("WS TCP 7788" if is_websocket_host else "UDP 7777"))
         return
@@ -430,7 +469,10 @@ func _is_valid_host_name(value: String) -> bool:
 
 func _connected() -> void:
     own_id = multiplayer.get_unique_id()
-    request_spawn.rpc_id(1, selected_avatar)
+    var identity := OS.get_environment("ELDORIA_TEST_IDENTITY")
+    if identity.is_empty() and OS.get_cmdline_user_args().is_empty():
+        identity = AVATAR_PROFILE.read_token()
+    request_spawn.rpc_id(1, selected_avatar, identity)
     _status("Connected, ID %s" % own_id)
 
 func _on_join(id: int) -> void:
@@ -444,6 +486,7 @@ func _on_join(id: int) -> void:
 
 func _on_leave(id: int) -> void:
     connected_peers.erase(id)
+    player_identity_keys.erase(id)
     _remove_actor(id)
     # SceneMultiplayer propagates peer_disconnected to all clients already.
     # No extra RPC: a peer may have closed its ENet channel during this signal.
@@ -471,10 +514,13 @@ func _clear_session() -> void:
     last_remote_ticks.clear()
     player_choices.clear()
     player_inventories.clear()
+    player_identity_keys.clear()
     last_gather_at.clear()
     server_jump_times.clear()
     client_jump_start_msec = 0
     jump_request_msec = 0
+    if mobile_controls != null and mobile_controls.has_method("reset"):
+        mobile_controls.reset()
     if input_driver != null:
         input_driver.clear_touch()
     multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
@@ -501,18 +547,35 @@ func _status(message: String) -> void:
         info.text = message
 
 @rpc("any_peer", "reliable")
-func request_spawn(choice: int = 0) -> void:
+func request_spawn(choice: int = 0, identity_token: String = "") -> void:
     if not multiplayer.is_server():
         return
     var id := multiplayer.get_remote_sender_id()
     if players.has(id):
         return
     var validated: int = AVATAR_PROFILE.normalized(choice)
+    var identity_hash := ""
+    if AVATAR_PROFILE.valid_token(identity_token):
+        identity_hash = identity_token.sha256_text()
+        if identity_hash in player_identity_keys.values():
+            # A single credential must not control two connected characters.
+            multiplayer.multiplayer_peer.disconnect_peer(id)
+            return
+        player_identity_keys[id] = identity_hash
+        var existing_profile: Dictionary = persistent_profiles.get(identity_hash,{})
+        if not existing_profile.is_empty():
+            validated = AVATAR_PROFILE.normalized(int(existing_profile.get("avatar",validated)))
     for existing in players:
         spawn_remote.rpc_id(id, existing, players[existing].position, int(player_choices.get(existing, 0)))
     var pos := Vector3(float(players.size() * 3), 1, 0)
     _spawn(id, pos, validated)
     player_inventories[id] = _empty_inventory()
+    if not identity_hash.is_empty():
+        if persistent_profiles.has(identity_hash):
+            player_inventories[id] = persistent_profiles[identity_hash]["inventory"].duplicate(true)
+        else:
+            persistent_profiles[identity_hash] = {"avatar":validated,"inventory":_empty_inventory()}
+            _save_world_state()
     spawn_remote.rpc(id, pos, validated)
     resource_snapshot.rpc_id(id, resource_remaining)
     inventory_snapshot.rpc_id(id, player_inventories[id])
@@ -532,6 +595,12 @@ func _spawn(id: int, pos: Vector3, choice: int = -1) -> void:
     add_child(actor)
     players[id] = actor
     player_choices[id] = valid_choice
+    if id == own_id and not is_dedicated:
+        selected_avatar = valid_choice
+        if avatar_selector != null:
+            avatar_selector.select(valid_choice)
+        if OS.get_cmdline_user_args().is_empty():
+            AVATAR_PROFILE.save_choice(valid_choice)
     emote_counts[id] = 0
 
 func _choose_avatar(choice: int) -> void:
@@ -568,6 +637,11 @@ func _set_avatar_for_peer(id: int, choice: int) -> void:
         return
     player_choices[id] = choice
     players[id].set_avatar(choice)
+    if multiplayer.is_server() and player_identity_keys.has(id):
+        var key: String = player_identity_keys[id]
+        if persistent_profiles.has(key):
+            persistent_profiles[key]["avatar"] = choice
+            _save_world_state()
     if id == own_id and avatar_selector != null:
         avatar_selector.select(choice)
 
@@ -728,6 +802,19 @@ func _gather_on_server(player_id: int, resource_id: int) -> bool:
     var inventory: Dictionary = player_inventories[player_id]
     inventory[kind] = int(inventory.get(kind,0))+1
     player_inventories[player_id] = inventory
+    # Persist the resource depletion and private inventory together before
+    # broadcasting success; revert the in-memory action if disk write fails.
+    if player_identity_keys.has(player_id):
+        var key: String = player_identity_keys[player_id]
+        persistent_profiles[key]["inventory"] = inventory.duplicate(true)
+    if not _save_world_state():
+        resource_remaining[resource_id] = int(resource_remaining[resource_id])+1
+        world.set_resource_quantity(resource_id,int(resource_remaining[resource_id]))
+        inventory[kind] = int(inventory[kind])-1
+        player_inventories[player_id] = inventory
+        if player_identity_keys.has(player_id):
+            persistent_profiles[player_identity_keys[player_id]]["inventory"] = inventory.duplicate(true)
+        return false
     for remote_peer in connected_peers.keys():
         resource_changed.rpc_id(int(remote_peer),resource_id,int(resource_remaining[resource_id]))
     if own_id == player_id:
