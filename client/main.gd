@@ -10,6 +10,7 @@ const JOYSTICK_SCRIPT := preload("res://mobile_joystick.gd")
 const WORLD_SAVE_SCRIPT := preload("res://world_save.gd")
 const POSTGRES_WORLD_STORE_SCRIPT := preload("res://postgres_world_store.gd")
 const BUILDING_SCRIPT := preload("res://building_object.gd")
+const HARVEST_VFX_SCRIPT := preload("res://harvest_vfx.gd")
 const DISPLAY_SCRIPT := preload("res://display_settings.gd")
 const GRAPHICS_SCRIPT := preload("res://graphics_profile.gd")
 const FOREST_SCRIPT := preload("res://forest_world.gd")
@@ -38,6 +39,13 @@ var next_building_id := 1
 var build_selector: OptionButton
 var build_feedback_label: Label
 var build_feedback_until := 0
+var preview_enabled := false
+var preview_actor: Node3D
+var preview_kind := ""
+var preview_last_update_msec := 0
+var preview_valid := false
+var preview_spot := Vector3.INF
+var harvest_visuals: Node3D
 var last_gather_at := {}
 var inventory_label: Label
 var resource_label: Label
@@ -85,6 +93,9 @@ func _ready() -> void:
     multiplayer.server_disconnected.connect(_server_disconnected)
     graphics_quality = GRAPHICS_SCRIPT.default_quality(is_dedicated)
     _world()
+    harvest_visuals = HARVEST_VFX_SCRIPT.new()
+    harvest_visuals.name = "HarvestVisuals"
+    add_child(harvest_visuals)
     _reset_resources()
     GRAPHICS_SCRIPT.apply(graphics_quality, sunlight, foliage)
     get_node("Eldoria_Forest").apply_detail_quality(graphics_quality == GRAPHICS_SCRIPT.HIGH)
@@ -192,6 +203,11 @@ func _ui() -> void:
     build_button.text = "Build (B)"
     build_button.pressed.connect(_try_build)
     build_row.add_child(build_button)
+    var preview_button := Button.new()
+    preview_button.name = "BuildPreviewToggle"
+    preview_button.text = "Preview (V)"
+    preview_button.pressed.connect(_toggle_build_preview)
+    build_row.add_child(preview_button)
     inventory_label = Label.new()
     inventory_label.text = "Wood: 0 | Stone: 0 | Herbs: 0"
     panel.add_child(inventory_label)
@@ -279,6 +295,16 @@ func _ui() -> void:
     build_mobile.visible = OS.get_name() == "Android"
     build_mobile.pressed.connect(_try_build)
     player_ui.add_child(build_mobile)
+    var preview_mobile := Button.new()
+    preview_mobile.text = "Preview"
+    preview_mobile.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+    preview_mobile.offset_left = -190
+    preview_mobile.offset_top = -300
+    preview_mobile.offset_right = -24
+    preview_mobile.offset_bottom = -243
+    preview_mobile.visible = OS.get_name() == "Android"
+    preview_mobile.pressed.connect(_toggle_build_preview)
+    player_ui.add_child(preview_mobile)
     var jump_button := Button.new()
     jump_button.text = "Jump"
     jump_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
@@ -569,6 +595,9 @@ func _clear_session() -> void:
     last_sent_position = Vector3.INF
     send_accumulator = 0.0
     connected_peers.clear()
+    _remove_preview()
+    if harvest_visuals != null:
+        harvest_visuals.clear_effects()
     last_remote_ticks.clear()
     player_choices.clear()
     _clear_buildings()
@@ -762,6 +791,8 @@ func _process(delta: float) -> void:
         fps_accumulator = 0.0
         fps_label.text = "FPS: %d | %s" % [Engine.get_frames_per_second(), "Low" if graphics_quality == GRAPHICS_SCRIPT.LOW else "High"]
     _refresh_gather_hud()
+    if preview_enabled and not is_dedicated and Time.get_ticks_msec()-preview_last_update_msec >= 260:
+        _update_build_preview()
     if build_feedback_label != null and build_feedback_label.visible and Time.get_ticks_msec() > build_feedback_until:
         build_feedback_label.visible = false
 
@@ -873,6 +904,59 @@ func _find_build_target(kind: String, origin: Vector3, yaw: float) -> Vector3:
                 return spot
     return Vector3.INF
 
+func _toggle_build_preview() -> void:
+    if is_dedicated:
+        return
+    preview_enabled = not preview_enabled
+    if not preview_enabled:
+        _remove_preview()
+        _show_build_feedback("Build preview hidden.")
+    else:
+        _show_build_feedback("Build preview: green = valid, red = blocked or missing resources.")
+        _update_build_preview()
+
+func _remove_preview() -> void:
+    if preview_actor != null and is_instance_valid(preview_actor):
+        preview_actor.queue_free()
+    preview_actor = null
+    preview_enabled = false
+    preview_kind = ""
+    preview_spot = Vector3.INF
+    preview_valid = false
+
+func _update_build_preview() -> void:
+    preview_last_update_msec = Time.get_ticks_msec()
+    if not preview_enabled or is_dedicated or own_id == 0 or not players.has(own_id):
+        if preview_actor != null and is_instance_valid(preview_actor):
+            preview_actor.visible = false
+        return
+    var kind := _build_choice()
+    var origin: Vector3 = players[own_id].position
+    var spot := _find_build_target(kind,origin,input_driver.yaw)
+    var has_spot := is_finite(spot.x)
+    if not has_spot:
+        # Red preview shows the attempted forward placement when blocked.
+        var forward := Vector3(0,0,-3.5).rotated(Vector3.UP,input_driver.yaw)
+        spot = origin + forward
+        spot.y = get_node("Eldoria_Forest").height_at(spot.x,spot.z)
+    var inv: Dictionary = player_inventories.get(own_id,{})
+    var allowed := has_spot and BUILDING_SCRIPT.affordable(kind,inv)
+    if preview_actor == null or not is_instance_valid(preview_actor) or preview_kind != kind:
+        if preview_actor != null and is_instance_valid(preview_actor):
+            preview_actor.queue_free()
+        preview_actor = BUILDING_SCRIPT.new()
+        preview_actor.name = "PlacementPreview"
+        preview_actor.is_preview = true
+        preview_actor.setup(0,kind,spot)
+        add_child(preview_actor)
+        preview_kind = kind
+    preview_spot = spot
+    preview_valid = allowed
+    preview_actor.position = spot
+    preview_actor.visible = true
+    if preview_actor.preview_valid != allowed:
+        preview_actor.set_preview_valid(allowed)
+
 func _try_build() -> void:
     if own_id == 0 or not players.has(own_id):
         _show_build_feedback("Connect to the world before building.")
@@ -883,7 +967,13 @@ func _try_build() -> void:
         _show_build_feedback(_affordability_message(kind,inventory))
         return
     var origin: Vector3 = players[own_id].position
-    var target := _find_build_target(kind,origin,input_driver.yaw)
+    var target: Vector3
+    if preview_enabled:
+        # The confirmed building must use exactly the position just previewed.
+        _update_build_preview()
+        target = preview_spot if preview_valid else Vector3.INF
+    else:
+        target = _find_build_target(kind,origin,input_driver.yaw)
     if not is_finite(target.x):
         _show_build_feedback("No clear flat space nearby. Move away from obstacles.")
         return
@@ -1084,9 +1174,11 @@ func _gather_on_server(player_id: int, resource_id: int) -> bool:
     else:
         inventory_snapshot.rpc_id(player_id,inventory)
     for remote_peer in connected_peers.keys():
-        gather_effect.rpc_id(int(remote_peer),player_id,kind)
+        gather_effect.rpc_id(int(remote_peer),player_id,kind,resource_id,
+            int(resource_remaining[resource_id]),pos)
     if own_id == player_id:
-        _gather_effect_local(player_id,kind)
+        _gather_effect_local(player_id,kind,resource_id,
+            int(resource_remaining[resource_id]),pos)
     return true
 
 @rpc("authority", "call_remote", "reliable")
@@ -1116,12 +1208,21 @@ func inventory_snapshot(inventory: Dictionary) -> void:
     _refresh_gather_hud()
 
 @rpc("authority", "call_remote", "reliable")
-func gather_effect(player_id: int, kind: String) -> void:
-    _gather_effect_local(player_id,kind)
+func gather_effect(player_id: int, kind: String, resource_id: int, amount: int,
+        actor_position: Vector3) -> void:
+    _gather_effect_local(player_id,kind,resource_id,amount,actor_position)
 
-func _gather_effect_local(player_id: int, kind: String) -> void:
+func _gather_effect_local(player_id: int, kind: String, resource_id: int, amount: int,
+        actor_position: Vector3) -> void:
     if players.has(player_id):
-        players[player_id].gather()
+        players[player_id].gather(kind)
+    if harvest_visuals != null:
+        var world: Node3D = get_node("Eldoria_Forest")
+        var entry: Dictionary = world.resource_by_id(resource_id)
+        if not entry.is_empty():
+            harvest_visuals.play_pickup(kind,entry["pos"])
+            if kind == "wood" and amount == 0:
+                harvest_visuals.play_tree_fall(resource_id,world,actor_position)
     if player_id == own_id:
         _status("Collected %s" % kind)
 
@@ -1233,6 +1334,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
         _try_gather()
     elif event.keycode == KEY_B:
         _try_build()
+    elif event.keycode == KEY_V:
+        _toggle_build_preview()
 
 func _toggle_fullscreen() -> void:
     DISPLAY_SCRIPT.toggle_fullscreen()
