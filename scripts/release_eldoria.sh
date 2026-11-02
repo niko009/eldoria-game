@@ -71,7 +71,7 @@ run_builder() {
 }
 run_builder git clone --quiet --depth 1 --branch "$SOURCE_REF" "$REPO" "$WORK"
 install -d -m 0750 -o mbacus -g mbacus "$STAGE/godot-data"
-HEAD="$(git -C "$WORK" rev-parse HEAD)"
+HEAD="$(run_builder git -C "$WORK" rev-parse HEAD)"
 echo "Source commit=$HEAD"
 if [[ "$MODE" == --deploy && "$SOURCE_REF" == *'*'* ]]; then exit 6; fi
 
