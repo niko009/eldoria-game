@@ -15,6 +15,13 @@ var batch_transforms: Dictionary = {}
 var batch_nodes: Array[MultiMeshInstance3D] = []
 var obstacle_positions: Array[Vector2] = []
 var obstacle_radii: Array[float] = []
+var obstacle_active: Array[bool] = []
+var _resource_exhausted := {}
+var _grass_candidates: Array[Dictionary] = []
+var _grass_cover: Array[Dictionary] = []
+var _vegetation_hidden_counts := {}
+var _resource_cover_cache := {}
+var _instance_resource_ids := {}
 var resources: Array[Dictionary] = []
 var _batch_nodes_by_key := {}
 var _batch_original_transforms := {}
@@ -43,6 +50,8 @@ func _ready() -> void:
     _create_trees()
     _create_rocks_and_flowers()
     _create_landmark()
+    # Append grass resources AFTER all legacy resources to retain PostgreSQL IDs.
+    _append_grass_resources()
     _flush_batches()
 
 func height_at(x: float, z: float) -> float:
@@ -223,9 +232,13 @@ func _spawn_asset(id: String, where: Vector3, scale_value: float, optional: bool
     var xform := Transform3D(Basis(Vector3.UP, angle).scaled(Vector3.ONE * scale_value), where)
     batch_transforms[group].append(xform)
     var instance_index: int = batch_transforms[group].size()-1
+    if id in ["Grass_Common_Short","Grass_Wispy_Tall"]:
+        _grass_candidates.append({"pos":where,"group":group,"index":instance_index})
+    if id in ["Grass_Common_Short","Grass_Wispy_Tall","Fern_1","Bush_Common"]:
+        _grass_cover.append({"pos":where,"group":group,"index":instance_index})
     if id in TREE_MODELS:
-        _add_obstacle(Vector2(where.x, where.z), (0.70 if id.begins_with("Twisted") else 0.57) * scale_value)
-        _record_resource("wood", where, 4)
+        var obstacle_id := _add_obstacle(Vector2(where.x, where.z), (0.70 if id.begins_with("Twisted") else 0.57) * scale_value)
+        _record_resource("wood", where, 4, group, instance_index, obstacle_id)
     elif id in ROCKS:
         _add_obstacle(Vector2(where.x, where.z), 1.06 * scale_value)
         _record_resource("stone", where, 3)
@@ -235,27 +248,76 @@ func _spawn_asset(id: String, where: Vector3, scale_value: float, optional: bool
         asset_detail_count += 1
     return true
 
-func _record_resource(kind: String, where: Vector3, amount: int, group: String = "", index: int = -1) -> void:
-    resources.append({"id": resources.size()+1, "kind":kind, "pos":where,
-        "amount":amount, "group":group, "index":index})
+func _append_grass_resources() -> void:
+    # This is strictly appended, never inserted between old trees/rocks/herbs.
+    for grass in _grass_candidates:
+        # Optional detail batches are hidden on Android Low graphics.
+        # Do not turn invisible low-quality ground cover into gatherable loot.
+        if str(grass["group"]).ends_with("#extra"):
+            continue
+        _record_resource("herb", grass["pos"], 1, grass["group"], grass["index"])
+
+func _record_resource(kind: String, where: Vector3, amount: int,
+        group: String = "", index: int = -1, obstacle_id: int = -1) -> void:
+    var new_id := resources.size()+1
+    resources.append({"id":new_id,"kind":kind,"pos":where,
+        "amount":amount,"group":group,"index":index,"obstacle_id":obstacle_id})
+    if index >= 0:
+        _instance_resource_ids[group+":"+str(index)] = new_id
 
 func set_resource_quantity(resource_id: int, amount: int) -> void:
     var entry := resource_by_id(resource_id)
-    # Trees and boulders remain solid, even after their resources run out.
-    # Small herbs disappear when harvested.
-    if entry.is_empty() or entry["kind"] != "herb":
+    if entry.is_empty():
         return
-    var group: String = entry["group"]
+    var depleted := amount <= 0
+    var before := bool(_resource_exhausted.get(resource_id,false))
+    if before == depleted:
+        return
+    _resource_exhausted[resource_id] = depleted
+    if entry["kind"] in ["wood","herb"]:
+        if int(entry["index"]) >= 0:
+            _set_batch_instance(str(entry["group"]),int(entry["index"]),not depleted)
+        if entry["kind"] == "wood" and int(entry["obstacle_id"]) >= 0:
+            obstacle_active[int(entry["obstacle_id"])] = not depleted
+        # Chopped trees clear nearby grass/ferns and picked herbs clear their patch.
+        # Counters prevent re-showing vegetation still hidden by another source.
+        var targets: Array = _nearby_vegetation(resource_id,entry)
+        for cover in targets:
+            var key: String = str(cover["group"]) + ":" + str(cover["index"])
+            var n := maxi(0,int(_vegetation_hidden_counts.get(key,0)) + (1 if depleted else -1))
+            _vegetation_hidden_counts[key] = n
+            _set_batch_instance(str(cover["group"]),int(cover["index"]),n == 0)
+
+func _nearby_vegetation(resource_id: int, entry: Dictionary) -> Array:
+    if _resource_cover_cache.has(resource_id):
+        return _resource_cover_cache[resource_id]
+    var out: Array = []
+    var p: Vector3 = entry["pos"]
+    var r := 2.7 if entry["kind"] == "wood" else 0.75
+    for cover in _grass_cover:
+        var spot: Vector3 = cover["pos"]
+        if Vector2(p.x,p.z).distance_squared_to(Vector2(spot.x,spot.z)) <= r*r:
+            # Gatherable plants must stay visible until their own resource is
+            # consumed. Otherwise the world can show invisible loot markers.
+            var cover_key := str(cover["group"]) + ":" + str(cover["index"])
+            if _instance_resource_ids.has(cover_key):
+                continue
+            out.append(cover)
+    _resource_cover_cache[resource_id] = out
+    return out
+
+func _set_batch_instance(group: String, index: int, visible: bool) -> void:
     if not _batch_nodes_by_key.has(group):
         return
-    var index: int = entry["index"]
     var batch: MultiMeshInstance3D = _batch_nodes_by_key[group]
     var original: Transform3D = _batch_original_transforms[group][index]
-    if amount > 0:
-        batch.multimesh.set_instance_transform(index,original)
-    else:
-        batch.multimesh.set_instance_transform(index,
-            Transform3D(Basis().scaled(Vector3.ZERO),original.origin))
+    var key := group+":"+str(index)
+    if bool(_resource_exhausted.get(int(_instance_resource_ids.get(key,-1)),false)):
+        visible = false
+    if int(_vegetation_hidden_counts.get(key,0)) > 0:
+        visible = false
+    batch.multimesh.set_instance_transform(index,original if visible else
+        Transform3D(Basis().scaled(Vector3.ZERO),original.origin))
 
 func resource_by_id(resource_id: int) -> Dictionary:
     if resource_id < 1 or resource_id > resources.size():
@@ -277,9 +339,11 @@ func nearest_resource(position: Vector3, radius: float, remaining: Dictionary) -
             best_id = id
     return best_id
 
-func _add_obstacle(pos: Vector2, radius: float) -> void:
+func _add_obstacle(pos: Vector2, radius: float) -> int:
     obstacle_positions.append(pos)
     obstacle_radii.append(radius)
+    obstacle_active.append(true)
+    return obstacle_positions.size()-1
 
 func _flush_batches() -> void:
     # A single MultiMesh draw per imported glTF mesh, not ~350 scene instances.
@@ -323,6 +387,8 @@ func apply_detail_quality(high: bool) -> void:
 
 func collides_at(pos: Vector2, radius: float = 0.43) -> bool:
     for i in range(obstacle_positions.size()):
+        if not obstacle_active[i]:
+            continue
         var r: float = obstacle_radii[i] + radius
         if pos.distance_squared_to(obstacle_positions[i]) < r*r:
             return true
@@ -334,6 +400,8 @@ func _sweep_hits(start: Vector2, finish: Vector2, radius: float) -> bool:
     if squared < 0.0000001:
         return collides_at(finish, radius)
     for i in range(obstacle_positions.size()):
+        if not obstacle_active[i]:
+            continue
         var center := obstacle_positions[i]
         var range_radius: float = obstacle_radii[i] + radius
         var begin_dist := start.distance_squared_to(center)
@@ -464,6 +532,8 @@ func camera_safe_target(focus: Vector3, requested: Vector3) -> Vector3:
     if flat_squared > 0.0001:
         var start2 := Vector2(focus.x,focus.z)
         for i in range(obstacle_positions.size()):
+            if not obstacle_active[i]:
+                continue
             var radius: float = obstacle_radii[i] + 0.35
             var offset: Vector2 = obstacle_positions[i] - start2
             var dot_t := clampf(offset.dot(segment2) / flat_squared,0.0,1.0)

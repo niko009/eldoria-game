@@ -20,7 +20,8 @@ const UPDATE_SCRIPT := preload("res://update_manager.gd")
 const MOVE_SPEED := 6.0
 const CLIENT_VERSION := "0.5.0"
 # Published v0.5.0 multiplayer client. Development builds may toggle this to true.
-const DEVELOPMENT_BUILD := false
+# TASK-015 development build: do not auto-connect or update against live v0.5.0.
+const DEVELOPMENT_BUILD := true
 const SERVER_CONFIG_URL := "https://bacus.dev/projects/eldoria/server.json"
 
 var peer: MultiplayerPeer = ENetMultiplayerPeer.new()
@@ -35,6 +36,8 @@ var placed_buildings: Dictionary = {}
 var building_nodes: Dictionary = {}
 var next_building_id := 1
 var build_selector: OptionButton
+var build_feedback_label: Label
+var build_feedback_until := 0
 var last_gather_at := {}
 var inventory_label: Label
 var resource_label: Label
@@ -96,7 +99,7 @@ func _ready() -> void:
         # SceneTree test harnesses supply CLI user args and trigger discovery explicitly.
         if OS.get_cmdline_user_args().is_empty():
             if DEVELOPMENT_BUILD:
-                _status("DEV build — localhost only; production remains v0.5.0.")
+                _status("DEV TASK-015: connect to your test server only. Live v0.5.0 unchanged.")
             else:
                 _fetch_server_config()
     else:
@@ -127,6 +130,20 @@ func _ui() -> void:
     panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
     panel.position = Vector2(24, 24)
     player_ui.add_child(panel)
+    build_feedback_label = Label.new()
+    build_feedback_label.text = ""
+    build_feedback_label.visible = false
+    build_feedback_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
+    build_feedback_label.offset_left = -220
+    build_feedback_label.offset_top = 105
+    build_feedback_label.offset_right = 220
+    build_feedback_label.offset_bottom = 160
+    build_feedback_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    build_feedback_label.add_theme_font_size_override("font_size", 19)
+    build_feedback_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+    build_feedback_label.add_theme_constant_override("shadow_offset_x", 2)
+    build_feedback_label.add_theme_constant_override("shadow_offset_y", 2)
+    player_ui.add_child(build_feedback_label)
     var title := Label.new()
     title.text = "ELDORIA / CROSS-PLATFORM PRE-ALPHA"
     panel.add_child(title)
@@ -745,6 +762,8 @@ func _process(delta: float) -> void:
         fps_accumulator = 0.0
         fps_label.text = "FPS: %d | %s" % [Engine.get_frames_per_second(), "Low" if graphics_quality == GRAPHICS_SCRIPT.LOW else "High"]
     _refresh_gather_hud()
+    if build_feedback_label != null and build_feedback_label.visible and Time.get_ticks_msec() > build_feedback_until:
+        build_feedback_label.visible = false
 
 @rpc("any_peer", "unreliable")
 func submit_position(pos: Vector3) -> void:
@@ -812,14 +831,63 @@ func _reset_resources() -> void:
 
 # Authoritative building: the client proposes a point, but server validates
 # cost, distance, world bounds, terrain gradient and solid intersections.
+func _show_build_feedback(message: String) -> void:
+    _status(message)
+    if build_feedback_label != null:
+        build_feedback_label.text = message
+        build_feedback_label.visible = true
+        build_feedback_until = Time.get_ticks_msec() + 5200
+
+@rpc("authority","call_remote","reliable")
+func build_feedback(message: String) -> void:
+    _show_build_feedback(message)
+
+func _notify_build_result(id: int, message: String) -> void:
+    if id == own_id:
+        _show_build_feedback(message)
+    elif connected_peers.has(id):
+        build_feedback.rpc_id(id,message)
+
+func _build_choice() -> String:
+    return "tent" if build_selector != null and build_selector.selected == 1 else "campfire"
+
+func _affordability_message(kind: String, inv: Dictionary) -> String:
+    var needs := []
+    for item in BUILDING_SCRIPT.COSTS[kind].keys():
+        var required: int = BUILDING_SCRIPT.COSTS[kind][item]
+        var have := int(inv.get(item,0))
+        if required > have:
+            needs.append("%d %s (have %d)" % [required,item,have])
+    return "Need resources: " + ", ".join(needs)
+
+func _find_build_target(kind: String, origin: Vector3, yaw: float) -> Vector3:
+    # The old hard-coded point directly ahead failed silently near obstacles.
+    # Try forward positions first, then gently fan out around the character.
+    var world: Node3D = get_node("Eldoria_Forest")
+    for radians in [0.0,-0.32,0.32,-0.64,0.64,-1.05,1.05,-1.57,1.57,3.14]:
+        for distance in [3.5,4.4,5.3]:
+            var forward := Vector3(0,0,-distance).rotated(Vector3.UP,yaw+radians)
+            var spot := Vector3(origin.x+forward.x,0.0,origin.z+forward.z)
+            spot.y = world.height_at(spot.x,spot.z)
+            if _is_valid_build_spot(kind,spot,origin):
+                return spot
+    return Vector3.INF
+
 func _try_build() -> void:
     if own_id == 0 or not players.has(own_id):
+        _show_build_feedback("Connect to the world before building.")
         return
-    var kind: String = "tent" if build_selector != null and build_selector.selected == 1 else "campfire"
+    var kind := _build_choice()
+    var inventory: Dictionary = player_inventories.get(own_id,{})
+    if not BUILDING_SCRIPT.affordable(kind,inventory):
+        _show_build_feedback(_affordability_message(kind,inventory))
+        return
     var origin: Vector3 = players[own_id].position
-    var ahead := Vector3(0,0,-3.5).rotated(Vector3.UP,input_driver.yaw)
-    var target := Vector3(origin.x+ahead.x,0,origin.z+ahead.z)
-    target.y = get_node("Eldoria_Forest").height_at(target.x,target.z)
+    var target := _find_build_target(kind,origin,input_driver.yaw)
+    if not is_finite(target.x):
+        _show_build_feedback("No clear flat space nearby. Move away from obstacles.")
+        return
+    _show_build_feedback("Placing %s..." % kind)
     if multiplayer.is_server():
         _build_on_server(own_id,kind,target)
     else:
@@ -860,10 +928,18 @@ func _is_valid_build_spot(kind: String, spot: Vector3, actor_pos: Vector3) -> bo
 func _build_on_server(id: int, kind: String, spot: Vector3) -> bool:
     if not multiplayer.is_server() or not players.has(id):
         return false
-    if placed_buildings.size() >= 300 or not _is_valid_build_spot(kind,spot,players[id].position):
+    if placed_buildings.size() >= 300:
+        _notify_build_result(id,"The world has reached its building limit.")
+        return false
+    if not _is_valid_build_spot(kind,spot,players[id].position):
+        _notify_build_result(id,"Cannot build there. Find a clear, flat area.")
         return false
     var inv: Dictionary = player_inventories.get(id,{})
+    if not BUILDING_SCRIPT.is_valid_kind(kind):
+        _notify_build_result(id,"Unknown building type.")
+        return false
     if not BUILDING_SCRIPT.affordable(kind,inv):
+        _notify_build_result(id,_affordability_message(kind,inv))
         return false
     var old_inv := inv.duplicate(true)
     var id_new := next_building_id
@@ -883,6 +959,7 @@ func _build_on_server(id: int, kind: String, spot: Vector3) -> bool:
         player_inventories[id] = old_inv
         if player_identity_keys.has(id):
             persistent_profiles[player_identity_keys[id]]["inventory"] = old_inv.duplicate(true)
+        _notify_build_result(id,"Could not save building. No resources were spent.")
         return false
     _place_building(id_new,record)
     for remote_peer in connected_peers.keys():
@@ -891,6 +968,7 @@ func _build_on_server(id: int, kind: String, spot: Vector3) -> bool:
         inventory_snapshot(inv)
     else:
         inventory_snapshot.rpc_id(id,inv)
+    _notify_build_result(id,"%s built successfully!" % kind.capitalize())
     return true
 
 func _clear_buildings() -> void:

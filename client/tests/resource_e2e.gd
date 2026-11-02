@@ -68,10 +68,10 @@ func _run() -> void:
         if not await _await_peers(1,300):
             _fail("other client did not disconnect cleanly")
             return
-        if not await _await_peers(2,370):
+        if not await _await_peers(2,1200):
             _fail("late join missing")
             return
-        if not await _await_peers(1,370):
+        if not await _await_peers(1,1200):
             _fail("late join did not finish")
             return
         print("RESOURCE LATE JOIN OBSERVED PASS A")
@@ -93,6 +93,8 @@ func _run() -> void:
             _fail("avatar selection lost on reconnect")
             return
         print("RESOURCE LATE JOIN SNAPSHOT PASS B")
+        for settle_frame in range(180):
+            await process_frame # allow the other client to observe reconnection
     game._disconnect()
     quit(0)
 

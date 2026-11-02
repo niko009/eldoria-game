@@ -20,6 +20,14 @@ sleep 1
 echo "[TASK-011] authoritative resources"
 bash tests/run_resource_e2e.sh
 bash tests/run_building_e2e.sh
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/building_ui_e2e.gd -- --test
+echo "[TASK-015] terrain depletion persists across real dedicated server restarts"
+TEMPDIR=$(mktemp -d)
+trap 'rm -rf "$TEMPDIR"' EXIT
+ELDORIA_SAVE_PATH="$TEMPDIR/world.json" "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/forest_depletion_persistence_e2e.gd -- --initial
+ELDORIA_SAVE_PATH="$TEMPDIR/world.json" "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/forest_depletion_persistence_e2e.gd -- --restored
+rm -rf "$TEMPDIR"
+trap - EXIT
 echo "[TASK-012] Android analogue joystick + durable server saves"
 "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/joystick_e2e.gd -- --test
 bash tests/run_persistence_e2e.sh
@@ -41,10 +49,12 @@ if command -v Xvfb >/dev/null 2>&1; then
     grep -q "RESOURCE OPENGL VISUAL PASS" "$ROOT/tests/logs/resource-opengl.log"
     DISPLAY=":$display_number" timeout 30 "$GODOT_BIN" --path "$ROOT/client" --rendering-method gl_compatibility --audio-driver Dummy --script res://tests/joystick_gui_e2e.gd -- --test > "$ROOT/tests/logs/joystick-opengl.log" 2>&1
     grep -q "JOYSTICK GUI PASS" "$ROOT/tests/logs/joystick-opengl.log"
+    DISPLAY=":$display_number" timeout 32 "$GODOT_BIN" --path "$ROOT/client" --rendering-method gl_compatibility --audio-driver Dummy --script res://tests/forest_resource_visual_e2e.gd -- --test > "$ROOT/tests/logs/forest-resource-opengl.log" 2>&1
+    grep -q "FOREST RESOURCE OPENGL PASS" "$ROOT/tests/logs/forest-resource-opengl.log"
     kill "$xvfb" 2>/dev/null || true
     trap - EXIT
     echo "PASS: real OpenGL MultiMesh resource depletion and restoration"
 else
     echo "NOTE: OpenGL visual test skipped: Xvfb not available."
 fi
-echo "PASS: TASK-011/012 offline gameplay, joystick and persistence regressions. No production deployment."
+echo "PASS: TASK-011..015 gameplay, joystick, builds, dynamic vegetation and persistence. No production deployment."
