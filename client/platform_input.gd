@@ -4,11 +4,15 @@ extends Node
 var yaw := 0.0
 var pitch := -0.45
 var touch_move := Vector2.ZERO
+var joystick_move := Vector2.ZERO
 var _pressed_directions := {}
 var _look_touch_id := -1
 
 func get_move_vector() -> Vector2:
-    return (Input.get_vector("move_left", "move_right", "move_forward", "move_back") + touch_move).limit_length()
+    return (Input.get_vector("move_left", "move_right", "move_forward", "move_back") + joystick_move + touch_move).limit_length()
+
+func set_joystick(vector: Vector2) -> void:
+    joystick_move = vector.limit_length()
 
 func press_direction(direction: Vector2) -> void:
     _pressed_directions[direction] = true
@@ -21,6 +25,7 @@ func release_direction(direction: Vector2) -> void:
 func clear_touch() -> void:
     _pressed_directions.clear()
     touch_move = Vector2.ZERO
+    joystick_move = Vector2.ZERO
     _look_touch_id = -1
 
 func _recompute_touch() -> void:
