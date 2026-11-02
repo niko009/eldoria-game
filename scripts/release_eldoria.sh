@@ -71,7 +71,11 @@ run_builder() {
 }
 run_builder git clone --quiet --depth 1 --branch "$SOURCE_REF" "$REPO" "$WORK"
 install -d -m 0750 -o mbacus -g mbacus "$STAGE/godot-data"
-HEAD="$(git -C "$WORK" rev-parse HEAD)"
+# Godot resolves export templates relative to XDG_DATA_HOME. Link the
+# installed, verified templates into the isolated build sandbox BEFORE import.
+install -d -m 0750 -o mbacus -g mbacus "$STAGE/godot-data/godot"
+ln -s "$(dirname "$GODOT_TEMPLATES")" "$STAGE/godot-data/godot/export_templates"
+HEAD="$(run_builder git -C "$WORK" rev-parse HEAD)"
 echo "Source commit=$HEAD"
 if [[ "$MODE" == --deploy && "$SOURCE_REF" == *'*'* ]]; then exit 6; fi
 
@@ -89,12 +93,16 @@ old_source="$(sed -nE 's/^const CLIENT_VERSION := "([^"]+)".*/\1/p' "$WORK/clien
 # Only allow a known version or its dev candidate; no arbitrary string edits.
 [[ "$old_source" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-dev)?$ ]] || exit 6
 old_preset="$(sed -nE 's/^version\/name="([^"]+)"/\1/p' "$WORK/client/export_presets.cfg" | head -1)"
-[[ "$old_preset" == "$PREVIOUS" ]] || { echo "Source export version $old_preset != production base $PREVIOUS" >&2; exit 6; }
-[[ "$old_source" == "$PREVIOUS" || "$old_source" == "$VERSION-dev" || "$old_source" == "$VERSION" ]] || { echo "Unexpected client version: $old_source" >&2; exit 6; }
+[[ "$old_preset" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid source export version: $old_preset" >&2; exit 6; }
+# Feature branches are not version-stamped: their export preset can be older
+# than the previous production even when their CLIENT_VERSION is a dev suffix.
+[[ "$(printf '%s\n%s\n' "$old_preset" "$PREVIOUS" | sort -V | tail -1)" == "$PREVIOUS" ]] || {
+  echo "Source preset is ahead of production; release manually" >&2; exit 6
+}
 for f in "${FILES[@]}"; do
-  sed -i "s/${PREVIOUS//./\\.}/$VERSION/g" "$f"
+  sed -i "s/${old_preset//./\\.}/$VERSION/g" "$f"
 done
-sed -i "s/const CLIENT_VERSION := \"$VERSION-dev\"/const CLIENT_VERSION := \"$VERSION\"/" "$WORK/client/main.gd"
+sed -i -E "s/^const CLIENT_VERSION := \"[^\"]+\"$/const CLIENT_VERSION := \"$VERSION\"/" "$WORK/client/main.gd"
 # TASK-025 development branches intentionally disable public auto-connect.
 # Release copies MUST re-enable discovery; never change the development branch.
 sed -i -E 's/^const DEVELOPMENT_BUILD := true$/const DEVELOPMENT_BUILD := false/' "$WORK/client/main.gd"
@@ -105,7 +113,7 @@ OLD_CODE="$("$SDK/build-tools/35.0.0/aapt" dump badging "$SITE/Eldoria-$PREVIOUS
 [[ "$OLD_CODE" =~ ^[0-9]+$ ]] || { echo "Cannot determine prior Android versionCode"; exit 6; }
 NEXT_CODE="$((OLD_CODE + 1))"
 sed -i "s|^version/code=.*|version/code=$NEXT_CODE|" "$WORK/client/export_presets.cfg"
-sed -i "s/versionCode='$OLD_CODE'/versionCode='$NEXT_CODE'/g" "$WORK/tests/build_android_debug.sh"
+sed -i -E "s/versionCode='[0-9]+'/versionCode='$NEXT_CODE'/g" "$WORK/tests/build_android_debug.sh"
 if [[ "$(sed -nE 's/^const CLIENT_VERSION := "([^"]+)".*/\1/p' "$WORK/client/main.gd" | head -1)" != "$VERSION" ]]; then
   echo "Version stamping failed"; exit 6
 fi
@@ -137,7 +145,7 @@ aapt_badging="$("$SDK/build-tools/35.0.0/aapt" dump badging "$WORK/builds/$APK")
 [[ "$aapt_badging" == *"name='dev.bacus.eldoria'"* && "$aapt_badging" == *"versionName='$VERSION'"* && "$aapt_badging" == *"arm64-v8a"* ]] || { echo "APK badging mismatch"; exit 8; }
 [[ "$aapt_badging" == *"versionCode='$NEXT_CODE'"* ]] || { echo "APK versionCode mismatch"; exit 8; }
 
-run_builder node "$WORK/tools/generate_manifest.js" "$VERSION" "Улучшена графика окружения, обновлён HUD и добавлена диагностика F9. PvE: первый волк и здоровье игрока." >"$STAGE/manifest.log"
+run_builder node "$WORK/tools/generate_manifest.js" "$VERSION" "${ELDORIA_RELEASE_NOTES:-Обновление Eldoria: графика, интерфейс и игровые улучшения.}" >"$STAGE/manifest.log"
 run_builder sha256sum "$WORK/builds/$APK" "$WORK/builds/$ZIP" | tee "$STAGE/checksums.txt"
 jq -e ".version == \"$VERSION\" and .schema == 1" "$WORK/builds/latest.json" >/dev/null
 echo "BUILD_PASS SHA_MATCH CERT_MATCH"
