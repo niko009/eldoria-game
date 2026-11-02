@@ -94,6 +94,15 @@ for step in initial restored; do
     grep -q "POSTGRES BUILD ${step^^} PASS" "$LOG_DIR/postgres-build-$step.log"
     grep "POSTGRES BUILD ${step^^} PASS" "$LOG_DIR/postgres-build-$step.log"
 done
+# A felled tree and harvested grass must remain removed after restarting the
+# Godot host and reloading the same isolated PostgreSQL world.
+for step in initial restored; do
+    ELDORIA_PG_API_URL="$API_URL" ELDORIA_PG_API_KEY="$ELDORIA_TEST_INTERNAL_KEY" timeout 30 \
+      "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/forest_depletion_persistence_e2e.gd -- --"$step" \
+      >"$LOG_DIR/postgres-forest-$step.log" 2>&1
+    grep -q "DEPLETION ${step^^} PASS" "$LOG_DIR/postgres-forest-$step.log"
+    grep "DEPLETION ${step^^} PASS" "$LOG_DIR/postgres-forest-$step.log"
+done
 set +e
 ELDORIA_PG_API_URL="$API_URL" ELDORIA_PG_API_KEY="WRONG_TEST_SECRET_DO_NOT_ACCEPT_2026" \
  timeout 14 "$GODOT_BIN" --headless --path "$ROOT/client" -- --dedicated-server \

@@ -21,6 +21,9 @@ func _run() -> void:
     for i in range(550):
         await process_frame
         if game.placed_buildings.size()==2:
+            # Stay online to service the second client's rejected placement.
+            for post_build_frame in range(350):
+                await process_frame
             print("BUILD NETWORK SERVER PASS two buildings created")
             quit(0)
             return
