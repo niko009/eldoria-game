@@ -1,1 +1,8 @@
 builds/
+**/bin/
+**/obj/
+.env
+.env.*
+!*.env.example
+*.pfx
+*.key
