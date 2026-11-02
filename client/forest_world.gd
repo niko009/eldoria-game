@@ -55,6 +55,7 @@ func _ready() -> void:
     # Append grass resources AFTER all legacy resources to retain PostgreSQL IDs.
     _append_grass_resources()
     _flush_batches()
+    _create_visual_accents()
 
 func height_at(x: float, z: float) -> float:
     var radius := Vector2(x, z).length()
@@ -70,30 +71,30 @@ func _mat(color: Color, rough: float = 0.94) -> StandardMaterial3D:
 
 func _create_sky() -> void:
     sun = DirectionalLight3D.new()
-    sun.rotation_degrees = Vector3(-37, -34, 0)
-    sun.light_color = Color("fff0d4")
-    sun.light_energy = 0.95
+    sun.rotation_degrees = Vector3(-43, -34, 0)
+    sun.light_color = Color("ffe7bd")
+    sun.light_energy = 0.82
     sun.shadow_enabled = true
     add_child(sun)
     environment_node = WorldEnvironment.new()
     var e := Environment.new()
     var sky := Sky.new()
     var sky_mat := ProceduralSkyMaterial.new()
-    sky_mat.sky_top_color = Color("70a9cf")
-    sky_mat.sky_horizon_color = Color("d5e5da")
-    sky_mat.ground_bottom_color = Color("546a5c")
-    sky_mat.ground_horizon_color = Color("acbead")
+    sky_mat.sky_top_color = Color("668fbd")
+    sky_mat.sky_horizon_color = Color("cadde0")
+    sky_mat.ground_bottom_color = Color("526e72")
+    sky_mat.ground_horizon_color = Color("a8bec0")
     sky_mat.sun_angle_max = 10.0
     sky.sky_material = sky_mat
     e.background_mode = Environment.BG_SKY
     e.sky = sky
     e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-    e.ambient_light_color = Color("b9c9bd")
-    e.ambient_light_energy = 0.55
+    e.ambient_light_color = Color("a9bfd0")
+    e.ambient_light_energy = 0.48
     e.reflected_light_source = Environment.REFLECTION_SOURCE_BG
     e.fog_enabled = true
-    e.fog_light_color = Color("bfd0c0")
-    e.fog_density = 0.0012
+    e.fog_light_color = Color("b5c9cf")
+    e.fog_density = 0.0016
     environment_node.environment = e
     add_child(environment_node)
 
@@ -111,9 +112,9 @@ func _create_terrain() -> void:
             var d := Vector3(x0, height_at(x0, z0 + cell), z0 + cell)
             for v in [a,b,c,a,c,d]:
                 var hue := _terrain_noise.get_noise_2d(v.x * 2.1, v.z * 2.1)
-                var color := Color("4e7451").lerp(Color("6d945c"), clampf(0.48 + hue * 0.37, 0.0, 1.0))
+                var color := Color("506e56").lerp(Color("8ca46b"), clampf(0.48 + hue * 0.37, 0.0, 1.0))
                 if v.y > 3.9:
-                    color = color.lerp(Color("788477"), clampf((v.y - 3.9) / 5.0, 0.0, 0.6))
+                    color = color.lerp(Color("89958a"), clampf((v.y - 3.9) / 5.0, 0.0, 0.6))
                 st.set_color(color)
                 st.add_vertex(v)
     st.generate_normals()
@@ -133,7 +134,7 @@ func _create_mountain_silhouette() -> void:
     for m in range(21):
         var angle := TAU * float(m) / 21.0
         var center := Vector3(cos(angle)*175.0,0,sin(angle)*175.0)
-        var summit_y := _rng.randf_range(31.0,74.0)
+        var summit_y := lerpf(24.0, 47.0, (_rng.randf_range(31.0,74.0) - 31.0) / 43.0)
         var radius := _rng.randf_range(29.0,58.0)
         var segments := 10
         for k in range(segments):
@@ -145,9 +146,9 @@ func _create_mountain_silhouette() -> void:
             var v2 := center + Vector3(cos(b)*shape_b, _rng.randf_range(-3.0,1.0), sin(b)*shape_b)
             var summit := center + Vector3(_rng.randf_range(-5.0,5.0),summit_y,_rng.randf_range(-5.0,5.0))
             for v in [v1,v2,summit]:
-                var c := Color("77938b") if v.y < 28.0 else Color("859b9e")
-                if v.y > 45.0:
-                    c = Color("bbc5bb")
+                var c := Color("617d83") if v.y < 23.0 else Color("82999c")
+                if v.y > 38.0:
+                    c = Color("a9b9b9")
                 st.set_color(c)
                 st.add_vertex(v)
     st.generate_normals()
@@ -157,6 +158,7 @@ func _create_mountain_silhouette() -> void:
     var material := _mat(Color.WHITE)
     material.vertex_color_use_as_albedo = true
     material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
     back.material_override = material
     add_child(back)
 
@@ -189,21 +191,65 @@ func _create_path() -> void:
 func _create_water() -> void:
     var pond := MeshInstance3D.new()
     pond.name = "Moonstone pond"
-    var mesh := CylinderMesh.new()
-    mesh.top_radius = 10.0
-    mesh.bottom_radius = 10.8
-    mesh.height = 0.07
-    mesh.radial_segments = 48
-    pond.mesh = mesh
-    pond.position = Vector3(-29, height_at(-29,22)+0.14, 22)
-    var m := _mat(Color("71b6ae"), 0.12)
-    m.metallic = 0.18
+    # Opaque vertex-coloured water keeps GL Compatibility and Android Low cheap.
+    # The shoreline is irregular but uses no gameplay RNG calls.
+    var surface := SurfaceTool.new()
+    surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+    var rings := [0.0, 4.2, 8.3, 10.0]
+    var colors := [Color("5d9fa7"), Color("70b6bd"), Color("80c8c2"), Color("9ac7b0")]
+    for ring in range(3):
+        for i in range(64):
+            var a := TAU * float(i) / 64.0
+            var b := TAU * float(i + 1) / 64.0
+            var wobble_a := 1.0 + 0.065 * sin(a * 5.0 + 0.3) + 0.035 * sin(a * 9.0)
+            var wobble_b := 1.0 + 0.065 * sin(b * 5.0 + 0.3) + 0.035 * sin(b * 9.0)
+            var inner_a := Vector3(cos(a) * rings[ring] * wobble_a, 0, sin(a) * rings[ring] * wobble_a)
+            var outer_a := Vector3(cos(a) * rings[ring + 1] * wobble_a, 0, sin(a) * rings[ring + 1] * wobble_a)
+            var inner_b := Vector3(cos(b) * rings[ring] * wobble_b, 0, sin(b) * rings[ring] * wobble_b)
+            var outer_b := Vector3(cos(b) * rings[ring + 1] * wobble_b, 0, sin(b) * rings[ring + 1] * wobble_b)
+            for vertex in [[inner_a, colors[ring]], [outer_a, colors[ring + 1]], [outer_b, colors[ring + 1]],
+                    [inner_a, colors[ring]], [outer_b, colors[ring + 1]], [inner_b, colors[ring]]]:
+                surface.set_color(vertex[1])
+                surface.add_vertex(vertex[0])
+    surface.generate_normals()
+    pond.mesh = surface.commit()
+    pond.position = Vector3(-29, height_at(-29,22)-1.25, 22)
+    var m := _mat(Color.WHITE, 0.42)
+    m.vertex_color_use_as_albedo = true
+    m.cull_mode = BaseMaterial3D.CULL_DISABLED
+    m.metallic = 0.06
+    m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
     pond.material_override = m
     add_child(pond)
     for i in range(24):
         var angle := TAU * float(i) / 24.0
         var radius := 10.3 + _rng.randf_range(-0.3, 0.65)
         _spawn_asset(ROCKS[i%ROCKS.size()], Vector3(-29+cos(angle)*radius,height_at(-29+cos(angle)*radius,22+sin(angle)*radius),22+sin(angle)*radius),_rng.randf_range(0.5,1.5))
+
+func _create_visual_accents() -> void:
+    # This pass runs after every resource ID and batch has been finalized.
+    # Small ground colour patches add depth without new collision or loot.
+    var st := SurfaceTool.new()
+    st.begin(Mesh.PRIMITIVE_TRIANGLES)
+    for patch in range(28):
+        var angle := TAU * float(patch) / 28.0
+        var center := Vector2(-29.0, 22.0) + Vector2(cos(angle), sin(angle)) * (11.1 + 0.7 * sin(angle * 7.0))
+        var radius := 0.65 + 0.22 * sin(angle * 11.0)
+        for point in range(6):
+            var a := TAU * float(point) / 6.0
+            var b := TAU * float(point + 1) / 6.0
+            for flat in [center, center + Vector2(cos(a), sin(a)) * radius, center + Vector2(cos(b), sin(b)) * radius]:
+                st.set_color(Color("b0ae81") if patch % 3 == 0 else Color("768f6c"))
+                st.add_vertex(Vector3(flat.x, height_at(flat.x, flat.y) + 0.065, flat.y))
+    st.generate_normals()
+    var shore := MeshInstance3D.new()
+    shore.name = "Shore colour accents"
+    shore.mesh = st.commit()
+    var shore_material := _mat(Color.WHITE)
+    shore_material.vertex_color_use_as_albedo = true
+    shore_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    shore.material_override = shore_material
+    add_child(shore)
 
 func _mesh(mesh: Mesh, pos: Vector3, mat: Material, parent: Node3D = self, scale_size: Vector3 = Vector3.ONE) -> MeshInstance3D:
     var node := MeshInstance3D.new()

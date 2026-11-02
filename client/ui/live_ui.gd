@@ -205,7 +205,7 @@ func _open(kind: String) -> void:
 func _settings_panel() -> VBoxContainer:
     var col := VBoxContainer.new()
     col.add_theme_constant_override("separation", 8)
-    for entry in [["Переподключиться", "reconnect"], ["Графика: переключить", "quality"], ["Звук: вкл/выкл", "sound"], ["Телеметрия: вкл/выкл", "telemetry"], ["Сменить героя", "avatar"], ["Предпросмотр постройки (V)", "preview"], ["Отключиться", "disconnect"]]:
+    for entry in [["Переподключиться", "reconnect"], ["Графика: переключить", "quality"], ["Диагностика FPS (F9)", "performance_debug"], ["Звук: вкл/выкл", "sound"], ["Телеметрия: вкл/выкл", "telemetry"], ["Сменить героя", "avatar"], ["Предпросмотр постройки (V)", "preview"], ["Отключиться", "disconnect"]]:
         var btn := Button.new()
         btn.text = entry[0]
         Style.button(btn)

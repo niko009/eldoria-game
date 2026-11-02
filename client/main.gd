@@ -15,6 +15,7 @@ const TELEMETRY_SCRIPT := preload("res://performance_telemetry.gd")
 const TELEMETRY_SINK_SCRIPT := preload("res://telemetry_sink.gd")
 const DISPLAY_SCRIPT := preload("res://display_settings.gd")
 const GRAPHICS_SCRIPT := preload("res://graphics_profile.gd")
+const OVERLAY_SCRIPT := preload("res://performance_overlay.gd")
 const FOREST_SCRIPT := preload("res://forest_world.gd")
 const ACTOR_SCRIPT := preload("res://animated_actor.gd")
 const WOLF_ACTOR_SCRIPT := preload("res://wolf_actor.gd")
@@ -115,6 +116,7 @@ var legacy_ui_controls: Array[Control] = []
 var sunlight: DirectionalLight3D
 var foliage: Array[SphereMesh] = []
 var graphics_quality := 1
+var performance_overlay: CanvasLayer
 
 func _ready() -> void:
     is_dedicated = OS.get_cmdline_user_args().has("--dedicated-server")
@@ -148,6 +150,9 @@ func _ready() -> void:
     add_child(input_driver)
     if not is_dedicated:
         _ui()
+        performance_overlay = OVERLAY_SCRIPT.new()
+        performance_overlay.game = self
+        add_child(performance_overlay)
         _init_updater()
         # Exported Windows/Android builds discover the server automatically.
         # SceneTree test harnesses supply CLI user args and trigger discovery explicitly.
@@ -1908,6 +1913,10 @@ func _apply_emote(id: int) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
     if not event is InputEventKey or not event.pressed or event.echo:
         return
+    if event.keycode == KEY_F9 and performance_overlay != null:
+        performance_overlay.toggle()
+        get_viewport().set_input_as_handled()
+        return
     if live_ui != null and not live_ui.active_panel.is_empty() and event.keycode != KEY_F11:
         return
     if event.keycode == KEY_F11 and OS.get_name() != "Android":
@@ -1975,6 +1984,9 @@ func _live_action(kind: String) -> void:
             _toggle_sound()
         "telemetry":
             _toggle_telemetry()
+        "performance_debug":
+            if performance_overlay != null:
+                performance_overlay.toggle()
         "avatar":
             _choose_avatar((selected_avatar + 1) % AVATAR_PROFILE.LABELS.size())
         "preview":

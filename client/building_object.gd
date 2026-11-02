@@ -62,13 +62,14 @@ func _material(color: Color, metallic: float = 0.0) -> StandardMaterial3D:
     mat.roughness = 0.9
     return mat
 
-func _solid(mesh: Mesh, location: Vector3, color: Color, rotations: Vector3 = Vector3.ZERO) -> void:
+func _solid(mesh: Mesh, location: Vector3, color: Color, rotations: Vector3 = Vector3.ZERO) -> MeshInstance3D:
     var part := MeshInstance3D.new()
     part.mesh = mesh
     part.position = location
     part.rotation_degrees = rotations
     part.material_override = _material(color)
     add_child(part)
+    return part
 
 func _campfire() -> void:
     var rock := SphereMesh.new()
@@ -92,12 +93,20 @@ func _campfire() -> void:
     flame.height = 0.85
     flame.radial_segments = 9
     flame.rings = 5
-    _solid(flame,Vector3(0,0.66,0),Color("ff982c"))
+    var flame_part := _solid(flame,Vector3(0,0.66,0),Color("ed6a2a"))
+    var flame_material: StandardMaterial3D = flame_part.material_override
+    flame_material.emission_enabled = true
+    flame_material.emission = Color("ff8c36")
+    flame_material.emission_energy_multiplier = 0.8
     var tip := SphereMesh.new()
     tip.radius = 0.17
     tip.height = 0.56
     tip.radial_segments = 9
-    _solid(tip,Vector3(0,0.96,0),Color("ffe17a"))
+    var tip_part := _solid(tip,Vector3(0,0.96,0),Color("ffe0a0"))
+    var tip_material: StandardMaterial3D = tip_part.material_override
+    tip_material.emission_enabled = true
+    tip_material.emission = Color("ffd38c")
+    tip_material.emission_energy_multiplier = 0.6
 
 func _tent() -> void:
     # Ridge tent consisting of two pitched cloth surfaces and end panels.
