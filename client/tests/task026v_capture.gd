@@ -35,7 +35,8 @@ func _capture() -> void:
         printerr("RESOURCE_SIGNATURE CHANGED")
         quit(1)
         return
-    var output := ProjectSettings.globalize_path("res://../docs/screenshots/task026v")
+    var folder := "task026v_concept" if args.has("--concept") else "task026v"
+    var output := ProjectSettings.globalize_path("res://../docs/screenshots/" + folder)
     DirAccess.make_dir_recursive_absolute(output)
     for view in VIEWS.keys():
         if campfire and view != "camp":

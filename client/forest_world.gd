@@ -72,7 +72,7 @@ func _mat(color: Color, rough: float = 0.94) -> StandardMaterial3D:
 func _create_sky() -> void:
     sun = DirectionalLight3D.new()
     sun.rotation_degrees = Vector3(-43, -34, 0)
-    sun.light_color = Color("ffe7bd")
+    sun.light_color = Color("ffdda8")
     sun.light_energy = 0.82
     sun.shadow_enabled = true
     add_child(sun)
@@ -80,7 +80,7 @@ func _create_sky() -> void:
     var e := Environment.new()
     var sky := Sky.new()
     var sky_mat := ProceduralSkyMaterial.new()
-    sky_mat.sky_top_color = Color("668fbd")
+    sky_mat.sky_top_color = Color("5b91bf")
     sky_mat.sky_horizon_color = Color("cadde0")
     sky_mat.ground_bottom_color = Color("526e72")
     sky_mat.ground_horizon_color = Color("a8bec0")
@@ -93,7 +93,7 @@ func _create_sky() -> void:
     e.ambient_light_energy = 0.48
     e.reflected_light_source = Environment.REFLECTION_SOURCE_BG
     e.fog_enabled = true
-    e.fog_light_color = Color("b5c9cf")
+    e.fog_light_color = Color("afc6d5")
     e.fog_density = 0.0016
     environment_node.environment = e
     add_child(environment_node)
@@ -144,13 +144,23 @@ func _create_mountain_silhouette() -> void:
             var shape_b := radius * (0.84 + 0.2 * sin(float(k+1+m)*5.21))
             var v1 := center + Vector3(cos(a)*shape_a, _rng.randf_range(-3.0,1.0), sin(a)*shape_a)
             var v2 := center + Vector3(cos(b)*shape_b, _rng.randf_range(-3.0,1.0), sin(b)*shape_b)
-            var summit := center + Vector3(_rng.randf_range(-5.0,5.0),summit_y,_rng.randf_range(-5.0,5.0))
-            for v in [v1,v2,summit]:
-                var c := Color("617d83") if v.y < 23.0 else Color("82999c")
-                if v.y > 38.0:
-                    c = Color("a9b9b9")
-                st.set_color(c)
-                st.add_vertex(v)
+            var legacy_summit := Vector3(_rng.randf_range(-5.0,5.0),summit_y,_rng.randf_range(-5.0,5.0))
+            # Consume the legacy random draws to preserve every resource ID.
+            var summit := center + Vector3(sin(float(m)*2.7)*8.0, legacy_summit.y, cos(float(m)*1.9)*7.0)
+            var ridge_a := v1.lerp(summit, 0.54)
+            var ridge_b := v2.lerp(summit, 0.54)
+            ridge_a.y += sin(float(k + m) * 1.7) * 4.0
+            ridge_b.y += sin(float(k + 1 + m) * 1.7) * 4.0
+            for triangle in [[v1,v2,ridge_a], [v2,ridge_b,ridge_a], [ridge_a,ridge_b,summit]]:
+                for v in triangle:
+                    var altitude: float = v.y / summit_y
+                    var shade := 0.82 + 0.18 * sin(float(k) * 1.9 + float(m))
+                    var c := Color("56717b").lerp(Color("a6bdca"), clampf(altitude, 0.0, 1.0))
+                    if altitude > 0.76 and summit_y > 35.0:
+                        c = Color("c9d7dc")
+                    c = c.darkened(1.0 - shade)
+                    st.set_color(c)
+                    st.add_vertex(v)
     st.generate_normals()
     var back := MeshInstance3D.new()
     back.name = "Misty alpine skyline"
@@ -195,8 +205,8 @@ func _create_water() -> void:
     # The shoreline is irregular but uses no gameplay RNG calls.
     var surface := SurfaceTool.new()
     surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-    var rings := [0.0, 4.2, 8.3, 10.0]
-    var colors := [Color("5d9fa7"), Color("70b6bd"), Color("80c8c2"), Color("9ac7b0")]
+    var rings := [0.0, 4.2, 8.3, 12.0]
+    var colors := [Color("5d9fa7"), Color("70b6bd"), Color("80c8c2"), Color("7e9366")]
     for ring in range(3):
         for i in range(64):
             var a := TAU * float(i) / 64.0
@@ -210,7 +220,11 @@ func _create_water() -> void:
             for vertex in [[inner_a, colors[ring]], [outer_a, colors[ring + 1]], [outer_b, colors[ring + 1]],
                     [inner_a, colors[ring]], [outer_b, colors[ring + 1]], [inner_b, colors[ring]]]:
                 surface.set_color(vertex[1])
-                surface.add_vertex(vertex[0])
+                var point: Vector3 = vertex[0]
+                # A sloped, opaque bank joins the pool to the existing terrain.
+                if point.length() > 9.0:
+                    point.y = height_at(-29.0 + point.x, 22.0 + point.z) - height_at(-29.0, 22.0) + 1.30
+                surface.add_vertex(point)
     surface.generate_normals()
     pond.mesh = surface.commit()
     pond.position = Vector3(-29, height_at(-29,22)-1.25, 22)
