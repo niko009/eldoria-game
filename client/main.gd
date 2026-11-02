@@ -8,6 +8,7 @@ const MAX_PLAYERS := 10
 const INPUT_SCRIPT := preload("res://platform_input.gd")
 const JOYSTICK_SCRIPT := preload("res://mobile_joystick.gd")
 const WORLD_SAVE_SCRIPT := preload("res://world_save.gd")
+const POSTGRES_WORLD_STORE_SCRIPT := preload("res://postgres_world_store.gd")
 const DISPLAY_SCRIPT := preload("res://display_settings.gd")
 const GRAPHICS_SCRIPT := preload("res://graphics_profile.gd")
 const FOREST_SCRIPT := preload("res://forest_world.gd")
@@ -303,13 +304,23 @@ func _configure_world_persistence() -> bool:
     persistent_profiles.clear()
     # Never write to the published game server by default. Dedicated test
     # worlds explicitly opt in with an isolated ELDORIA_SAVE_PATH.
+    var api_url := OS.get_environment("ELDORIA_PG_API_URL").strip_edges()
     var file_name := OS.get_environment("ELDORIA_SAVE_PATH").strip_edges()
-    if file_name.is_empty():
-        return true
-    world_store = WORLD_SAVE_SCRIPT.new()
-    if not world_store.configure(file_name):
-        push_error("Cannot initialize Eldoria save directory: "+world_store.last_error)
+    if not api_url.is_empty() and not file_name.is_empty():
+        push_error("Choose PostgreSQL OR legacy JSON persistence, not both")
         return false
+    if api_url.is_empty() and file_name.is_empty():
+        return true
+    if not api_url.is_empty():
+        world_store = POSTGRES_WORLD_STORE_SCRIPT.new()
+        if not world_store.configure(api_url, OS.get_environment("ELDORIA_PG_API_KEY")):
+            push_error("Invalid PostgreSQL persistence endpoint: "+world_store.last_error)
+            return false
+    else:
+        world_store = WORLD_SAVE_SCRIPT.new()
+        if not world_store.configure(file_name):
+            push_error("Cannot initialize legacy JSON save directory: "+world_store.last_error)
+            return false
     var world: Node3D = get_node("Eldoria_Forest")
     if not world_store.load_snapshot(world):
         push_error("Cannot load Eldoria save: "+world_store.last_error)
@@ -565,17 +576,22 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
         var existing_profile: Dictionary = persistent_profiles.get(identity_hash,{})
         if not existing_profile.is_empty():
             validated = AVATAR_PROFILE.normalized(int(existing_profile.get("avatar",validated)))
+    # Persist a new identity BEFORE making it visible to other players.
+    # Do not let an unavailable DB silently spawn an unsaved online player.
+    if not identity_hash.is_empty() and not persistent_profiles.has(identity_hash):
+        persistent_profiles[identity_hash] = {"avatar":validated,"inventory":_empty_inventory()}
+        if not _save_world_state():
+            persistent_profiles.erase(identity_hash)
+            player_identity_keys.erase(id)
+            multiplayer.multiplayer_peer.disconnect_peer(id)
+            return
     for existing in players:
         spawn_remote.rpc_id(id, existing, players[existing].position, int(player_choices.get(existing, 0)))
     var pos := Vector3(float(players.size() * 3), 1, 0)
     _spawn(id, pos, validated)
     player_inventories[id] = _empty_inventory()
-    if not identity_hash.is_empty():
-        if persistent_profiles.has(identity_hash):
-            player_inventories[id] = persistent_profiles[identity_hash]["inventory"].duplicate(true)
-        else:
-            persistent_profiles[identity_hash] = {"avatar":validated,"inventory":_empty_inventory()}
-            _save_world_state()
+    if not identity_hash.is_empty() and persistent_profiles.has(identity_hash):
+        player_inventories[id] = persistent_profiles[identity_hash]["inventory"].duplicate(true)
     spawn_remote.rpc(id, pos, validated)
     resource_snapshot.rpc_id(id, resource_remaining)
     inventory_snapshot.rpc_id(id, player_inventories[id])
@@ -612,9 +628,9 @@ func _choose_avatar(choice: int) -> void:
     if own_id == 0:
         return
     if multiplayer.is_server():
-        _set_avatar_for_peer(own_id, choice)
-        for remote_peer in connected_peers.keys():
-            avatar_changed.rpc_id(int(remote_peer), own_id, choice)
+        if _set_avatar_for_peer(own_id, choice):
+            for remote_peer in connected_peers.keys():
+                avatar_changed.rpc_id(int(remote_peer), own_id, choice)
     else:
         request_avatar_change.rpc_id(1, choice)
 
@@ -625,25 +641,30 @@ func request_avatar_change(choice: int) -> void:
     var peer_id := multiplayer.get_remote_sender_id()
     if not players.has(peer_id):
         return
-    _set_avatar_for_peer(peer_id, choice)
-    avatar_changed.rpc(peer_id, choice)
+    if _set_avatar_for_peer(peer_id, choice):
+        avatar_changed.rpc(peer_id, choice)
 
 @rpc("authority", "call_remote", "reliable")
 func avatar_changed(id: int, choice: int) -> void:
     _set_avatar_for_peer(id, choice)
 
-func _set_avatar_for_peer(id: int, choice: int) -> void:
+func _set_avatar_for_peer(id: int, choice: int) -> bool:
     if not players.has(id) or not AVATAR_PROFILE.valid(choice):
-        return
-    player_choices[id] = choice
-    players[id].set_avatar(choice)
+        return false
     if multiplayer.is_server() and player_identity_keys.has(id):
         var key: String = player_identity_keys[id]
         if persistent_profiles.has(key):
-            persistent_profiles[key]["avatar"] = choice
-            _save_world_state()
+            var previous: int = int(persistent_profiles[key]["avatar"])
+            if previous != choice:
+                persistent_profiles[key]["avatar"] = choice
+                if not _save_world_state():
+                    persistent_profiles[key]["avatar"] = previous
+                    return false
+    player_choices[id] = choice
+    players[id].set_avatar(choice)
     if id == own_id and avatar_selector != null:
         avatar_selector.select(choice)
+    return true
 
 
 func _physics_process(delta: float) -> void:
