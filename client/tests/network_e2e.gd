@@ -86,10 +86,11 @@ func _run() -> void:
 		return
 	remote_id = _other_id(my_id)
 	remote_start = game.players[remote_id].position
-	Input.action_press("move_right")
+	# Move toward the clear spawn, rather than into the blocking rock at x~5.
+	Input.action_press("move_left")
 	for i in range(100):
 		await process_frame
-	Input.action_release("move_right")
+	Input.action_release("move_left")
 	for i in range(60):
 		await process_frame
 	if game.players[remote_id].position.distance_to(remote_start) < 1.0:

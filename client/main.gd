@@ -9,9 +9,10 @@ const INPUT_SCRIPT := preload("res://platform_input.gd")
 const DISPLAY_SCRIPT := preload("res://display_settings.gd")
 const GRAPHICS_SCRIPT := preload("res://graphics_profile.gd")
 const FOREST_SCRIPT := preload("res://forest_world.gd")
+const ACTOR_SCRIPT := preload("res://animated_actor.gd")
 const UPDATE_SCRIPT := preload("res://update_manager.gd")
 const MOVE_SPEED := 6.0
-const CLIENT_VERSION := "0.3.1"
+const CLIENT_VERSION := "0.4.0"
 const SERVER_CONFIG_URL := "https://bacus.dev/projects/eldoria/server.json"
 
 var peer: MultiplayerPeer = ENetMultiplayerPeer.new()
@@ -28,6 +29,8 @@ var last_sent_position := Vector3.INF
 var send_accumulator := 0.0
 var fps_label: Label
 var fps_accumulator := 0.0
+var sprint_active := false
+var last_remote_ticks := {}
 var camera: Camera3D
 var info: Label
 var ip_input: LineEdit
@@ -161,6 +164,20 @@ func _ui() -> void:
         button.button_down.connect(func() -> void: input_driver.press_direction(entry[2]))
         button.button_up.connect(func() -> void: input_driver.release_direction(entry[2]))
         mobile_controls.add_child(button)
+
+    var sprint_button := Button.new()
+    sprint_button.text = "Sprint: OFF"
+    sprint_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+    sprint_button.offset_left = -190
+    sprint_button.offset_top = -225
+    sprint_button.offset_right = -24
+    sprint_button.offset_bottom = -169
+    sprint_button.visible = OS.get_name() == "Android"
+    sprint_button.pressed.connect(func() -> void:
+        sprint_active = not sprint_active
+        sprint_button.text = "Sprint: ON" if sprint_active else "Sprint: OFF"
+    )
+    player_ui.add_child(sprint_button)
 
     var touch_emote := Button.new()
     touch_emote.text = "Wave"
@@ -366,12 +383,14 @@ func _remove_actor(id: int) -> void:
         players[id].queue_free()
         players.erase(id)
     emote_counts.erase(id)
+    last_remote_ticks.erase(id)
 
 func _clear_session() -> void:
     own_id = 0
     last_sent_position = Vector3.INF
     send_accumulator = 0.0
     connected_peers.clear()
+    last_remote_ticks.clear()
     if input_driver != null:
         input_driver.clear_touch()
     multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
@@ -415,15 +434,9 @@ func spawn_remote(id: int, pos: Vector3) -> void:
 func _spawn(id: int, pos: Vector3) -> void:
     if players.has(id):
         return
-    var actor := MeshInstance3D.new()
+    var actor := ACTOR_SCRIPT.new()
+    actor.configure(id, is_dedicated)
     actor.name = "Player_%s" % id
-    var mesh := CapsuleMesh.new()
-    mesh.radius = .45
-    mesh.height = 1.9
-    actor.mesh = mesh
-    var mat := StandardMaterial3D.new()
-    mat.albedo_color = Color("d6b674") if id == 1 else Color("729ce0")
-    actor.material_override = mat
     actor.position = pos
     add_child(actor)
     players[id] = actor
@@ -435,9 +448,14 @@ func _physics_process(delta: float) -> void:
     if peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
         return
     var axis: Vector2 = input_driver.get_move_vector()
-    var delta_pos := Vector3(axis.x, 0, axis.y).rotated(Vector3.UP, input_driver.yaw) * MOVE_SPEED * delta
+    var fast := sprint_active or Input.is_key_pressed(KEY_SHIFT)
+    var speed := MOVE_SPEED * (1.5 if fast else 1.0)
+    var delta_pos := Vector3(axis.x, 0, axis.y).rotated(Vector3.UP, input_driver.yaw) * speed * delta
     var world: Node3D = get_node("Eldoria_Forest")
-    players[own_id].position = world.move_actor(players[own_id].position, delta_pos)
+    var before: Vector3 = players[own_id].position
+    var after: Vector3 = world.move_actor(before, delta_pos)
+    players[own_id].position = after
+    players[own_id].set_motion((after-before)/maxf(delta,0.001),fast)
     var focus: Vector3 = players[own_id].position + Vector3(0, 1.6, 0)
     var offset := Vector3(0, -sin(input_driver.pitch) * 13.0, cos(input_driver.pitch) * 13.0)
     var target: Vector3 = focus + offset.rotated(Vector3.UP, input_driver.yaw)
@@ -475,7 +493,9 @@ func submit_position(pos: Vector3) -> void:
     if not world.valid_remote_step(players[id].position,pos):
         correct_own_position.rpc_id(id,players[id].position)
         return
+    var before: Vector3 = players[id].position
     players[id].position = pos
+    _note_remote_motion(id,before,pos)
     sync_position.rpc(id, pos)
 
 @rpc("authority", "call_remote", "reliable")
@@ -488,7 +508,18 @@ func correct_own_position(pos: Vector3) -> void:
 func sync_position(id: int, pos: Vector3) -> void:
     if id == own_id or not players.has(id):
         return
+    var before: Vector3 = players[id].position
     players[id].position = pos
+    _note_remote_motion(id,before,pos)
+
+func _note_remote_motion(id: int, before: Vector3, after: Vector3) -> void:
+    if not players.has(id):
+        return
+    var now := Time.get_ticks_msec()
+    var prev := int(last_remote_ticks.get(id,now-50))
+    last_remote_ticks[id] = now
+    var elapsed := maxf(0.02,float(now-prev)/1000.0)
+    players[id].set_motion((after-before)/elapsed)
 
 func _interact() -> void:
     if own_id == 0 or not players.has(own_id):
@@ -517,10 +548,8 @@ func _apply_emote(id: int) -> void:
     if not players.has(id):
         return
     emote_counts[id] = int(emote_counts.get(id, 0)) + 1
-    var actor: MeshInstance3D = players[id]
-    var mat: StandardMaterial3D = actor.material_override
-    mat.albedo_color = Color("f7a45c") if emote_counts[id] % 2 != 0 else (Color("d6b674") if id == 1 else Color("729ce0"))
-    _status("Player %d waved (%d)" % [id, emote_counts[id]])
+    players[id].celebrate()
+    _status("Player %d cheered (%d)" % [id, emote_counts[id]])
 
 func _unhandled_key_input(event: InputEvent) -> void:
     if not event is InputEventKey or not event.pressed or event.echo:
