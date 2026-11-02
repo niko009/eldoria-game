@@ -22,7 +22,7 @@ func _run() -> void:
     if game.placed_buildings.size()!=2 or not game.info.text.contains("built successfully"):
         _fail("automatic tent placement did not work: "+game.info.text)
         return
-    if game.player_inventories[game.own_id] != {"wood":0,"stone":0,"herb":0}:
+    if game.player_inventories[game.own_id] != {"wood":0,"stone":0,"herb":0,"axe":0}:
         _fail("invalid inventory after building")
         return
     game._try_build()

@@ -4,7 +4,7 @@ extends RefCounted
 # resource counts. No plaintext player token, no client-side authority.
 const SCHEMA := 1
 const WORLD_SEED := 20261101
-const ITEM_KINDS := ["wood","stone","herb"]
+const ITEM_KINDS := ["wood","stone","herb","axe"]
 var save_path := ""
 var last_error := ""
 var profiles: Dictionary = {}
@@ -97,10 +97,10 @@ func load_snapshot(world: Node3D) -> bool:
         if not original is Dictionary:
             last_error = "Invalid inventory"
             return false
-        var sanitized := {"wood":0,"stone":0,"herb":0}
+        var sanitized := {"wood":0,"stone":0,"herb":0,"axe":0}
         for kind in ITEM_KINDS:
             var v := int(original.get(kind,0))
-            if v < 0 or v > 1000000:
+            if v < 0 or v > (1 if kind == "axe" else 1000000):
                 last_error = "Inventory out of range"
                 return false
             sanitized[kind] = v

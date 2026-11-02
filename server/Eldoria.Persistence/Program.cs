@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS eldoria_players (
     herb integer NOT NULL DEFAULT 0 CHECK (herb BETWEEN 0 AND 1000000),
     PRIMARY KEY (world_seed, identity_hash)
 );
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS axe integer NOT NULL DEFAULT 0 CHECK (axe BETWEEN 0 AND 1);
 CREATE TABLE IF NOT EXISTS eldoria_buildings (
     world_seed integer NOT NULL REFERENCES eldoria_worlds(world_seed) ON DELETE CASCADE,
     building_id integer NOT NULL CHECK (building_id BETWEEN 1 AND 100000),
@@ -150,13 +151,13 @@ app.MapGet("/v1/world/{seed:int}", async (int seed, CancellationToken ct) =>
     }
     var profiles = new Dictionary<string, ProfileDto>();
     await using (var read = new NpgsqlCommand(
-        "SELECT identity_hash, avatar, wood, stone, herb FROM eldoria_players WHERE world_seed=@seed", conn, snapshotTx))
+        "SELECT identity_hash, avatar, wood, stone, herb, axe FROM eldoria_players WHERE world_seed=@seed", conn, snapshotTx))
     {
         read.Parameters.AddWithValue("seed", seed);
         await using var reader = await read.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
             profiles[reader.GetString(0)] = new ProfileDto(reader.GetInt16(1),
-                new InventoryDto(reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4)));
+                new InventoryDto(reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4), reader.GetInt32(5)));
     }
     var buildings = new Dictionary<string, BuildingDto>();
     await using (var read = new NpgsqlCommand(
@@ -187,7 +188,8 @@ app.MapPut("/v1/world/{seed:int}", async (int seed, SnapshotDto? snapshot, Cance
             || kv.Value.avatar is < 0 or > 2 || kv.Value.inventory is null
             || kv.Value.inventory.wood is < 0 or > 1000000
             || kv.Value.inventory.stone is < 0 or > 1000000
-            || kv.Value.inventory.herb is < 0 or > 1000000))
+            || kv.Value.inventory.herb is < 0 or > 1000000
+            || kv.Value.inventory.axe is < 0 or > 1))
         return Results.BadRequest(new { error = "invalid_world_snapshot" });
 
     await using var conn = await source.OpenConnectionAsync(ct);
@@ -232,8 +234,8 @@ app.MapPut("/v1/world/{seed:int}", async (int seed, SnapshotDto? snapshot, Cance
         }
     }
     await using (var insert = new NpgsqlCommand(
-        "INSERT INTO eldoria_players(world_seed,identity_hash,avatar,wood,stone,herb) " +
-        "VALUES (@seed,@hash,@avatar,@wood,@stone,@herb)", conn, tx))
+        "INSERT INTO eldoria_players(world_seed,identity_hash,avatar,wood,stone,herb,axe) " +
+        "VALUES (@seed,@hash,@avatar,@wood,@stone,@herb,@axe)", conn, tx))
     {
         insert.Parameters.AddWithValue("seed", seed);
         insert.Parameters.Add("hash", NpgsqlTypes.NpgsqlDbType.Varchar);
@@ -241,6 +243,7 @@ app.MapPut("/v1/world/{seed:int}", async (int seed, SnapshotDto? snapshot, Cance
         insert.Parameters.Add("wood", NpgsqlTypes.NpgsqlDbType.Integer);
         insert.Parameters.Add("stone", NpgsqlTypes.NpgsqlDbType.Integer);
         insert.Parameters.Add("herb", NpgsqlTypes.NpgsqlDbType.Integer);
+        insert.Parameters.Add("axe", NpgsqlTypes.NpgsqlDbType.Integer);
         foreach (var pair in snapshot.profiles)
         {
             insert.Parameters["hash"].Value = pair.Key;
@@ -248,6 +251,7 @@ app.MapPut("/v1/world/{seed:int}", async (int seed, SnapshotDto? snapshot, Cance
             insert.Parameters["wood"].Value = pair.Value.inventory.wood;
             insert.Parameters["stone"].Value = pair.Value.inventory.stone;
             insert.Parameters["herb"].Value = pair.Value.inventory.herb;
+            insert.Parameters["axe"].Value = pair.Value.inventory.axe;
             await insert.ExecuteNonQueryAsync(ct);
         }
     }
@@ -367,7 +371,7 @@ sealed class TelemetryRetentionWorker(NpgsqlDataSource source) : BackgroundServi
     }
 }
 
-record InventoryDto(int wood, int stone, int herb);
+record InventoryDto(int wood, int stone, int herb, int axe = 0);
 record ProfileDto(int avatar, InventoryDto inventory);
 record BuildingDto(string kind, double x, double z);
 record SnapshotDto(int schema, int world_seed, long revision,

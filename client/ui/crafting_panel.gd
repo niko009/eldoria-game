@@ -28,10 +28,21 @@ func refresh() -> void:
 		var owned := state.amount(item_id)
 		add_child(Style.label("%s  %d / %d" % [State.ITEMS[item_id]["name"], owned, required], 15, Style.TEXT if owned >= required else Color("e89883")))
 	var action := Button.new()
-	action.text = "Создать · Preview" if craft_enabled else "Пока недоступно"
+	action.text = "Создать" if craft_enabled else "Пока недоступно"
 	Style.button(action)
-	action.disabled = not craft_enabled or not state.can_afford(recipe["cost"]) or state.loading
+	action.disabled = not craft_enabled or not state.near_campfire or state.amount("axe") > 0 or not state.can_afford(recipe["cost"]) or state.loading
 	action.pressed.connect(func() -> void: craft_requested.emit("axe"))
 	add_child(action)
 	if action.disabled:
-		add_child(Style.label("Крафт появится после TASK-020" if not craft_enabled else ("Недостаточно ресурсов" if not state.loading else "Подождите…"), 13, Style.MUTED))
+		var reason := ""
+		if not craft_enabled:
+			reason = "Пока недоступно"
+		elif state.amount("axe") > 0:
+			reason = "Каменный топор уже изготовлен"
+		elif not state.near_campfire:
+			reason = "Подойдите к костру (не дальше 4 м)"
+		elif state.loading:
+			reason = "Подождите…"
+		else:
+			reason = "Недостаточно ресурсов"
+		add_child(Style.label(reason, 13, Style.MUTED))

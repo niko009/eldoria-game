@@ -7,9 +7,22 @@ LOG_DIR="$ROOT/tests/logs"
 mkdir -p "$LOG_DIR"
 : "${ELDORIA_TEST_PG_CONN:?Provide an ISOLATED PostgreSQL test connection}"
 : "${ELDORIA_TEST_INTERNAL_KEY:?Provide a test API key, at least 24 characters}"
-# Explicit destructive test DB constraint. Never run reset on production.
-if [[ "$ELDORIA_TEST_PG_CONN" != *"Host=eldoria-task013-pg"* || "$ELDORIA_TEST_PG_CONN" != *"Database=eldoria_dev"* ]]; then
-    echo 'Refusing test: expected disposable isolated eldoria-task013-pg/eldoria_dev.'
+# Exact, fail-closed destructive test DB constraint. Do not permit duplicate
+# host/database keys or alternate aliases that might override the safe target.
+# Only accepted connection-string keys below; never target production.
+safe_host=0
+safe_database=0
+IFS=';' read -r -a connection_parts <<< "$ELDORIA_TEST_PG_CONN"
+for part in "${connection_parts[@]}"; do
+    case "$part" in
+        Host=eldoria-task013-pg|Host=eldoria-task022-pg) safe_host=$((safe_host+1)) ;;
+        Database=eldoria_dev) safe_database=$((safe_database+1)) ;;
+        Username=?*|Password=?*|Pooling=false|Port=5432) ;;
+        *) echo 'Refusing test: unexpected or unsafe connection-string field.' >&2; exit 2 ;;
+    esac
+done
+if [[ "$safe_host" -ne 1 || "$safe_database" -ne 1 ]]; then
+    echo 'Refusing test: expected exactly one isolated test host and database eldoria_dev.' >&2
     exit 2
 fi
 api_pid=""
@@ -101,6 +114,7 @@ const assert=require('node:assert/strict');const crypto=require('node:crypto');
  assert.equal(Object.keys(data.profiles).length,1);
  assert.equal(data.profiles[hash].avatar,2);
  assert.equal(data.profiles[hash].inventory.herb,1);
+ assert.equal(data.profiles[hash].inventory.axe,0,'legacy profile must load with zero axe');
  assert.equal(Object.values(data.depleted).filter(v=>v===0).length,1);
  assert.equal(data.revision>=2,true);
  assert.equal(JSON.stringify(data).includes('a'.repeat(64)),false,'never persist raw bearer token');
@@ -123,6 +137,15 @@ for step in initial restored; do
       >"$LOG_DIR/postgres-forest-$step.log" 2>&1
     grep -q "DEPLETION ${step^^} PASS" "$LOG_DIR/postgres-forest-$step.log"
     grep "DEPLETION ${step^^} PASS" "$LOG_DIR/postgres-forest-$step.log"
+done
+# Validate a new crafted item survives real PostgreSQL commits and two
+# independent Godot host processes. This runs ONLY on the isolated test DB.
+for step in initial restored; do
+    ELDORIA_PG_API_URL="$API_URL" ELDORIA_PG_API_KEY="$ELDORIA_TEST_INTERNAL_KEY" timeout 35 \
+      "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/craft_axe_e2e.gd -- --"$step" \
+      >"$LOG_DIR/postgres-craft-$step.log" 2>&1
+    grep -q "CRAFT AXE ${step^^} PASS" "$LOG_DIR/postgres-craft-$step.log"
+    grep "CRAFT AXE ${step^^} PASS" "$LOG_DIR/postgres-craft-$step.log"
 done
 # Real client -> Godot dedicated server -> private .NET HTTP -> PostgreSQL.
 ELDORIA_TEST_INTERNAL_KEY="$ELDORIA_TEST_INTERNAL_KEY" node <<'JS'

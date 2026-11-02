@@ -36,7 +36,7 @@ func _run() -> void:
         _fail("could not construct tent")
         return
     saved = game.player_inventories[player_id]
-    if saved != {"wood":0,"stone":0,"herb":0}:
+    if saved != {"wood":0,"stone":0,"herb":0,"axe":0}:
         _fail("tent cost wrong: "+str(saved))
         return
     var count: int = game.placed_buildings.size()

@@ -18,7 +18,7 @@ const BUILDINGS := {
 	"tent": {"name": "Палатка", "description": "Укрытие для путника", "cost": {"wood": 5, "herb": 2}},
 }
 const RECIPES := {
-	"axe": {"name": "Каменный топор", "description": "Планируемый рецепт · нужен костёр", "cost": {"wood": 2, "stone": 2}},
+	"axe": {"name": "Каменный топор", "description": "Рубит 2 древесины за удар · нужен костёр рядом", "cost": {"wood": 2, "stone": 2}},
 }
 
 var inventory: Dictionary = {"wood": 7, "stone": 3, "herb": 1, "axe": 0}
@@ -26,6 +26,7 @@ var selected_item := "wood"
 var selected_avatar := "knight"
 var connection_status := "Автономный просмотр"
 var loading := false
+var near_campfire := true # Standalone Preview starts at a sample crafting station.
 
 func amount(item_id: String) -> int:
 	return int(inventory.get(item_id, 0))

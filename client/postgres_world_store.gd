@@ -129,10 +129,10 @@ func load_snapshot(world: Node3D) -> bool:
         if not profile is Dictionary or not profile.get("inventory") is Dictionary:
             last_error = "Malformed player data"
             return false
-        var inventory := {"wood":0,"stone":0,"herb":0}
+        var inventory := {"wood":0,"stone":0,"herb":0,"axe":0}
         for kind in inventory.keys():
             var amount := int(profile["inventory"].get(kind,0))
-            if amount < 0 or amount > 1000000:
+            if amount < 0 or amount > (1 if kind == "axe" else 1000000):
                 last_error = "Invalid player inventory"
                 return false
             inventory[kind] = amount

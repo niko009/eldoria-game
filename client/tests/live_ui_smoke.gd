@@ -32,9 +32,27 @@ func _run() -> void:
         return
     ui._close()
     ui._open("craft")
-    if not ui.current_panel is EldoriaCraftingPanel or ui.current_panel.craft_enabled:
-        push_error("Production UI must disable unshipped crafting")
+    if not ui.current_panel is EldoriaCraftingPanel or not ui.current_panel.craft_enabled:
+        push_error("Stone axe crafting panel missing")
         quit(5)
+        return
+    if ui.state.near_campfire:
+        push_error("Live client must not claim a fictitious crafting station")
+        quit(7)
+        return
+    ui.set_near_campfire(true)
+    var requested := [0]
+    ui.craft_requested.connect(func() -> void: requested[0] += 1)
+    ui._craft("axe")
+    if requested[0] != 1 or ui.active_panel != "":
+        push_error("Live crafting request did not dispatch to game exactly once")
+        quit(8)
+        return
+    ui.set_inventory({"wood": 4, "stone": 3, "axe": 1})
+    ui._craft("axe")
+    if requested[0] != 1:
+        push_error("Duplicate stone axe request allowed by client")
+        quit(9)
         return
     ui._close()
     var output := Vector2.ZERO

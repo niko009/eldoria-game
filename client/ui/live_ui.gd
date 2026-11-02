@@ -4,6 +4,7 @@ extends Control
 
 signal action_requested(action: String)
 signal build_requested(kind: String)
+signal craft_requested
 signal preview_requested(kind: String)
 signal joystick_moved(direction: Vector2)
 
@@ -31,6 +32,7 @@ func _ready() -> void:
     mouse_filter = Control.MOUSE_FILTER_IGNORE
     state = State.new()
     state.set_stock("empty")
+    state.near_campfire = false
     state.connection_status = "Подключение..."
     state.selected_avatar = "knight"
     resized.connect(_layout)
@@ -97,11 +99,16 @@ func _ready() -> void:
     _layout()
 
 func set_inventory(inventory: Dictionary) -> void:
-    var validated := {"wood": maxi(0, int(inventory.get("wood", 0))), "stone": maxi(0, int(inventory.get("stone", 0))), "herb": maxi(0, int(inventory.get("herb", 0))), "axe": maxi(0, int(inventory.get("axe", 0)))}
+    var validated := {"wood": maxi(0, int(inventory.get("wood", 0))), "stone": maxi(0, int(inventory.get("stone", 0))), "herb": maxi(0, int(inventory.get("herb", 0))), "axe": clampi(int(inventory.get("axe", 0)), 0, 1)}
     if state.inventory == validated:
         return
     state.inventory = validated
     state.changed.emit()
+
+func set_near_campfire(near: bool) -> void:
+    if state != null and state.near_campfire != near:
+        state.near_campfire = near
+        state.changed.emit()
 
 func set_status(message: String) -> void:
     if state != null and state.connection_status != message:
@@ -155,8 +162,8 @@ func _open(kind: String) -> void:
             current_panel.preview_requested.connect(_preview_build)
             current_panel.build_requested.connect(_build)
         elif current_panel is EldoriaCraftingPanel:
-            current_panel.craft_enabled = false
-            current_panel.refresh()
+            current_panel.craft_enabled = true
+            current_panel.craft_requested.connect(_craft)
     current_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     panel_title.text = {"inventory": "РЮКЗАК", "build": "СТРОИТЕЛЬСТВО", "craft": "МАСТЕРСКАЯ", "settings": "НАСТРОЙКИ"}[kind]
     for tab in tabs.get_children():
@@ -190,6 +197,14 @@ func _preview_build(kind: String) -> void:
         return
     _close()
     preview_requested.emit(kind)
+
+func _craft(recipe_id: String) -> void:
+    if recipe_id != "axe" or not state.near_campfire or state.amount("axe") > 0:
+        return
+    if not state.can_afford(State.RECIPES["axe"]["cost"]) or state.loading:
+        return
+    _close()
+    craft_requested.emit()
 
 func _on_action(kind: String) -> void:
     if kind == "inventory":

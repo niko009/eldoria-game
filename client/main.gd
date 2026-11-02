@@ -22,8 +22,8 @@ const AVATAR_PROFILE := preload("res://avatar_profile.gd")
 const JUMP_MOTION := preload("res://jump_motion.gd")
 const UPDATE_SCRIPT := preload("res://update_manager.gd")
 const MOVE_SPEED := 6.0
-const CLIENT_VERSION := "0.5.3"
-# TASK-021B UI integration; public server version must match before release.
+const CLIENT_VERSION := "0.5.4"
+# Development candidate only: incompatible with production v0.5.3 until release.
 
 const DEVELOPMENT_BUILD := false
 const SERVER_CONFIG_URL := "https://bacus.dev/projects/eldoria/server.json"
@@ -215,6 +215,11 @@ func _ui() -> void:
     gather_button.text = "Gather (F)"
     gather_button.pressed.connect(_try_gather)
     panel.add_child(gather_button)
+    var craft_button := Button.new()
+    craft_button.name = "CraftAxe"
+    craft_button.text = "Craft stone axe (C) — 2 wood + 2 stone; near campfire"
+    craft_button.pressed.connect(_try_craft_axe)
+    panel.add_child(craft_button)
     var build_row := HBoxContainer.new()
     panel.add_child(build_row)
     build_selector = OptionButton.new()
@@ -347,6 +352,11 @@ func _ui() -> void:
     mobile_build_picker.add_item("Tent: 5 wood + 2 herbs")
     mobile_build_picker.item_selected.connect(_mobile_select_building)
     build_column.add_child(mobile_build_picker)
+    var mobile_craft_button := Button.new()
+    mobile_craft_button.name = "MobileCraftAxe"
+    mobile_craft_button.text = "CRAFT AXE (2 wood + 2 stone)"
+    mobile_craft_button.pressed.connect(_try_craft_axe)
+    build_column.add_child(mobile_craft_button)
     var action_row := HBoxContainer.new()
     build_column.add_child(action_row)
     var place_button := Button.new()
@@ -414,6 +424,7 @@ func _ui() -> void:
         live_ui.joystick_moved.connect(input_driver.set_joystick)
         live_ui.action_requested.connect(_live_action)
         live_ui.build_requested.connect(_live_build)
+        live_ui.craft_requested.connect(_try_craft_axe)
         live_ui.preview_requested.connect(_live_preview)
         live_ui.set_avatar(selected_avatar)
         live_ui.set_inventory(_empty_inventory())
@@ -768,6 +779,7 @@ func _clear_session() -> void:
     own_id = 0
     if live_ui != null:
         live_ui.set_inventory(_empty_inventory())
+        live_ui.set_near_campfire(false)
     last_ping_at_msec = 0
     if telemetry != null:
         telemetry.set_enabled(telemetry.enabled)
@@ -928,6 +940,8 @@ func _set_avatar_for_peer(id: int, choice: int) -> bool:
     players[id].set_avatar(choice)
     if id == own_id and avatar_selector != null:
         avatar_selector.select(choice)
+    if id == own_id and live_ui != null:
+        live_ui.set_avatar(choice)
     return true
 
 
@@ -972,6 +986,8 @@ func _physics_process(delta: float) -> void:
             last_sent_position = at
 
 func _process(delta: float) -> void:
+    if live_ui != null:
+        live_ui.set_near_campfire(own_id != 0 and _near_campfire(own_id))
     if not is_dedicated and telemetry != null and own_id != 0 and players.has(own_id):
         telemetry.sample_frame(delta)
         if Time.get_ticks_msec() - last_ping_at_msec > 15000 and last_ping_at_msec > 0:
@@ -1048,7 +1064,7 @@ func _note_remote_motion(id: int, before: Vector3, after: Vector3) -> void:
 # The server owns resource quantities and player inventories.
 # This is an in-memory prototype; a permanent world will require persistence.
 func _empty_inventory() -> Dictionary:
-    return {"wood":0, "stone":0, "herb":0}
+    return {"wood":0, "stone":0, "herb":0, "axe":0}
 
 func _reset_resources() -> void:
     resource_remaining.clear()
@@ -1136,7 +1152,7 @@ func _set_mobile_build_mode(enabled: bool) -> void:
         # Fit even short landscape phone viewports; don't clip the selector.
         var screen_height := get_viewport().get_visible_rect().size.y
         mobile_build_panel.offset_top = maxf(-390.0,16.0-screen_height)
-        mobile_build_panel.offset_bottom = mobile_build_panel.offset_top+134.0
+        mobile_build_panel.offset_bottom = mobile_build_panel.offset_top+185.0
         mobile_build_panel.visible = enabled and _mobile_ui() and live_ui == null
     if mobile_build_toggle != null:
         mobile_build_toggle.text = "Build: ON" if enabled else "Build mode"
@@ -1206,6 +1222,68 @@ func _update_build_preview() -> void:
     preview_actor.visible = true
     if preview_actor.preview_valid != allowed:
         preview_actor.set_preview_valid(allowed)
+
+func _try_craft_axe() -> void:
+    if own_id == 0 or not players.has(own_id):
+        _show_build_feedback("Connect to the world before crafting.")
+        return
+    if multiplayer.is_server():
+        _craft_axe_on_server(own_id)
+    else:
+        request_craft_axe.rpc_id(1)
+
+@rpc("any_peer", "reliable")
+func request_craft_axe() -> void:
+    if not multiplayer.is_server():
+        return
+    _craft_axe_on_server(multiplayer.get_remote_sender_id())
+
+func _near_campfire(id: int) -> bool:
+    if not players.has(id):
+        return false
+    var actor: Vector3 = players[id].position
+    for building in placed_buildings.values():
+        if str(building.get("kind", "")) != "campfire":
+            continue
+        var location := Vector2(float(building["x"]), float(building["z"]))
+        if location.distance_squared_to(Vector2(actor.x, actor.z)) <= 16.0:
+            return true
+    return false
+
+# Only the authoritative host may spend resources, issue the unique axe,
+# and commit persistent state before acknowledging successful crafting.
+func _craft_axe_on_server(id: int) -> bool:
+    if not multiplayer.is_server() or not players.has(id):
+        return false
+    if not _near_campfire(id):
+        _notify_build_result(id, "Craft the stone axe within 4 meters of a campfire.")
+        return false
+    var inv: Dictionary = player_inventories.get(id, _empty_inventory())
+    if int(inv.get("axe", 0)) > 0:
+        _notify_build_result(id, "Stone axe already crafted.")
+        return false
+    if int(inv.get("wood", 0)) < 2 or int(inv.get("stone", 0)) < 2:
+        _notify_build_result(id, "Need 2 wood and 2 stone to craft an axe.")
+        return false
+    var before: Dictionary = inv.duplicate(true)
+    inv["wood"] = int(inv["wood"]) - 2
+    inv["stone"] = int(inv["stone"]) - 2
+    inv["axe"] = 1
+    player_inventories[id] = inv
+    if player_identity_keys.has(id):
+        persistent_profiles[player_identity_keys[id]]["inventory"] = inv.duplicate(true)
+    if not _save_world_state():
+        player_inventories[id] = before
+        if player_identity_keys.has(id):
+            persistent_profiles[player_identity_keys[id]]["inventory"] = before.duplicate(true)
+        _notify_build_result(id, "Could not save crafted axe. No resources were spent.")
+        return false
+    if id == own_id:
+        inventory_snapshot(inv)
+    else:
+        inventory_snapshot.rpc_id(id, inv)
+    _notify_build_result(id, "Stone axe crafted! Each chop now collects 2 wood.")
+    return true
 
 func _try_build() -> void:
     if own_id == 0 or not players.has(own_id):
@@ -1407,12 +1485,14 @@ func _gather_on_server(player_id: int, resource_id: int) -> bool:
     var kind: String = entry["kind"]
     if kind not in ["wood","stone","herb"]:
         return false
-    resource_remaining[resource_id] = int(resource_remaining[resource_id])-1
+    var chop_amount := 2 if kind == "wood" and int(player_inventories.get(player_id,{}).get("axe",0))>0 else 1
+    chop_amount = mini(chop_amount, int(resource_remaining[resource_id]))
+    resource_remaining[resource_id] = int(resource_remaining[resource_id])-chop_amount
     world.set_resource_quantity(resource_id,int(resource_remaining[resource_id]))
     if not player_inventories.has(player_id):
         player_inventories[player_id] = _empty_inventory()
     var inventory: Dictionary = player_inventories[player_id]
-    inventory[kind] = int(inventory.get(kind,0))+1
+    inventory[kind] = int(inventory.get(kind,0))+chop_amount
     player_inventories[player_id] = inventory
     # Persist the resource depletion and private inventory together before
     # broadcasting success; revert the in-memory action if disk write fails.
@@ -1420,9 +1500,9 @@ func _gather_on_server(player_id: int, resource_id: int) -> bool:
         var key: String = player_identity_keys[player_id]
         persistent_profiles[key]["inventory"] = inventory.duplicate(true)
     if not _save_world_state():
-        resource_remaining[resource_id] = int(resource_remaining[resource_id])+1
+        resource_remaining[resource_id] = int(resource_remaining[resource_id])+chop_amount
         world.set_resource_quantity(resource_id,int(resource_remaining[resource_id]))
-        inventory[kind] = int(inventory[kind])-1
+        inventory[kind] = int(inventory[kind])-chop_amount
         player_inventories[player_id] = inventory
         if player_identity_keys.has(player_id):
             persistent_profiles[player_identity_keys[player_id]]["inventory"] = inventory.duplicate(true)
@@ -1463,7 +1543,7 @@ func inventory_snapshot(inventory: Dictionary) -> void:
         return
     var validated := _empty_inventory()
     for kind in validated.keys():
-        validated[kind] = clampi(int(inventory.get(kind,0)),0,1000000)
+        validated[kind] = clampi(int(inventory.get(kind,0)),0,1 if kind == "axe" else 1000000)
     player_inventories[own_id] = validated
     if live_ui != null:
         live_ui.set_inventory(validated)
@@ -1492,7 +1572,7 @@ func _refresh_gather_hud() -> void:
     if inventory_label == null or resource_label == null:
         return
     var inv: Dictionary = player_inventories.get(own_id,_empty_inventory())
-    inventory_label.text = "Wood: %d | Stone: %d | Herbs: %d" % [int(inv.get("wood",0)),int(inv.get("stone",0)),int(inv.get("herb",0))]
+    inventory_label.text = "Wood: %d | Stone: %d | Herbs: %d | Axe: %s" % [int(inv.get("wood",0)),int(inv.get("stone",0)),int(inv.get("herb",0)),"YES" if int(inv.get("axe",0))>0 else "NO"]
     if own_id == 0 or not players.has(own_id):
         resource_label.text = "Near: none"
         return
@@ -1598,6 +1678,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
         _try_gather()
     elif event.keycode == KEY_B:
         _try_build()
+    elif event.keycode == KEY_C:
+        _try_craft_axe()
     elif event.keycode == KEY_V:
         _toggle_build_preview()
 
