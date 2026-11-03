@@ -81,6 +81,9 @@ if command -v Xvfb >/dev/null 2>&1; then
     grep -q "FOREST RESOURCE OPENGL PASS" "$ROOT/tests/logs/forest-resource-opengl.log"
     DISPLAY=":$display_number" timeout 90 "$GODOT_BIN" --path "$ROOT/client" --resolution 900x550 --rendering-method gl_compatibility --audio-driver Dummy --script res://tests/visual_feedback_e2e.gd -- --test > "$ROOT/tests/logs/visual-feedback-opengl.log" 2>&1
     grep -q "VISUAL FEEDBACK OPENGL PASS" "$ROOT/tests/logs/visual-feedback-opengl.log"
+    echo "[TASK-034] buildings and visual construction effects on real OpenGL"
+    DISPLAY=":$display_number" timeout 95 "$GODOT_BIN" --path "$ROOT/client" --resolution 900x550 --rendering-method gl_compatibility --audio-driver Dummy --script res://tests/task034_building_vfx_e2e.gd -- --test > "$ROOT/tests/logs/task034-building-opengl.log" 2>&1
+    grep -q "TASK034 BUILDING OPENGL PASS" "$ROOT/tests/logs/task034-building-opengl.log"
     DISPLAY=":$display_number" timeout 90 "$GODOT_BIN" --path "$ROOT/client" --resolution 720x360 --rendering-method gl_compatibility --audio-driver Dummy --script res://tests/task017_sound_mobile_e2e.gd -- --test-mobile-ui > "$ROOT/tests/logs/task017-mobile-opengl.log" 2>&1
     grep -q "TASK017 OPENGL PASS" "$ROOT/tests/logs/task017-mobile-opengl.log"
     kill "$xvfb" 2>/dev/null || true

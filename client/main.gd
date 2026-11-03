@@ -434,6 +434,7 @@ func _ui() -> void:
         graphics_quality = GRAPHICS_SCRIPT.HIGH if graphics_quality == GRAPHICS_SCRIPT.LOW else GRAPHICS_SCRIPT.LOW
         GRAPHICS_SCRIPT.apply(graphics_quality, sunlight, foliage)
         get_node("Eldoria_Forest").apply_detail_quality(graphics_quality == GRAPHICS_SCRIPT.HIGH)
+        _apply_building_detail_quality()
         quality_button.text = "Graphics: High" if graphics_quality == GRAPHICS_SCRIPT.HIGH else "Graphics: Low"
     )
     # Real game UI. Keep the old developer controls in the scene for tests,
@@ -1430,6 +1431,7 @@ func _update_build_preview() -> void:
         preview_actor.is_preview = true
         preview_actor.setup(0,kind,spot)
         add_child(preview_actor)
+        preview_actor.set_visual_detail(graphics_quality == GRAPHICS_SCRIPT.HIGH)
         preview_kind = kind
     preview_spot = spot
     preview_valid = allowed
@@ -1683,6 +1685,7 @@ func _place_building(id: int, record: Dictionary) -> void:
     obj.setup(id,kind,place)
     obj.name = "Build_%d_%s" % [id,kind]
     add_child(obj)
+    obj.set_visual_detail(graphics_quality == GRAPHICS_SCRIPT.HIGH)
     building_nodes[id] = obj
     placed_buildings[id] = {"kind":kind,"x":x,"z":z}
     next_building_id = maxi(next_building_id,id+1)
@@ -1696,13 +1699,22 @@ func building_created(id: int, record: Dictionary) -> void:
     _place_building(id,record)
     _play_build_sound(record)
 
+func _apply_building_detail_quality() -> void:
+    for node in building_nodes.values():
+        if is_instance_valid(node):
+            node.set_visual_detail(graphics_quality == GRAPHICS_SCRIPT.HIGH)
+    if is_instance_valid(preview_actor):
+        preview_actor.set_visual_detail(graphics_quality == GRAPHICS_SCRIPT.HIGH)
+
 func _play_build_sound(record: Dictionary) -> void:
     if harvest_visuals == null:
         return
     var world: Node3D = get_node("Eldoria_Forest")
     var x := float(record["x"])
     var z := float(record["z"])
-    harvest_visuals.play_sound("build",Vector3(x,world.height_at(x,z),z))
+    var position := Vector3(x,world.height_at(x,z),z)
+    harvest_visuals.play_build_effect(str(record.get("kind","")), position)
+    harvest_visuals.play_sound("build", position)
 
 func _try_gather() -> void:
     if own_id == 0 or not players.has(own_id) or int(player_health.get(own_id, MAX_HEALTH)) <= 0:
@@ -1992,6 +2004,7 @@ func _live_action(kind: String) -> void:
             graphics_quality = GRAPHICS_SCRIPT.HIGH if graphics_quality == GRAPHICS_SCRIPT.LOW else GRAPHICS_SCRIPT.LOW
             GRAPHICS_SCRIPT.apply(graphics_quality, sunlight, foliage)
             get_node("Eldoria_Forest").apply_detail_quality(graphics_quality == GRAPHICS_SCRIPT.HIGH)
+            _apply_building_detail_quality()
             if live_ui != null:
                 live_ui.show_message("Graphics: %s" % ("Low" if graphics_quality == GRAPHICS_SCRIPT.LOW else "High"))
         "sound":

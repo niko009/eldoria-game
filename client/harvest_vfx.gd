@@ -2,6 +2,7 @@ extends Node3D
 # Lightweight, ephemeral visual feedback. Never run on the dedicated server.
 const MAX_FALLING_TREES := 3
 const MAX_PICKUP_BURSTS := 5
+const MAX_BUILD_BURSTS := 4
 const FALL_SECONDS := 1.25
 const MAX_SOUNDS := 6
 const WOOD_SFX := preload("res://assets/sfx/wood_chop.wav")
@@ -11,6 +12,8 @@ const BUILD_SFX := preload("res://assets/sfx/build_place.wav")
 var _falling: Dictionary = {}
 var _bursts: Array[Node3D] = []
 var _particle_mesh: SphereMesh
+var _pickup_meshes: Dictionary = {}
+var _building_bursts: Array[Node3D] = []
 var _sounds: Array[AudioStreamPlayer3D] = []
 var sound_enabled := true
 
@@ -20,6 +23,13 @@ func _ready() -> void:
     _particle_mesh.height = 0.15
     _particle_mesh.radial_segments = 6
     _particle_mesh.rings = 3
+    var splinter := BoxMesh.new()
+    splinter.size = Vector3(0.045, 0.19, 0.06)
+    var shard := PrismMesh.new()
+    shard.size = Vector3(0.13, 0.11, 0.13)
+    var leaf := QuadMesh.new()
+    leaf.size = Vector2(0.13, 0.23)
+    _pickup_meshes = {"wood": splinter, "stone": shard, "herb": leaf}
 
 func play_tree_fall(resource_id: int, forest: Node3D, actor_pos: Vector3) -> bool:
     if DisplayServer.get_name() == "headless":
@@ -77,9 +87,10 @@ func play_pickup(kind: String, spot: Vector3) -> bool:
     effect.spread = 65.0
     effect.direction = Vector3.UP
     effect.gravity = Vector3(0,-4.0,0)
-    effect.mesh = _particle_mesh
+    effect.mesh = _pickup_meshes.get(kind, _particle_mesh)
     var mat := StandardMaterial3D.new()
     mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    mat.cull_mode = BaseMaterial3D.CULL_DISABLED
     mat.albedo_color = Color("85bb61") if kind == "herb" else (Color("a87848") if kind == "wood" else Color("aeb5a9"))
     effect.material_override = mat
     add_child(effect)
@@ -91,6 +102,65 @@ func play_pickup(kind: String, spot: Vector3) -> bool:
         if is_instance_valid(effect):
             effect.queue_free())
     return true
+
+func play_build_effect(kind: String, spot: Vector3) -> bool:
+    # Created only on authoritative building_created events, never on save
+    # restoration or when the player moves a red/green placement preview.
+    if DisplayServer.get_name() == "headless" or kind not in ["campfire", "tent"]:
+        return false
+    if _building_bursts.size() >= MAX_BUILD_BURSTS:
+        return false
+    var effect := Node3D.new()
+    effect.name = "BuildBurst_%s" % kind
+    effect.position = spot + Vector3(0, 0.07, 0)
+    add_child(effect)
+    _building_bursts.append(effect)
+    # One ephemeral rune ring per building, no permanent particle emitter.
+    var ring := MeshInstance3D.new()
+    ring.name = "PlacementRipple"
+    var shape := TorusMesh.new()
+    shape.inner_radius = 0.83 if kind == "campfire" else 1.42
+    shape.outer_radius = 0.90 if kind == "campfire" else 1.50
+    shape.rings = 4
+    shape.ring_segments = 24
+    ring.mesh = shape
+    var ring_mat := StandardMaterial3D.new()
+    ring_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    ring_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    ring_mat.albedo_color = Color(0.97, 0.80, 0.48, 0.78)
+    ring.material_override = ring_mat
+    ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    effect.add_child(ring)
+    var dust := CPUParticles3D.new()
+    dust.name = "ConstructionDust"
+    dust.one_shot = true
+    dust.emitting = false
+    dust.amount = 12
+    dust.lifetime = 0.58
+    dust.explosiveness = 1.0
+    dust.initial_velocity_min = 0.45
+    dust.initial_velocity_max = 1.6
+    dust.direction = Vector3.UP
+    dust.spread = 70
+    dust.gravity = Vector3(0, -3, 0)
+    dust.mesh = _particle_mesh
+    var dust_mat := StandardMaterial3D.new()
+    dust_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    dust_mat.albedo_color = Color("c6a474") if kind == "tent" else Color("9c9c89")
+    dust.material_override = dust_mat
+    effect.add_child(dust)
+    dust.emitting = true
+    var tween := create_tween()
+    tween.tween_property(ring, "scale", Vector3(1.20, 1.0, 1.20), 0.52).from(Vector3(0.62, 1.0, 0.62)).set_trans(Tween.TRANS_CUBIC)
+    tween.parallel().tween_property(ring_mat, "albedo_color:a", 0.0, 0.52)
+    get_tree().create_timer(1.2).timeout.connect(func() -> void:
+        _building_bursts.erase(effect)
+        if is_instance_valid(effect):
+            effect.queue_free())
+    return true
+
+func building_burst_count() -> int:
+    return _building_bursts.size()
 
 func play_sound(kind: String, world_position: Vector3) -> bool:
     if DisplayServer.get_name() == "headless" or not sound_enabled or _sounds.size() >= MAX_SOUNDS:
@@ -128,6 +198,10 @@ func set_sound_enabled(enabled: bool) -> void:
         _sounds.clear()
 
 func clear_effects() -> void:
+    for effect in _building_bursts:
+        if is_instance_valid(effect):
+            effect.queue_free()
+    _building_bursts.clear()
     for pivot in _falling.values():
         if is_instance_valid(pivot):
             pivot.queue_free()
