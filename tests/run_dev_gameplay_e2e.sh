@@ -21,6 +21,10 @@ echo "[TASK-011] authoritative resources"
 bash tests/run_resource_e2e.sh
 bash tests/run_building_e2e.sh
 bash tests/run_craft_network_e2e.sh
+echo "[TASK-033] KayKit equipment socket and server-authoritative visual state"
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task033_equipment_e2e.gd -- --test \
+    > "$ROOT/tests/logs/task033-equipment.log" 2>&1
+grep -q 'TASK033 EQUIPMENT PASS' "$ROOT/tests/logs/task033-equipment.log"
 bash tests/run_combat_e2e.sh
 echo "[TASK-030] Android modal swipe and tap"
 "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/android_modal_scroll_e2e.gd -- --test-live-ui \

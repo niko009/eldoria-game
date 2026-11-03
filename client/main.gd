@@ -24,8 +24,8 @@ const AVATAR_PROFILE := preload("res://avatar_profile.gd")
 const JUMP_MOTION := preload("res://jump_motion.gd")
 const UPDATE_SCRIPT := preload("res://update_manager.gd")
 const MOVE_SPEED := 6.0
-const CLIENT_VERSION := "0.5.5-dev"
-# TASK-025 is not released. Never automatically connect this RPC schema to v0.5.4.
+const CLIENT_VERSION := "0.5.8-dev"
+# TASK-032/033 are not released: never connect this new visual RPC to production v0.5.7.
 
 const DEVELOPMENT_BUILD := true
 const SERVER_CONFIG_URL := "https://bacus.dev/projects/eldoria/server.json"
@@ -904,6 +904,8 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
             return
     for existing in players:
         spawn_remote.rpc_id(id, existing, players[existing].position, int(player_choices.get(existing, 0)))
+        # Late joiners see authoritative equipment on existing remote players.
+        axe_visual_snapshot.rpc_id(id, int(existing), bool(equipped_axes.get(existing, false)))
     var pos := Vector3(float(players.size() * 3), 1, 0)
     _spawn(id, pos, validated)
     player_health[id] = MAX_HEALTH
@@ -1518,6 +1520,11 @@ func _set_axe_equipped_on_server(id: int, equip: bool) -> bool:
         _notify_build_result(id, "Craft a stone axe before equipping.")
         return false
     equipped_axes[id] = equip
+    # Keep the visual in sync for the host and every client. This does not
+    # change server-side wood yield or trust equipment requests from clients.
+    if players.has(id):
+        players[id].set_axe_equipped(equip)
+    axe_visual_snapshot.rpc(id, equip)
     if id == own_id:
         axe_equip_snapshot(equip)
     else:
@@ -1528,6 +1535,13 @@ func _set_axe_equipped_on_server(id: int, equip: bool) -> bool:
 func axe_equip_snapshot(equipped: bool) -> void:
     if live_ui != null:
         live_ui.set_equipped_axe(equipped)
+    if players.has(own_id):
+        players[own_id].set_axe_equipped(equipped)
+
+@rpc("authority", "call_remote", "reliable")
+func axe_visual_snapshot(id: int, equipped: bool) -> void:
+    if players.has(id):
+        players[id].set_axe_equipped(equipped)
 
 func _try_build() -> void:
     if own_id == 0 or not players.has(own_id) or int(player_health.get(own_id, MAX_HEALTH)) <= 0:

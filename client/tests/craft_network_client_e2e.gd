@@ -56,6 +56,9 @@ func _run() -> void:
         if not game.live_ui.state.equipped_axe:
             _fail("authoritative equipment ACK not received")
             return
+        if not game.players[game.own_id].axe_equipped or not game.players[game.own_id].axe_visual.visible:
+            _fail("server ACK did not put a visible axe in the own hero's hand")
+            return
         game.live_ui.state.select_item("unarmed")
         for i in range(150):
             await process_frame
@@ -64,7 +67,17 @@ func _run() -> void:
         if game.live_ui.state.equipped_axe:
             _fail("unequip ACK missing")
             return
+        if game.players[game.own_id].axe_visual.visible:
+            _fail("visible stone axe stayed attached after authoritative unequip")
+            return
         game.live_ui.state.select_item("axe")
+        for frame in 150:
+            await process_frame
+            if game.live_ui.state.equipped_axe:
+                break
+        if not game.live_ui.state.equipped_axe:
+            _fail("re-equip ACK missing")
+            return
         game.request_craft_axe.rpc_id(1)
         for i in range(120):
             await process_frame
@@ -87,6 +100,22 @@ func _run() -> void:
             return
         if game.live_ui.state.equipped_axe:
             _fail("nonowner was allowed to equip")
+            return
+        var mage_id := -1
+        for player_id in game.player_choices:
+            if int(game.player_choices[player_id]) == 2:
+                mage_id = int(player_id)
+        if mage_id < 0:
+            _fail("observer could not locate the remote mage")
+            return
+        var witnessed := false
+        for frame in 550:
+            await process_frame
+            if game.players.has(mage_id) and game.players[mage_id].axe_equipped and game.players[mage_id].axe_visual.visible:
+                witnessed = true
+                break
+        if not witnessed:
+            _fail("observer never saw authoritative equipment on other player")
             return
         # Keep observer present until the host compares both player inventories.
         for i in range(550):

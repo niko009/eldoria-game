@@ -6,6 +6,7 @@ const AVATARS := preload("res://avatar_profile.gd")
 const KNIGHT := preload("res://assets/characters/Knight.glb")
 const ROGUE := preload("res://assets/characters/Rogue_Hooded.glb")
 const MAGE := preload("res://assets/characters/Mage.glb")
+const AXE_VISUAL := preload("res://stone_axe_visual.gd")
 const CLIPS := ["Idle", "Walking_A", "Running_A", "Cheer", "Jump_Start", "Jump_Idle", "Jump_Land", "PickUp", "1H_Melee_Attack_Chop"]
 
 var player_id := 0
@@ -21,6 +22,8 @@ var airborne := false
 var landing_until_msec := 0
 var model_kind := ""
 var _last_move_vector := Vector3.ZERO
+var axe_equipped := false
+var axe_visual: Node3D
 
 func configure(id: int, server_only: bool, choice: int = -1) -> void:
     player_id = id
@@ -45,6 +48,7 @@ func set_avatar(choice: int) -> void:
         visual.queue_free()
         visual = null
     animator = null
+    axe_visual = null
     current_clip = ""
     _create_visual()
 
@@ -71,11 +75,33 @@ func _create_visual() -> void:
     # Accessories are optional, but keep only the recognizable outfit, not
     # every alternative shield, melee weapon, and hat in the original GLB.
     _hide_unused_accessories(visual)
+    _attach_equipment()
     set_clip("Idle")
+
+func _attach_equipment() -> void:
+    # All three KayKit humanoids ship a skinned right-hand socket. Reuse the
+    # imported BoneAttachment3D so the weapon follows walking and chop clips.
+    var hand := visual.get_node_or_null("Rig/Skeleton3D/handslot_r") as BoneAttachment3D
+    if hand == null:
+        push_error("Missing right-hand weapon socket for KayKit " + model_kind)
+        return
+    axe_visual = AXE_VISUAL.new()
+    hand.add_child(axe_visual)
+    # Imported KayKit handslot: +Z points up in the neutral hand pose.
+    # Re-orient our axe's +Y handle into the hand's +Z rather than forward.
+    axe_visual.rotation_degrees = Vector3(90, 0, 0)
+    axe_visual.visible = axe_equipped
+
+func set_axe_equipped(value: bool) -> void:
+    # This is visual state only. The server still authorizes inventory and
+    # wood yield. Never infer equipment from locally selected hotbar slots.
+    axe_equipped = value
+    if axe_visual != null:
+        axe_visual.visible = value
 
 func _hide_unused_accessories(node: Node) -> void:
     for child in node.get_children():
-        if child is MeshInstance3D and String(child.name).contains("Sword_Offhand"):
+        if child is MeshInstance3D and String(child.name).contains("Sword"):
             child.visible = false
         elif child is MeshInstance3D and (String(child.name).contains("Shield") or
                 String(child.name).contains("Crossbow") or String(child.name).contains("Wand") or
