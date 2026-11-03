@@ -45,7 +45,7 @@ func _is_ready(panel: Node, recipe: String) -> bool:
 		return false
 	var column = card.get_child(0)
 	print("CHECK ",recipe," children=",panel.get_child_count()," label=",column.get_child(0).text," wood=",panel.state.amount("wood")," stone=",panel.state.amount("stone"))
-	return column.get_child(0).text.begins_with("● МОЖНО СОЗДАТЬ")
+	return column.get_child(0).text.begins_with("● ГОТОВО")
 func _fail(reason: String) -> void:
 	printerr("TASK045 RECIPE HIGHLIGHT FAIL: "+reason)
 	quit(1)

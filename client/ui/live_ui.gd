@@ -35,6 +35,8 @@ var panel_tween: Tween
 var touch_scroll = TouchScroller.new()
 var combat_equipment := "unarmed"
 var bow_aim_hint: Label
+var combat_aim_help: Label
+var reticle_at := Vector2(-1,-1)
 var saved_skills: Dictionary = {"archery":0,"spear":0,"defense":0}
 var hero_mana := 100
 
@@ -69,6 +71,13 @@ func _ready() -> void:
     bow_aim_hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
     bow_aim_hint.visible = false
     add_child(bow_aim_hint)
+    combat_aim_help = Style.label("", 13, Color("d5f0d1"))
+    combat_aim_help.name = "CombatAimHelp"
+    combat_aim_help.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    combat_aim_help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    combat_aim_help.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    combat_aim_help.visible = false
+    add_child(combat_aim_help)
     hud.joystick.direction_changed.connect(func(vector: Vector2) -> void: joystick_moved.emit(vector))
 
     overlay = ColorRect.new()
@@ -139,6 +148,8 @@ func set_combat_equipment(item: String) -> void:
             state.changed.emit()
     if hud != null:
         hud.set_shield_mode(item == "shield")
+        hud.set_combat_mode(item)
+        hud.refresh()
     _refresh_bow_hint()
 
 func set_hero_class(choice: int) -> void:
@@ -158,8 +169,34 @@ func set_hero_mana(value: int) -> void:
 func _refresh_bow_hint() -> void:
     if bow_aim_hint == null or state == null:
         return
-    bow_aim_hint.visible = combat_equipment == "bow" and active_panel.is_empty()
-    bow_aim_hint.tooltip_text = "Лук · стрел: %d · цельтесь поворотом камеры" % state.amount("arrow")
+    var ranged := combat_equipment in ["bow","spear"]
+    bow_aim_hint.visible = ranged and active_panel.is_empty()
+    bow_aim_hint.text = "⊕" if combat_equipment == "bow" else "◇"
+    bow_aim_hint.add_theme_color_override("font_color",
+        Color("f3d6a2") if state.amount("arrow") > 0 else Color("db867c"))
+    bow_aim_hint.tooltip_text = "Прицел на центре экрана. Ведите камерой по цели, затем нажмите ВЫСТРЕЛ."
+    if combat_aim_help != null:
+        combat_aim_help.visible = ranged and active_panel.is_empty()
+        if combat_equipment == "bow":
+            combat_aim_help.text = "ПКМ / СВАЙП — ПРИЦЕЛ · %d СТРЕЛ" % state.amount("arrow") if state.amount("arrow") > 0 else "НЕТ СТРЕЛ · СОЗДАЙТЕ У КОСТРА"
+        else:
+            combat_aim_help.text = "КОПЬЁ · ЦЕЛЬ ВПЕРЕДИ · ДО 4,5 М"
+
+func set_combat_reticle(at: Vector2) -> void:
+    if combat_equipment not in ["bow","spear"] or not active_panel.is_empty():
+        return
+    # Third-person camera looks toward the player, not straight down the
+    # weapon's ray. Project the real aim line: the marker must not lie.
+    reticle_at = Vector2(clampf(at.x,28,size.x-28),clampf(at.y,42,size.y-68))
+    _position_combat_reticle()
+
+func _position_combat_reticle() -> void:
+    if bow_aim_hint == null or reticle_at.x < 0:
+        return
+    bow_aim_hint.position = reticle_at-bow_aim_hint.size*0.5
+    if combat_aim_help != null:
+        combat_aim_help.position = Vector2(clampf(reticle_at.x-combat_aim_help.size.x*0.5,
+            5,size.x-combat_aim_help.size.x-5),minf(size.y-27,reticle_at.y+26))
 
 func set_inventory(inventory: Dictionary) -> void:
     var validated := {}
@@ -176,6 +213,7 @@ func set_inventory(inventory: Dictionary) -> void:
         if state.selected_item == "axe":
             state.select_item("unarmed")
     state.changed.emit()
+    _refresh_bow_hint()
 
 func set_health(hp: int, maximum: int) -> void:
     var value := clampi(hp, 0, 100)
@@ -247,6 +285,12 @@ func show_message(message: String) -> void:
     notice.visible = true
     notice_timer.start()
     _layout()
+
+func show_combat_feedback(message: String) -> void:
+    show_message(message)
+    if notice != null:
+        notice.add_theme_color_override("font_color",
+            Color("a8efbd") if message.contains("Попадание") or message.contains("Точно") else Color("ffd7a2"))
 
 func _open(kind: String) -> void:
     if kind == active_panel:
@@ -384,6 +428,10 @@ func _layout() -> void:
     if bow_aim_hint != null:
         bow_aim_hint.size = Vector2(44, 44)
         bow_aim_hint.position = size*0.5 - bow_aim_hint.size*0.5
+    if combat_aim_help != null:
+        combat_aim_help.size = Vector2(minf(size.x*0.54,330),25)
+        combat_aim_help.position = Vector2((size.x-combat_aim_help.size.x)*0.5, size.y*0.5+33)
+    _position_combat_reticle()
     var mobile := OS.has_feature("mobile") or OS.get_cmdline_user_args().has("--test-live-ui") or OS.get_cmdline_user_args().has("--test-mobile-ui")
     var top_margin := 49.0 if mobile else 16.0
     var bottom_margin := 30.0 if mobile else 16.0

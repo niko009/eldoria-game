@@ -138,3 +138,8 @@ grep -q 'TASK053 CRAFTED WEAPONS UI PASS' "$ROOT/tests/logs/task053-craft-equip.
 grep -q 'TASK053 WILDLIFE MODELS PASS' "$ROOT/tests/logs/task053-wildlife.log"
 bash tests/run_bow_network_e2e.sh
 echo 'PASS: TASK-053 equipment hotbar/rucksack/authoritative combat and wildlife GLB.'
+echo '[TASK-054] bow/spear combat clarity and icon inventory/crafting'
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task054_combat_icons_e2e.gd -- --test-live-ui \
+    > "$ROOT/tests/logs/task054-combat-icons.log" 2>&1
+grep -q 'TASK054 COMBAT ICONS PASS' "$ROOT/tests/logs/task054-combat-icons.log"
+echo 'PASS: TASK-054 server-facing melee, bow feedback and icon UI.'

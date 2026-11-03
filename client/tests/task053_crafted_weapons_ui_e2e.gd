@@ -55,11 +55,7 @@ func _run() -> void:
 	# Inventory alternative also equips weapon, no crafting menu necessary.
 	ui._open("inventory")
 	var inventory = ui.current_panel
-	var buttons: Array[Node] = inventory.find_children("*","Button",true,false)
-	var bow_button: Button = null
-	for button in buttons:
-		if button is Button and button.text.contains("Лук"):
-			bow_button = button
+	var bow_button: Button = inventory.get_node_or_null("ItemGrid/ItemSlot_bow")
 	if bow_button == null or bow_button.disabled:
 		_fail("owned bow not selectable in inventory")
 		return

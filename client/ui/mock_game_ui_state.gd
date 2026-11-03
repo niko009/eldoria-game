@@ -40,7 +40,7 @@ const RECIPES := {
 	"bandage": {"name": "Повязка", "description": "Восстанавливает 40 HP в любом месте", "cost": {"wood": 1, "herb": 2}},
 	"repair_kit": {"name": "Ремкомплект", "description": "Восстанавливает 60 HP лагеря рядом с костром", "cost": {"wood": 3, "stone": 2}},
 	"spear": {"name":"Копьё","description":"Ближняя атака до 4,5 м · урон 30","cost":{"wood":3,"stone":2}},
-	"bow": {"name":"Лук","description":"Атака до 6 м · расходует стрелы","cost":{"wood":4,"herb":2}},
+	"bow": {"name":"Лук","description":"Прицельный выстрел до 12 м · расходует стрелы","cost":{"wood":4,"herb":2}},
 	"shield": {"name":"Щит","description":"Снижает урон волков на 40%","cost":{"wood":4,"stone":1}},
 	"arrow": {"name":"Стрела","description":"Боеприпас для лука (1 штука)","cost":{"wood":1,"stone":1}},
 }

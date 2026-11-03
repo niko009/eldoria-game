@@ -42,6 +42,7 @@ var joystick: Control
 var action_buttons: Control
 var top_actions: HBoxContainer
 var selected_tool_hint: Label
+var combat_mode := "unarmed"
 var raid_banner: Label
 var heal_button: Button
 var repair_button: Button
@@ -278,6 +279,23 @@ func set_shield_mode(equipped: bool) -> void:
 	button.get_node("Caption").text = "ЗОВ" if equipped and state.selected_avatar == "knight" else "УДАР"
 	button.tooltip_text = "Привлечь волков (5 с, перезарядка 15 с)" if equipped and state.selected_avatar == "knight" else "Атаковать"
 
+func set_combat_mode(item: String) -> void:
+	combat_mode = item
+	if not action_controls.has("attack"):
+		return
+	var button: Button = action_controls["attack"]
+	match item:
+		"bow":
+			button.get_node("Caption").text = "ВЫСТРЕЛ"
+			button.tooltip_text = "Лук · наведите прицел · нажмите для выстрела · 1 стрела за выстрел"
+		"spear":
+			button.get_node("Caption").text = "УКОЛ"
+			button.tooltip_text = "Копьё · смотрите на врага перед собой · до 4,5 м"
+		"shield":
+			set_shield_mode(true)
+		_:
+			set_shield_mode(false)
+
 func set_hero_class(choice: int) -> void:
 	if not action_controls.has("ability"):
 		return
@@ -386,7 +404,17 @@ func refresh() -> void:
 	for kind in ["wood", "stone", "herb"]:
 		var counter: Label = resource_counts[kind]
 		counter.text = str(state.amount(kind))
-	selected_tool_hint.text = "КАМЕННЫЙ ТОПОР" if state.selected_item == "axe" else ""
+	match combat_mode:
+		"bow":
+			selected_tool_hint.text = "ЛУК  ·  %d СТРЕЛ  ·  12 М  ·  ВЫСТРЕЛ" % state.amount("arrow")
+		"spear":
+			selected_tool_hint.text = "КОПЬЁ  ·  ДО 4,5 М  ·  J / ЛКМ / УКОЛ"
+		"shield":
+			selected_tool_hint.text = "ЩИТ  ·  ЗАЩИТА  ·  Q — УМЕНИЕ"
+		"axe":
+			selected_tool_hint.text = "КАМЕННЫЙ ТОПОР"
+		_:
+			selected_tool_hint.text = ""
 	selected_tool_hint.visible = not selected_tool_hint.text.is_empty()
 	heal_button.visible = state.health_known and state.health > 0 and state.health < 100 and state.near_campfire and state.amount("herb") >= 2
 	_update_repair_visibility()

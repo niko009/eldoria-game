@@ -1231,6 +1231,11 @@ func _physics_process(delta: float) -> void:
     var smoothed: Vector3 = camera.position.lerp(target, minf(1.0, delta * 7.0))
     camera.position = world.camera_safe_target(focus, smoothed)
     camera.look_at(focus, Vector3.UP)
+    if live_ui != null and ["bow","spear"].has(live_ui.combat_equipment):
+        var from: Vector3 = players[own_id].position + Vector3.UP*0.8
+        var projection: Vector3 = from + _bow_aim_direction() * (12.0 if live_ui.combat_equipment == "bow" else 4.5)
+        if not camera.is_position_behind(projection):
+            live_ui.set_combat_reticle(camera.unproject_position(projection))
     send_accumulator += delta
     var at: Vector3 = players[own_id].position
     if send_accumulator >= 0.05:
@@ -1838,6 +1843,7 @@ func _attack_on_server(id: int, aim: Vector3 = Vector3.ZERO) -> bool:
     if str(equipped_combat.get(id,"unarmed")) == "bow":
         return _bow_attack_on_server(id, aim)
     if not wolf_alive and pack_wolves.is_empty() and passive_creatures.is_empty():
+        _attack_feedback(id,"Нет целей поблизости")
         return false
     var now := Time.get_ticks_msec()
     if now - int(last_attack_at.get(id, now - 1000)) < 650:
@@ -1845,13 +1851,16 @@ func _attack_on_server(id: int, aim: Vector3 = Vector3.ZERO) -> bool:
     var actor: Vector3 = players[id].position
     var weapon: String = str(equipped_combat.get(id,"unarmed"))
     var range_sq := 20.25 if weapon == "spear" else 9.0
+    # The client aims with camera heading; the server selects only targets
+    # IN FRONT of the swing. No more instant hits on wolves behind the player.
+    var facing := Vector2(aim.x,aim.z).normalized() if aim.is_finite() and aim.length_squared() > 0.1 else Vector2.ZERO
     var hit_damage := COMBAT_PROGRESSION.weapon_damage("spear",
         int(player_skills.get(id,{}).get("spear",0))) if weapon == "spear" else 20
     var chosen := 0
     var nearest := range_sq
     if wolf_alive and absf(actor.y-wolf_position.y) <= 3.0:
         var distance_sq := Vector2(actor.x-wolf_position.x, actor.z-wolf_position.z).length_squared()
-        if distance_sq <= nearest:
+        if distance_sq <= nearest and _in_attack_arc(actor,wolf_position,facing):
             nearest = distance_sq
             chosen = -1
     for pack_id in pack_wolves:
@@ -1860,7 +1869,7 @@ func _attack_on_server(id: int, aim: Vector3 = Vector3.ZERO) -> bool:
             continue
         var at: Vector3 = enemy["position"]
         var distance_sq := Vector2(actor.x-at.x, actor.z-at.z).length_squared()
-        if absf(actor.y-at.y) <= 3.0 and distance_sq < nearest:
+        if absf(actor.y-at.y) <= 3.0 and distance_sq < nearest and _in_attack_arc(actor,at,facing):
             nearest = distance_sq
             chosen = int(pack_id)
     for creature_id in passive_creatures:
@@ -1869,17 +1878,25 @@ func _attack_on_server(id: int, aim: Vector3 = Vector3.ZERO) -> bool:
             continue
         var at: Vector3 = animal["position"]
         var distance_sq := Vector2(actor.x-at.x,actor.z-at.z).length_squared()
-        if absf(actor.y-at.y) <= 3.0 and distance_sq < nearest:
+        if absf(actor.y-at.y) <= 3.0 and distance_sq < nearest and _in_attack_arc(actor,at,facing):
             nearest = distance_sq
             chosen = 100+int(creature_id)
     if chosen == 0:
+        combat_swing.rpc(id)
+        if id == own_id:
+            _play_attack(id)
+        _attack_feedback(id,"Мимо! Цель должна быть перед вами (до %s м)" %
+            ("4,5" if weapon == "spear" else "3"))
         return false
     last_attack_at[id] = now
     if chosen > 100:
         combat_swing.rpc(id)
         if id == own_id:
             _play_attack(id)
-        return _damage_passive_on_server(id,chosen-100,hit_damage,now)
+        var landed := _damage_passive_on_server(id,chosen-100,hit_damage,now)
+        if landed:
+            _attack_feedback(id,"Попадание копьём!" if weapon == "spear" else "Попадание!")
+        return landed
     if chosen > 0:
         var enemy: Dictionary = pack_wolves[chosen]
         enemy["hp"] = maxi(0, int(enemy["hp"])-hit_damage)
@@ -1897,6 +1914,8 @@ func _attack_on_server(id: int, aim: Vector3 = Vector3.ZERO) -> bool:
             if outcome != "":
                 _broadcast_raid_state(now)
         pack_wolf_snapshot.rpc(chosen, enemy["position"], int(enemy["hp"]), bool(enemy["alive"]), enemy["direction"])
+        _attack_feedback(id,"Копьё: попадание! -%d HP" % hit_damage if weapon == "spear"
+            else "Попадание! -%d HP" % hit_damage)
         return true
     wolf_health = maxi(0, wolf_health - hit_damage)
     if weapon == "spear":
@@ -1916,7 +1935,26 @@ func _attack_on_server(id: int, aim: Vector3 = Vector3.ZERO) -> bool:
             _reward_raid_survivors()
             _broadcast_raid_state(now)
     wolf_snapshot.rpc(wolf_position, wolf_health, wolf_alive, wolf_direction)
+    _attack_feedback(id,"Копьё: попадание! -%d HP" % hit_damage if weapon == "spear"
+        else "Попадание! -%d HP" % hit_damage)
     return true
+
+func _in_attack_arc(from: Vector3, target: Vector3, facing: Vector2) -> bool:
+    if facing.length_squared() < 0.5: # Legacy server tests invoke melee without aim.
+        return true
+    var to_target := Vector2(target.x-from.x,target.z-from.z)
+    return to_target.length_squared() < 0.04 or to_target.normalized().dot(facing) >= 0.35
+
+func _attack_feedback(id: int, message: String) -> void:
+    if id == own_id:
+        attack_feedback(message)
+    elif multiplayer.get_peers().has(id):
+        attack_feedback.rpc_id(id,message)
+
+@rpc("authority","call_remote","reliable")
+func attack_feedback(message: String) -> void:
+    if live_ui != null:
+        live_ui.show_combat_feedback(message)
 
 # Aim direction comes from the player, but all geometry, targets, ammunition,
 # cooldown and damage are resolved on the authoritative server.
@@ -1925,7 +1963,7 @@ func _bow_attack_on_server(id: int, aim: Vector3) -> bool:
         return false
     if str(equipped_combat.get(id,"unarmed")) != "bow" or int(player_inventories.get(id,{}).get("bow",0)) < 1:
         return false
-    if not aim.is_finite() or absf(aim.length()-1.0) > 0.05 or aim.y < -0.96 or aim.y > 0.15:
+    if not aim.is_finite() or absf(aim.length()-1.0) > 0.05 or aim.y < -0.96 or aim.y > 0.80:
         return false
     var hit_damage := COMBAT_PROGRESSION.weapon_damage("bow",
         int(player_skills.get(id,{}).get("archery",0)))
@@ -1934,6 +1972,7 @@ func _bow_attack_on_server(id: int, aim: Vector3) -> bool:
         return false
     var before: Dictionary = player_inventories.get(id,{}).duplicate(true)
     if int(before.get("arrow",0)) < 1:
+        _attack_feedback(id,"Нет стрел! Создайте их в мастерской")
         return false
     var inv := before.duplicate(true)
     inv["arrow"] = int(inv["arrow"])-1
@@ -1951,9 +1990,9 @@ func _bow_attack_on_server(id: int, aim: Vector3) -> bool:
     else:
         inventory_snapshot.rpc_id(id,inv)
     var origin: Vector3 = players[id].position + Vector3.UP*0.8
-    var end: Vector3 = origin + aim*6.0
+    var end: Vector3 = origin + aim*12.0
     var world: Node3D = get_node("Eldoria_Forest")
-    var nearest: float = world.arrow_block_fraction(origin,end) * 6.0
+    var nearest: float = world.arrow_block_fraction(origin,end) * 12.0
     var struck := 0
     if wolf_alive:
         var distance := _ray_wolf_hit_distance(origin,aim,wolf_position+Vector3.UP*0.65)
@@ -1986,9 +2025,13 @@ func _bow_attack_on_server(id: int, aim: Vector3) -> bool:
     if id == own_id:
         _play_attack(id)
     if struck == 0:
+        _attack_feedback(id,"Стрела попала в препятствие" if nearest < 11.99 else "Промах — наведите прицел на цель")
         return true # A real shot can miss; ammunition was still consumed.
     if struck > 100:
-        return _damage_passive_on_server(id,struck-100,hit_damage,now)
+        var landed := _damage_passive_on_server(id,struck-100,hit_damage,now)
+        if landed:
+            _attack_feedback(id,"Точно! -%d HP" % hit_damage)
+        return landed
     if struck > 0:
         var wolf: Dictionary = pack_wolves[struck]
         wolf["hp"] = maxi(0,int(wolf["hp"])-hit_damage)
@@ -2017,18 +2060,19 @@ func _bow_attack_on_server(id: int, aim: Vector3) -> bool:
                 _reward_raid_survivors()
                 _broadcast_raid_state(now)
         wolf_snapshot.rpc(wolf_position,wolf_health,wolf_alive,wolf_direction)
+    _attack_feedback(id,"Попадание из лука! -%d HP" % hit_damage)
     return true
 
 func _ray_wolf_hit_distance(origin: Vector3, direction: Vector3, center: Vector3, radius: float = 0.8) -> float:
     var to_center := center-origin
     var along := to_center.dot(direction)
-    if along < 0.0 or along > 6.85:
+    if along < 0.0 or along > 12.85:
         return INF
     var sideways_sq := to_center.length_squared()-along*along
     if sideways_sq >= radius*radius:
         return INF
     var entry := maxf(0.0,along-sqrt(radius*radius-sideways_sq))
-    return entry if entry <= 6.0 else INF
+    return entry if entry <= 12.0 else INF
 
 @rpc("authority", "call_remote", "reliable")
 func combat_swing(id: int) -> void:
@@ -2036,7 +2080,7 @@ func combat_swing(id: int) -> void:
 
 @rpc("authority", "call_remote", "unreliable")
 func bow_shot_visual(start: Vector3, target: Vector3) -> void:
-    if is_dedicated or not start.is_finite() or not target.is_finite() or start.distance_to(target) > 7.0:
+    if is_dedicated or not start.is_finite() or not target.is_finite() or start.distance_to(target) > 13.0:
         return
     var direction := target-start
     if direction.length() < 0.01:

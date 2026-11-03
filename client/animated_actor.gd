@@ -114,28 +114,79 @@ func _set_combat_visual() -> void:
     combat_visual = Node3D.new()
     combat_visual.name = "CombatEquipment"
     hand.add_child(combat_visual)
-    var body := MeshInstance3D.new()
-    var mesh := CylinderMesh.new()
     if combat_item == "spear":
-        mesh.top_radius = 0.035
-        mesh.bottom_radius = 0.035
-        mesh.height = 2.0
+        # A long wooden shaft with a tapered steel head is readable in third person.
+        _equipment_segment("SpearShaft", Vector3(0,-0.75,0), Vector3(0,0.92,0),
+            0.037,Color("926644"))
+        _equipment_segment("SpearSocket", Vector3(0,0.91,0), Vector3(0,1.04,0),
+            0.07,Color("859b9f"))
+        var point := MeshInstance3D.new()
+        point.name = "SteelSpearPoint"
+        var steel := CylinderMesh.new()
+        steel.bottom_radius = 0.12
+        steel.top_radius = 0.0
+        steel.height = 0.42
+        point.mesh = steel
+        point.position.y = 1.24
+        point.material_override = _equipment_material(Color("d6e2df"))
+        combat_visual.add_child(point)
     elif combat_item == "bow":
-        mesh.top_radius = 0.06
-        mesh.bottom_radius = 0.06
-        mesh.height = 1.2
+        # Two curved wooden limbs and a taut string. The old bow was a cylinder.
+        var parts := [Vector3(0,0,0),Vector3(0.17,0.30,0),Vector3(0.22,0.65,0),
+            Vector3(0.12,0.82,0)]
+        for i in 3:
+            _equipment_segment("BowUpper_%d" % i,parts[i],parts[i+1],0.055,
+                Color("a87848"))
+            _equipment_segment("BowLower_%d" % i,
+                Vector3(parts[i].x,-parts[i].y,0),Vector3(parts[i+1].x,-parts[i+1].y,0),
+                0.055,Color("a87848"))
+        _equipment_segment("BowString",Vector3(0.12,-0.82,0),Vector3(0.12,0.82,0),
+            0.009,Color("e9e2c9"))
+        _equipment_segment("BowGrip",Vector3(0,-0.12,0),Vector3(0,0.12,0),
+            0.07,Color("5a4936"))
     elif combat_item == "shield":
+        var body := MeshInstance3D.new()
+        var mesh := CylinderMesh.new()
         mesh.top_radius = 0.37
         mesh.bottom_radius = 0.37
         mesh.height = 0.09
         body.rotation_degrees.x = 90
+        body.mesh = mesh
+        body.material_override = _equipment_material(Color("8a7756"))
+        combat_visual.add_child(body)
+        var boss := MeshInstance3D.new()
+        boss.name = "ShieldBoss"
+        var boss_mesh := SphereMesh.new()
+        boss_mesh.radius = 0.09
+        boss_mesh.height = 0.18
+        boss.mesh = boss_mesh
+        boss.material_override = _equipment_material(Color("d6d0b5"))
+        boss.position.z = 0.09
+        combat_visual.add_child(boss)
     else:
         return
-    body.mesh = mesh
-    combat_visual.add_child(body)
     combat_visual.rotation_degrees.x = 90
     if axe_visual != null:
         axe_visual.visible = axe_equipped and combat_item == "unarmed"
+
+func _equipment_material(color: Color) -> StandardMaterial3D:
+    var material := StandardMaterial3D.new()
+    material.albedo_color = color
+    material.roughness = 0.76
+    return material
+
+func _equipment_segment(name: String, a: Vector3, b: Vector3, width: float, color: Color) -> void:
+    var segment := MeshInstance3D.new()
+    segment.name = name
+    var cylinder := CylinderMesh.new()
+    cylinder.top_radius = width
+    cylinder.bottom_radius = width
+    cylinder.height = a.distance_to(b)
+    segment.mesh = cylinder
+    segment.position = (a+b)*0.5
+    segment.quaternion = Quaternion(Vector3.UP,(b-a).normalized())
+    segment.material_override = _equipment_material(color)
+    combat_visual.add_child(segment)
 
 func set_axe_equipped(value: bool) -> void:
     # This is visual state only. The server still authorizes inventory and
