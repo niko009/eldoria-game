@@ -56,24 +56,25 @@ func _ready() -> void:
     hud.joystick.direction_changed.connect(func(vector: Vector2) -> void: joystick_moved.emit(vector))
 
     overlay = ColorRect.new()
-    overlay.color = Color("080e12", 0.68)
+    overlay.color = Color("071113", 0.64)
     overlay.mouse_filter = Control.MOUSE_FILTER_STOP
     overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     overlay.visible = false
     add_child(overlay)
     dialog = PanelContainer.new()
-    dialog.add_theme_stylebox_override("panel", Style.panel())
+    dialog.add_theme_stylebox_override("panel", Style.panel(Color("142329", 0.97), Color("d4b781", 0.61), 20))
     overlay.add_child(dialog)
     var col := VBoxContainer.new()
-    col.add_theme_constant_override("separation", 8)
+    col.add_theme_constant_override("separation", 7)
     dialog.add_child(col)
     var header := HBoxContainer.new()
     col.add_child(header)
-    panel_title = Style.label("", 20, Style.GOLD)
+    panel_title = Style.label("", 21, Style.GOLD)
     panel_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     header.add_child(panel_title)
     var close_button := Button.new()
     close_button.text = "✕"
+    close_button.tooltip_text = "Закрыть"
     Style.button(close_button)
     close_button.pressed.connect(_close)
     header.add_child(close_button)
@@ -87,6 +88,11 @@ func _ready() -> void:
         btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
         btn.pressed.connect(_open.bind(entry[1]))
         tabs.add_child(btn)
+    var accent := ColorRect.new()
+    accent.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    accent.custom_minimum_size = Vector2(0, 2)
+    accent.color = Color("d4b781", 0.45)
+    col.add_child(accent)
     contents = ScrollContainer.new()
     contents.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
     contents.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
@@ -291,9 +297,12 @@ func _input(event: InputEvent) -> void:
 func _layout() -> void:
     if dialog == null:
         return
-    var width := minf(560, size.x - 24)
-    var height := minf(480, size.y - 24)
-    dialog.position = Vector2((size.x - width) * 0.5, (size.y - height) * 0.5)
+    var mobile := OS.has_feature("mobile") or OS.get_cmdline_user_args().has("--test-live-ui") or OS.get_cmdline_user_args().has("--test-mobile-ui")
+    var top_margin := 49.0 if mobile else 16.0
+    var bottom_margin := 30.0 if mobile else 16.0
+    var width := minf(560, size.x - 32)
+    var height := minf(460, size.y - top_margin - bottom_margin)
+    dialog.position = Vector2((size.x - width) * 0.5, maxf(top_margin, (size.y - height) * 0.5))
     dialog.size = Vector2(width, height)
     if notice != null:
         notice.position = Vector2(maxf(10, size.x * 0.5 - 230), 90)

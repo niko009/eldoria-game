@@ -60,14 +60,14 @@ func _ready() -> void:
 	_add_tool("Загрузка: вкл/выкл", _toggle_loading)
 
 	overlay = ColorRect.new()
-	overlay.color = Color("080e12", 0.68)
+	overlay.color = Color("071113", 0.64)
 	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.visible = false
 	add_child(overlay)
 
 	window_panel = PanelContainer.new()
-	window_panel.add_theme_stylebox_override("panel", Style.panel())
+	window_panel.add_theme_stylebox_override("panel", Style.panel(Color("142329", 0.97), Color("d4b781", 0.61), 20))
 	overlay.add_child(window_panel)
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 8)

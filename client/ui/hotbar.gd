@@ -16,16 +16,18 @@ var slot_buttons: Dictionary = {}
 var slot_icons: Dictionary = {}
 
 func _ready() -> void:
-	add_theme_stylebox_override("panel", Style.panel(Color("172026", 0.83), Color("6e6c5d")))
+	var shell := Style.panel(Color("152328", 0.82), Color("d2b989", 0.37), 19)
+	shell.set_content_margin_all(6)
+	add_theme_stylebox_override("panel", shell)
 	row = HBoxContainer.new()
-	row.add_theme_constant_override("separation", 5)
+	row.add_theme_constant_override("separation", 4)
 	add_child(row)
 	for index in SLOTS.size():
 		var tool_id: String = SLOTS[index]
 		var slot := Button.new()
 		slot.name = "ToolSlot_%s" % tool_id
 		slot.text = "" # Absolutely no resource numbers or text badges in the hotbar.
-		slot.custom_minimum_size = Vector2(56, 58)
+		slot.custom_minimum_size = Vector2(52, 54)
 		slot.focus_mode = Control.FOCUS_NONE
 		slot.pressed.connect(_on_slot_pressed.bind(tool_id))
 		row.add_child(slot)
@@ -37,8 +39,8 @@ func _ready() -> void:
 		# Center anchors caused Godot to add half the slot width to our offsets,
 		# drawing silhouettes below and to the right of their buttons.
 		icon.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-		icon.position = Vector2(5, 6)
-		icon.size = Vector2(46, 46)
+		icon.position = Vector2(5, 5)
+		icon.size = Vector2(42, 42)
 		slot_buttons[tool_id] = slot
 		slot_icons[tool_id] = icon
 	if state != null:
@@ -59,7 +61,10 @@ func refresh() -> void:
 		var selected: bool = state.selected_item == tool_id
 		slot.disabled = not available
 		slot.tooltip_text = "%d · %s" % [index + 1, State.TOOLS[tool_id]["name"]]
-		Style.button(slot, selected)
-		slot.custom_minimum_size = Vector2(56, 58)
+		slot.add_theme_stylebox_override("normal", Style.panel(Color("715d3d", 0.76) if selected else Color("273538", 0.55), Color("e5bd77", 0.92) if selected else Color("667576", 0.40), 12))
+		slot.add_theme_stylebox_override("hover", Style.panel(Color("44534d", 0.9), Color("e5bd77", 0.78), 12))
+		slot.add_theme_stylebox_override("pressed", Style.panel(Color("85704f", 0.94), Color("f4dcaa"), 12))
+		slot.add_theme_stylebox_override("disabled", Style.panel(Color("172328", 0.52), Color("647176", 0.25), 12))
+		slot.custom_minimum_size = Vector2(52, 54)
 		var icon: Control = slot_icons[tool_id]
 		icon.configure(tool_id, available, selected)

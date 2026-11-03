@@ -10,138 +10,299 @@ signal open_settings
 
 const Style = preload("res://ui/ui_style.gd")
 const State = preload("res://ui/mock_game_ui_state.gd")
+const Glyph = preload("res://ui/hud_glyph.gd")
 const HotbarScene = preload("res://ui/Hotbar.tscn")
+
+const CREAM := Color("f5eedc")
+const GOLD := Color("e5bd77")
+const INK := Color("151e23")
+const SAGE := Color("8fbd9c")
 
 var state: MockGameUiState
 var show_touch_controls := true
 var preview_mode := true
+
 var status_panel: PanelContainer
 var status_detail: Label
 var health_detail: Label
-var resources_panel: PanelContainer
+var health_bar: ProgressBar
+var avatar_name: Label
+var warning_detail: Label
+var resources_panel: HBoxContainer
 var resource_counts: Dictionary = {}
 var hotbar: EldoriaHotbar
 var touch_layer: Control
 var joystick: Control
-var action_buttons: VBoxContainer
+var action_buttons: Control
 var top_actions: HBoxContainer
+var selected_tool_hint: Label
+var action_controls: Dictionary = {}
+var top_controls: Dictionary = {}
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	status_panel = PanelContainer.new()
-	status_panel.add_theme_stylebox_override("panel", Style.panel(Color("172026", 0.82)))
-	add_child(status_panel)
-	var status_column := VBoxContainer.new()
-	status_panel.add_child(status_column)
-	status_column.add_child(Style.label("ELDORIA  ·  " + ("PREVIEW" if preview_mode else "ONLINE"), 18, Style.GOLD))
-	status_detail = Style.label("", 13, Style.MUTED)
-	status_column.add_child(status_detail)
-	health_detail = Style.label("", 16, Style.GOLD)
-	status_column.add_child(health_detail)
+	resized.connect(_layout)
+	_create_status()
+	_create_resources()
+	_create_menu()
+	_create_hotbar()
+	_create_touch()
+	_create_warning()
+	if state != null:
+		state.changed.connect(refresh)
+	refresh()
 
-	# Always-visible server-backed resources: never part of the equipment hotbar.
-	resources_panel = PanelContainer.new()
+func _create_status() -> void:
+	status_panel = PanelContainer.new()
+	status_panel.name = "PlayerStatus"
+	status_panel.add_theme_stylebox_override("panel", _card(Color("142329", 0.84), Color("d6bd89", 0.39), 17, 11))
+	add_child(status_panel)
+	var body := HBoxContainer.new()
+	body.add_theme_constant_override("separation", 9)
+	status_panel.add_child(body)
+	var crest := PanelContainer.new()
+	crest.custom_minimum_size = Vector2(42, 42)
+	crest.add_theme_stylebox_override("panel", _card(Color("9c8358", 0.30), Color("e5bd77", 0.30), 13, 4))
+	body.add_child(crest)
+	var symbol := Style.label("✦", 23, GOLD)
+	symbol.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	symbol.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	crest.add_child(symbol)
+	var stats := VBoxContainer.new()
+	stats.add_theme_constant_override("separation", 3)
+	stats.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_child(stats)
+	var title_row := HBoxContainer.new()
+	title_row.add_theme_constant_override("separation", 8)
+	stats.add_child(title_row)
+	avatar_name = Style.label("РЫЦАРЬ", 14, CREAM)
+	avatar_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_row.add_child(avatar_name)
+	status_detail = Style.label("●", 12, SAGE)
+	title_row.add_child(status_detail)
+	var hp_row := HBoxContainer.new()
+	hp_row.add_theme_constant_override("separation", 6)
+	stats.add_child(hp_row)
+	health_bar = ProgressBar.new()
+	health_bar.name = "HealthGauge"
+	health_bar.custom_minimum_size = Vector2(115, 9)
+	health_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	health_bar.show_percentage = false
+	var track := _card(Color("060e13", 0.93), Color.TRANSPARENT, 4, 0)
+	var fill := _card(Color("b2d18f"), Color.TRANSPARENT, 4, 0)
+	health_bar.add_theme_stylebox_override("background", track)
+	health_bar.add_theme_stylebox_override("fill", fill)
+	hp_row.add_child(health_bar)
+	health_detail = Style.label("—", 12, CREAM)
+	hp_row.add_child(health_detail)
+
+func _create_resources() -> void:
+	resources_panel = HBoxContainer.new()
 	resources_panel.name = "ResourceCounters"
-	resources_panel.add_theme_stylebox_override("panel", Style.panel(Color("172026", 0.84), Color("6e6c5d"), 12))
+	resources_panel.add_theme_constant_override("separation", 7)
 	add_child(resources_panel)
-	var resources_row := HBoxContainer.new()
-	resources_row.add_theme_constant_override("separation", 13)
-	resources_panel.add_child(resources_row)
 	for kind in ["wood", "stone", "herb"]:
-		var cell := HBoxContainer.new()
-		cell.name = "Resource_%s" % kind
-		cell.add_theme_constant_override("separation", 5)
-		resources_row.add_child(cell)
-		var icon := Style.label(State.ITEMS[kind]["symbol"], 20,
-			{"wood": Color("dfac79"), "stone": Color("b9cad2"), "herb": Color("9dd8a5")}[kind])
-		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		cell.add_child(icon)
-		var quantity := Style.label("0", 17, Style.TEXT)
+		var chip := PanelContainer.new()
+		chip.name = "Resource_%s" % kind
+		chip.add_theme_stylebox_override("panel", _card(Color("142329", 0.77), Color("cfbd96", 0.21), 12, 5))
+		resources_panel.add_child(chip)
+		var content := HBoxContainer.new()
+		content.add_theme_constant_override("separation", 3)
+		chip.add_child(content)
+		var mark: Control = Glyph.new()
+		mark.name = "Glyph"
+		mark.custom_minimum_size = Vector2(23, 23)
+		mark.setup(kind, {"wood": Color("daab70"), "stone": Color("b7c8c8"), "herb": Color("97bf90")}[kind])
+		content.add_child(mark)
+		var quantity := Style.label("0", 15, CREAM)
 		quantity.name = "Count"
-		cell.add_child(quantity)
-		cell.tooltip_text = State.ITEMS[kind]["name"]
+		quantity.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		content.add_child(quantity)
+		chip.tooltip_text = State.ITEMS[kind]["name"]
 		resource_counts[kind] = quantity
 
+func _create_menu() -> void:
 	top_actions = HBoxContainer.new()
-	top_actions.add_theme_constant_override("separation", 6)
+	top_actions.name = "QuickMenu"
+	top_actions.add_theme_constant_override("separation", 5)
 	add_child(top_actions)
-	for pair in [["Рюкзак", "inventory"], ["Строить", "build"], ["Крафт", "craft"], ["⚙", "settings"]]:
+	for entry in [["bag", "inventory", "Рюкзак"], ["build", "build", "Строительство"], ["craft", "craft", "Крафт"], ["settings", "settings", "Настройки"]]:
+		var key: String = entry[1]
 		var button := Button.new()
-		button.text = pair[0]
-		Style.button(button)
-		button.pressed.connect(_open.bind(pair[1]))
+		button.name = "Menu_%s" % key
+		button.text = ""
+		button.tooltip_text = entry[2]
+		button.focus_mode = Control.FOCUS_NONE
+		button.custom_minimum_size = Vector2(49, 49)
+		button.add_theme_stylebox_override("normal", _card(Color("142329", 0.84), Color("cfbd96", 0.30), 14, 0))
+		button.add_theme_stylebox_override("hover", _card(Color("30423e", 0.94), GOLD, 14, 0))
+		button.add_theme_stylebox_override("pressed", _card(Color("61573d", 0.96), GOLD, 14, 0))
+		button.pressed.connect(_open.bind(key))
 		top_actions.add_child(button)
+		var icon: Control = Glyph.new()
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		icon.setup(entry[0], GOLD)
+		button.add_child(icon)
+		# Button isn't a Container. Explicit offsets avoid uncontrolled sizing.
+		icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		icon.offset_left = 10
+		icon.offset_top = 10
+		icon.offset_right = -10
+		icon.offset_bottom = -10
+		top_controls[key] = button
 
+func _create_hotbar() -> void:
 	hotbar = HotbarScene.instantiate()
+	hotbar.name = "EquipmentHotbar"
 	hotbar.state = state
 	hotbar.item_selected.connect(func(id: String) -> void: item_selected.emit(id))
 	add_child(hotbar)
+	selected_tool_hint = Style.label("", 11, CREAM)
+	selected_tool_hint.name = "SelectedToolHint"
+	selected_tool_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	selected_tool_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	add_child(selected_tool_hint)
 
+func _create_touch() -> void:
 	touch_layer = Control.new()
+	touch_layer.name = "TouchControls"
 	touch_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	touch_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(touch_layer)
 	joystick = preload("res://ui/preview_joystick.gd").new()
-	joystick.custom_minimum_size = Vector2(108, 108)
+	joystick.name = "MovementJoystick"
+	joystick.custom_minimum_size = Vector2(116, 116)
+	joystick.size = Vector2(116, 116)
 	touch_layer.add_child(joystick)
-	action_buttons = VBoxContainer.new()
-	action_buttons.add_theme_constant_override("separation", 6)
+	action_buttons = Control.new()
+	action_buttons.name = "ActionCluster"
+	action_buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	touch_layer.add_child(action_buttons)
-	for pair in [["Удар", "attack"], ["Сбор", "gather"], ["Прыжок", "jump"], ["Бег", "sprint"], ["Рюкзак", "inventory"]]:
+	for entry in [["attack", "УДАР", 76], ["gather", "СБОР", 63], ["jump", "ПРЫЖОК", 63], ["sprint", "БЕГ", 63]]:
+		var id: String = entry[0]
+		var diameter: int = entry[2]
 		var button := Button.new()
-		button.text = pair[0]
-		Style.button(button)
-		button.custom_minimum_size = Vector2(78, 48)
-		button.pressed.connect(_touch_action.bind(pair[1]))
+		button.name = "Action_%s" % id
+		button.custom_minimum_size = Vector2(diameter, diameter)
+		button.size = button.custom_minimum_size
+		button.focus_mode = Control.FOCUS_NONE
+		button.tooltip_text = entry[1]
+		button.text = ""
+		button.add_theme_stylebox_override("normal", _card(Color("1b2b2d", 0.80) if id != "attack" else Color("9c7653", 0.91), Color("e5bd77", 0.57), diameter / 2, 0))
+		button.add_theme_stylebox_override("pressed", _card(Color("af8c61", 0.96), GOLD, diameter / 2, 0))
+		button.add_theme_stylebox_override("hover", _card(Color("42534c", 0.96), GOLD, diameter / 2, 0))
+		button.pressed.connect(_touch_action.bind(id))
 		action_buttons.add_child(button)
-	if state != null:
-		state.changed.connect(refresh)
-	resized.connect(_layout)
-	refresh()
-	_layout()
+		var icon: Control = Glyph.new()
+		icon.setup(id, CREAM if id == "attack" else GOLD)
+		icon.position = Vector2((diameter - 36) * 0.5, 3)
+		icon.size = Vector2(36, 36)
+		button.add_child(icon)
+		var caption := Style.label(entry[1], 10, CREAM)
+		caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		caption.position = Vector2(0, diameter - 22)
+		caption.size = Vector2(diameter, 16)
+		button.add_child(caption)
+		action_controls[id] = button
+
+func _create_warning() -> void:
+	warning_detail = Style.label("", 14, Color("ffe0af"))
+	warning_detail.name = "ConnectionWarning"
+	warning_detail.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	warning_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	warning_detail.add_theme_stylebox_override("normal", _card(Color("543b2c", 0.88), Color("e8b37f", 0.55), 10, 8))
+	warning_detail.visible = false
+	add_child(warning_detail)
+
+func _card(bg: Color, edge: Color = Color.TRANSPARENT, radius: int = 12, pad: int = 8) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = bg
+	box.border_color = edge
+	box.set_border_width_all(1 if edge.a > 0.0 else 0)
+	box.set_corner_radius_all(radius)
+	box.set_content_margin_all(pad)
+	return box
 
 func refresh() -> void:
 	if state == null or status_panel == null:
 		return
-	status_detail.text = "%s · %s · %s" % [state.selected_avatar.capitalize(), "Топор в руках" if state.equipped_axe else "Без топора", state.connection_status]
-	health_detail.text = ("HP: %d / %d" % [state.health, state.max_health]) if state.health_known else "HP: —"
-	if state.health_known and state.health <= 0:
-		health_detail.text = "HP: 0 · Возрождение..."
+	var names := {"knight": "РЫЦАРЬ", "rogue": "СЛЕДОПЫТ", "mage": "МАГ"}
+	avatar_name.text = names.get(state.selected_avatar, state.selected_avatar.to_upper())
+	health_detail.text = ("%d/%d" % [state.health, state.max_health]) if state.health_known else "—"
+	health_bar.max_value = maxi(1, state.max_health)
+	health_bar.value = state.health if state.health_known else 0
+	var status := state.connection_status.to_lower()
+	var failed := status.contains("update") or status.contains("cannot") or status.contains("failed") or status.contains("unavailable") or status.contains("disconnected") or status.contains("invalid") or status.contains("unable") or status.contains("untrusted")
+	status_detail.text = "●" if state.health_known else "◌"
+	status_detail.add_theme_color_override("font_color", SAGE if state.health_known else GOLD)
+	warning_detail.visible = failed or (state.health_known and state.health == 0)
+	if state.health_known and state.health == 0:
+		warning_detail.text = "Возрождение..."
+	elif failed:
+		warning_detail.text = "Требуется обновление клиента" if status.contains("update") else state.connection_status
 	for kind in ["wood", "stone", "herb"]:
 		var counter: Label = resource_counts[kind]
 		counter.text = str(state.amount(kind))
+	selected_tool_hint.text = "КАМЕННЫЙ ТОПОР" if state.selected_item == "axe" else ""
+	selected_tool_hint.visible = not selected_tool_hint.text.is_empty()
 	touch_layer.visible = show_touch_controls
 	_layout()
 
 func _layout() -> void:
-	if status_panel == null:
+	if status_panel == null or size.x < 100 or size.y < 100:
 		return
-	var insets := _safe_insets()
-	var compact := size.x < 950 or size.y < 490
-	status_panel.position = Vector2(insets.x, insets.y)
-	status_panel.size = Vector2(minf(280, size.x * 0.37), 95)
-	resources_panel.position = Vector2(insets.x, insets.y + status_panel.size.y + 8)
+	var inset := _safe_insets()
+	var compact := size.y < 490
+	var margin := 7.0
+	var status_w := 226.0 if compact else 236.0
+	var status_h := 67.0
+	status_panel.position = Vector2(inset.x, inset.y)
+	status_panel.size = Vector2(status_w, status_h)
+	resources_panel.position = Vector2(inset.x, inset.y + status_h + margin)
 	resources_panel.size = resources_panel.get_combined_minimum_size()
-	top_actions.position = Vector2(maxf(insets.x, size.x - top_actions.get_combined_minimum_size().x - insets.z), insets.y)
-	hotbar.position = Vector2((size.x - hotbar.get_combined_minimum_size().x) * 0.5, size.y - hotbar.get_combined_minimum_size().y - insets.w)
-	joystick.position = Vector2(insets.x, size.y - 108 - insets.w)
-	action_buttons.position = Vector2(size.x - action_buttons.get_combined_minimum_size().x - insets.z, maxf(90, size.y - action_buttons.get_combined_minimum_size().y - insets.w))
-	if compact:
-		action_buttons.position.y = insets.y + 56
+	top_actions.position = Vector2(size.x - inset.z - top_actions.get_combined_minimum_size().x, inset.y + 1)
+	top_actions.size = top_actions.get_combined_minimum_size()
+	var hot_size := hotbar.get_combined_minimum_size()
+	hotbar.position = Vector2((size.x - hot_size.x) * 0.5, size.y - inset.w - hot_size.y)
+	hotbar.size = hot_size
+	selected_tool_hint.size = Vector2(hot_size.x, 19)
+	selected_tool_hint.position = Vector2(hotbar.position.x, hotbar.position.y - 23)
+	joystick.size = Vector2(116, 116)
+	joystick.position = Vector2(inset.x + 6, size.y - inset.w - joystick.size.y + 5)
+	action_buttons.position = Vector2.ZERO
+	action_buttons.size = size
+	# Floating 2-by-2 diamond cluster, away from equipment bar and center.
+	var right := size.x - inset.z - 76
+	var lower := size.y - inset.w - 102
+	var positions := {
+		"attack": Vector2(right, lower - 12),
+		"gather": Vector2(right - 72, lower + 2),
+		"jump": Vector2(right + 6, lower - 88),
+		"sprint": Vector2(right - 68, lower - 79),
+	}
+	for id in positions:
+		var button: Button = action_controls[id]
+		button.position = positions[id]
+		button.size = button.custom_minimum_size
+	warning_detail.size = Vector2(minf(400, size.x * 0.55), 48)
+	warning_detail.position = Vector2(inset.x, inset.y + status_h + resources_panel.size.y + 15)
 
 func _safe_insets() -> Vector4:
-	var insets := Vector4(12, 12, 12, 12)
-	if not OS.has_feature("mobile"):
-		return insets
+	var values := Vector4(15, 15, 15, 17)
+	if not OS.has_feature("mobile") and not OS.get_cmdline_user_args().has("--test-mobile-ui") and not OS.get_cmdline_user_args().has("--test-live-ui"):
+		return values
 	var screen := DisplayServer.screen_get_size()
-	if screen.x <= 0 or screen.y <= 0:
-		return insets
-	var safe := DisplayServer.get_display_safe_area()
-	insets.x = maxf(12, float(safe.position.x) / screen.x * size.x + 8)
-	insets.y = maxf(12, float(safe.position.y) / screen.y * size.y + 8)
-	insets.z = maxf(12, float(screen.x - safe.end.x) / screen.x * size.x + 8)
-	insets.w = maxf(12, float(screen.y - safe.end.y) / screen.y * size.y + 8)
-	return insets
+	if screen.x > 0 and screen.y > 0:
+		var safe := DisplayServer.get_display_safe_area()
+		values.x = maxf(22, float(safe.position.x) / screen.x * size.x + 8)
+		values.y = maxf(49, float(safe.position.y) / screen.y * size.y + 8)
+		values.z = maxf(22, float(screen.x - safe.end.x) / screen.x * size.x + 8)
+		values.w = maxf(30, float(screen.y - safe.end.y) / screen.y * size.y + 8)
+	else:
+		values = Vector4(22, 49, 22, 30)
+	return values
 
 func _open(kind: String) -> void:
 	match kind:
@@ -151,7 +312,4 @@ func _open(kind: String) -> void:
 		"settings": open_settings.emit()
 
 func _touch_action(kind: String) -> void:
-	if kind == "inventory":
-		open_inventory.emit()
-	else:
-		action_requested.emit(kind)
+	action_requested.emit(kind)
