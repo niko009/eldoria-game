@@ -20,6 +20,32 @@ func _run() -> void:
 		_fail("raid snapshot not replicated to " + ("medic" if medic else "attacker"))
 		return
 	if medic:
+		for frame in 120:
+			await process_frame
+			for player_id in game.players:
+				if int(player_id) != game.own_id and game.players[player_id].combat_item == "shield":
+					break
+			var found := false
+			for player_id in game.players:
+				if int(player_id) != game.own_id and game.players[player_id].combat_item == "shield":
+					found = true
+			if found:
+				break
+		var visual_ok := false
+		for player_id in game.players:
+			if int(player_id) != game.own_id and game.players[player_id].combat_item == "shield" and game.players[player_id].combat_visual != null:
+				visual_ok = true
+		if not visual_ok:
+			_fail("remote shield equipment visual was not replicated")
+			return
+	for frame in 120:
+		await process_frame
+		if game.pack_actors.size() == 2:
+			break
+	if game.pack_actors.size() != 2:
+		_fail("two simultaneous wolf actors not replicated")
+		return
+	if medic:
 		for frame in 300:
 			await process_frame
 			if game.live_ui.state.health == 60 and game.live_ui.state.amount("herb") == 4 and game.placed_buildings.has(901):

@@ -46,7 +46,7 @@ func _run() -> void:
         else:
             await _drag(point, 170, 0)
         if kind == "inventory" and ui.state.selected_item != "axe":
-            _fail("inventory swipe selected a resource instead of scrolling")
+            _fail("inventory swipe selected a resource instead of scrolling (selected=%s scroll=%d)" % [ui.state.selected_item, scroller.scroll_vertical])
             return
         if height > scroller.size.y + 15:
             var min_expected := mini(25, floori(height - scroller.size.y))

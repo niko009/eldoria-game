@@ -32,11 +32,14 @@ func refresh() -> void:
 		var slot := Button.new()
 		slot.text = "%s  %s\n%d шт." % [data["symbol"], data["name"], count]
 		slot.tooltip_text = data["name"]
-		if item_id == "axe":
-			slot.disabled = count == 0
+		# Materials and consumables are display-only here. Only the axe can
+		# be equipped through inventory; otherwise an Android swipe over a
+		# resource card may unintentionally select empty hands.
+		slot.disabled = item_id != "axe" or count == 0
 		Style.button(slot, state.selected_item == item_id and item_id == "axe")
 		slot.custom_minimum_size = Vector2(180, 72)
-		slot.pressed.connect(func() -> void: item_selected.emit(item_id))
+		if item_id == "axe":
+			slot.pressed.connect(func() -> void: item_selected.emit(item_id))
 		grid.add_child(slot)
 	if not any_item:
 		add_child(Style.label("Рюкзак пуст. Предметы появятся здесь.", 14, Style.MUTED))

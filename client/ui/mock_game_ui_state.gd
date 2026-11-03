@@ -12,6 +12,12 @@ const ITEMS := {
 	"stone": {"name": "Камень", "symbol": "◆"},
 	"herb": {"name": "Трава", "symbol": "✿"},
 	"axe": {"name": "Каменный топор", "symbol": "⚒"},
+	"bandage": {"name": "Повязка", "symbol": "+"},
+	"repair_kit": {"name": "Ремкомплект", "symbol": "▣"},
+	"spear": {"name":"Копьё","symbol":"|"},
+	"bow": {"name":"Лук","symbol":")"},
+	"shield": {"name":"Щит","symbol":"◈"},
+	"arrow": {"name":"Стрела","symbol":"→"},
 }
 # Hotbar is equipment-only. Unimplemented tools are shown as locked previews.
 # No inventory quantity badges belong in the hotbar.
@@ -29,6 +35,12 @@ const BUILDINGS := {
 }
 const RECIPES := {
 	"axe": {"name": "Каменный топор", "description": "Рубит 2 древесины за удар · нужен костёр рядом", "cost": {"wood": 2, "stone": 2}},
+	"bandage": {"name": "Повязка", "description": "Восстанавливает 40 HP в любом месте", "cost": {"wood": 1, "herb": 2}},
+	"repair_kit": {"name": "Ремкомплект", "description": "Восстанавливает 60 HP лагеря рядом с костром", "cost": {"wood": 3, "stone": 2}},
+	"spear": {"name":"Копьё","description":"Ближняя атака до 4,5 м · урон 30","cost":{"wood":3,"stone":2}},
+	"bow": {"name":"Лук","description":"Атака до 6 м · расходует стрелы","cost":{"wood":4,"herb":2}},
+	"shield": {"name":"Щит","description":"Снижает урон волков на 40%","cost":{"wood":4,"stone":1}},
+	"arrow": {"name":"Стрела","description":"Боеприпас для лука (1 штука)","cost":{"wood":1,"stone":1}},
 }
 
 var inventory: Dictionary = {"wood": 7, "stone": 3, "herb": 1, "axe": 0}
@@ -50,6 +62,35 @@ func can_afford(cost: Dictionary) -> bool:
 		if amount(item_id) < int(cost[item_id]):
 			return false
 	return true
+
+# "Ready" means all ingredients have been collected and the item stack is not
+# full. The actual craft button still requires a nearby campfire.
+func recipe_limit(recipe_id: String) -> int:
+	if ["axe", "spear", "bow", "shield"].has(recipe_id):
+		return 1
+	if recipe_id == "arrow":
+		return 40
+	return 20
+
+func recipe_materials_ready(recipe_id: String) -> bool:
+	if not RECIPES.has(recipe_id):
+		return false
+	return amount(recipe_id) < recipe_limit(recipe_id) and can_afford(RECIPES[recipe_id]["cost"])
+
+func ready_recipe_count() -> int:
+	var total := 0
+	for recipe_id in RECIPES:
+		if recipe_materials_ready(recipe_id):
+			total += 1
+	return total
+
+func recipes_ready_first() -> Array[String]:
+	var sorted: Array[String] = []
+	for ready in [true, false]:
+		for recipe_id in RECIPES:
+			if recipe_materials_ready(recipe_id) == ready:
+				sorted.append(recipe_id)
+	return sorted
 
 func can_select_tool(tool_id: String) -> bool:
 	if not TOOLS.has(tool_id):

@@ -24,6 +24,8 @@ var model_kind := ""
 var _last_move_vector := Vector3.ZERO
 var axe_equipped := false
 var axe_visual: Node3D
+var combat_item := "unarmed"
+var combat_visual: Node3D
 
 func configure(id: int, server_only: bool, choice: int = -1) -> void:
     player_id = id
@@ -49,6 +51,7 @@ func set_avatar(choice: int) -> void:
         visual = null
     animator = null
     axe_visual = null
+    combat_visual = null
     current_clip = ""
     _create_visual()
 
@@ -91,13 +94,55 @@ func _attach_equipment() -> void:
     # Re-orient our axe's +Y handle into the hand's +Z rather than forward.
     axe_visual.rotation_degrees = Vector3(90, 0, 0)
     axe_visual.visible = axe_equipped
+    _set_combat_visual()
+
+func set_combat_equipped(item: String) -> void:
+    combat_item = item
+    _set_combat_visual()
+
+func _set_combat_visual() -> void:
+    if combat_visual != null:
+        combat_visual.queue_free()
+        combat_visual = null
+    if axe_visual != null:
+        axe_visual.visible = axe_equipped and combat_item == "unarmed"
+    if headless or visual == null or combat_item == "unarmed":
+        return
+    var hand := visual.get_node_or_null("Rig/Skeleton3D/handslot_r") as BoneAttachment3D
+    if hand == null:
+        return
+    combat_visual = Node3D.new()
+    combat_visual.name = "CombatEquipment"
+    hand.add_child(combat_visual)
+    var body := MeshInstance3D.new()
+    var mesh := CylinderMesh.new()
+    if combat_item == "spear":
+        mesh.top_radius = 0.035
+        mesh.bottom_radius = 0.035
+        mesh.height = 2.0
+    elif combat_item == "bow":
+        mesh.top_radius = 0.06
+        mesh.bottom_radius = 0.06
+        mesh.height = 1.2
+    elif combat_item == "shield":
+        mesh.top_radius = 0.37
+        mesh.bottom_radius = 0.37
+        mesh.height = 0.09
+        body.rotation_degrees.x = 90
+    else:
+        return
+    body.mesh = mesh
+    combat_visual.add_child(body)
+    combat_visual.rotation_degrees.x = 90
+    if axe_visual != null:
+        axe_visual.visible = axe_equipped and combat_item == "unarmed"
 
 func set_axe_equipped(value: bool) -> void:
     # This is visual state only. The server still authorizes inventory and
     # wood yield. Never infer equipment from locally selected hotbar slots.
     axe_equipped = value
     if axe_visual != null:
-        axe_visual.visible = value
+        axe_visual.visible = value and combat_item == "unarmed"
 
 func _hide_unused_accessories(node: Node) -> void:
     for child in node.get_children():
@@ -187,12 +232,33 @@ func celebrate() -> void:
 func melee_attack() -> void:
     if headless or animator == null or airborne:
         return
-    var clip := animator.get_animation("1H_Melee_Attack_Chop")
+    # KayKit rig has no dedicated bow-draw clip in the current imported set.
+    # Use a short upper-body action and an equipment recoil until bespoke
+    # spear/bow/defense animations are imported.
+    var selected := "PickUp" if combat_item == "bow" else "1H_Melee_Attack_Chop"
+    var clip := animator.get_animation(selected)
     if clip == null:
         return
     emote_until_msec = Time.get_ticks_msec() + int(clip.length * 1000.0)
     current_clip = ""
-    set_clip("1H_Melee_Attack_Chop")
+    set_clip(selected)
+    if combat_item == "bow" and combat_visual != null:
+        var recoil := create_tween()
+        combat_visual.rotation_degrees.x = 65
+        recoil.tween_property(combat_visual,"rotation_degrees:x",90.0,0.18)
+
+func shield_block() -> void:
+    if headless or combat_item != "shield" or combat_visual == null:
+        return
+    if combat_visual.has_meta("blocking"):
+        return
+    combat_visual.set_meta("blocking",true)
+    var shield_tween := create_tween()
+    shield_tween.tween_property(combat_visual,"scale",Vector3(1.12,1.12,1.12),0.10)
+    shield_tween.tween_property(combat_visual,"scale",Vector3.ONE,0.18)
+    shield_tween.finished.connect(func() -> void:
+        if is_instance_valid(combat_visual):
+            combat_visual.remove_meta("blocking"))
 
 func _process(_delta: float) -> void:
     if headless:

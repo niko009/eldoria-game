@@ -129,18 +129,32 @@ func load_snapshot(world: Node3D) -> bool:
         if not profile is Dictionary or not profile.get("inventory") is Dictionary:
             last_error = "Malformed player data"
             return false
-        var inventory := {"wood":0,"stone":0,"herb":0,"axe":0}
+        var inventory := {"wood":0,"stone":0,"herb":0,"axe":0,"bandage":0,
+            "repair_kit":0,"spear":0,"bow":0,"shield":0,"arrow":0}
         for kind in inventory.keys():
             var amount := int(profile["inventory"].get(kind,0))
-            if amount < 0 or amount > (1 if kind == "axe" else 1000000):
+            var limit := 1 if kind in ["axe","spear","bow","shield"] else 40 if kind == "arrow" else 20 if kind in ["bandage","repair_kit"] else 1000000
+            if amount < 0 or amount > limit:
                 last_error = "Invalid player inventory"
                 return false
             inventory[kind] = amount
+        var skills := {"archery":0,"spear":0,"defense":0}
+        var raw_skills: Variant = profile.get("skills",{})
+        if raw_skills != null and not raw_skills is Dictionary:
+            last_error = "Invalid player skills"
+            return false
+        if raw_skills is Dictionary:
+            for kind in skills:
+                var amount := int(raw_skills.get(kind,0))
+                if amount < 0 or amount > 1000000:
+                    last_error = "Invalid player skill points"
+                    return false
+                skills[kind] = amount
         var avatar := int(profile.get("avatar",-1))
         if avatar < 0 or avatar > 2:
             last_error = "Invalid player avatar"
             return false
-        profiles[hash_key] = {"avatar":avatar,"inventory":inventory}
+        profiles[hash_key] = {"avatar":avatar,"inventory":inventory,"skills":skills}
     var build_data: Variant = snapshot.get("buildings",{})
     if not build_data is Dictionary or build_data.size() > 300:
         last_error = "Invalid building snapshot"

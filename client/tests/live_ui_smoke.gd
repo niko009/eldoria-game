@@ -29,6 +29,10 @@ func _run() -> void:
         push_error("Top resource counters are not updated from live inventory")
         quit(13)
         return
+    if not ui.hud.craft_badge.visible or ui.hud.craft_badge_label.text != str(ui.state.ready_recipe_count()):
+        push_error("Crafting badge did not react to live inventory")
+        quit(18)
+        return
     if EldoriaHotbar.SLOTS != ["unarmed", "sword", "pickaxe", "axe", "hammer", "bow"]:
         push_error("Tool-only hotbar layout or axe slot 4 incorrect")
         quit(14)
@@ -60,7 +64,9 @@ func _run() -> void:
         return
     ui.set_near_campfire(true)
     var requested := [0]
-    ui.craft_requested.connect(func() -> void: requested[0] += 1)
+    ui.craft_requested.connect(func(recipe_id: String) -> void:
+        if recipe_id == "axe":
+            requested[0] += 1)
     ui._craft("axe")
     if requested[0] != 1 or ui.active_panel != "":
         push_error("Live crafting request did not dispatch to game exactly once")

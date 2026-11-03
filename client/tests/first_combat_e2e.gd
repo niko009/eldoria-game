@@ -50,6 +50,9 @@ func _run() -> void:
         _fail("wolf corpse accepted extra damage")
         return
     game.wolf_respawn_at = Time.get_ticks_msec() - 1
+    # The new raid lifecycle only respawns defeated wolves during night.
+    game.raid.phase = "night"
+    game.raid.deadline_ms = Time.get_ticks_msec() + 60000
     game._combat_server_tick(0.02)
     if not game.wolf_alive or game.wolf_health != 60:
         _fail("wolf did not respawn")

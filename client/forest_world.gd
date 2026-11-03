@@ -485,6 +485,45 @@ func _obstacles_in_corridor(from: Vector2, to: Vector2, radius: float) -> Array[
     indices.sort() # preserve original first-hit/camera clipping order
     return indices
 
+# Server-side lightweight arrow line-of-sight against the same active world
+# obstacles as movement, plus the procedural terrain. Returns 1.0 if clear,
+# otherwise the first blocked fraction of the segment.
+func arrow_block_fraction(start: Vector3, finish: Vector3) -> float:
+    var segment := finish - start
+    var flat := Vector2(segment.x, segment.z)
+    var flat_len_sq := flat.length_squared()
+    var earliest := 1.0
+    if flat_len_sq > 0.0001:
+        var origin := Vector2(start.x, start.z)
+        for i in _obstacles_in_corridor(origin, origin + flat, 0.05):
+            if not obstacle_active[i]:
+                continue
+            var offset: Vector2 = obstacle_positions[i] - origin
+            var radius: float = obstacle_radii[i] + 0.05
+            var along: float = offset.dot(flat) / flat_len_sq
+            var nearest: float = clampf(along, 0.0, 1.0)
+            var distance_sq: float = (origin + flat * nearest).distance_squared_to(obstacle_positions[i])
+            if distance_sq >= radius * radius:
+                continue
+            var chord := sqrt(maxf(0.0, radius * radius - distance_sq) / flat_len_sq)
+            var entry := clampf(along - chord, 0.0, 1.0)
+            var at := start + segment * entry
+            var ground := height_at(at.x, at.z)
+            var height := 4.0 if obstacle_radii[i] > 1.2 else 12.0
+            if at.y >= ground - 0.2 and at.y <= ground + height:
+                earliest = minf(earliest, entry)
+    # Terrain between samples can still be an approximation; no client-side
+    # physics is trusted for hit resolution.
+    for sample in range(1, 65):
+        var t := float(sample) / 64.0
+        if t >= earliest:
+            break
+        var point := start + segment * t
+        if point.y <= height_at(point.x, point.z) + 0.08:
+            earliest = t
+            break
+    return earliest
+
 func _flush_batches() -> void:
     # A single MultiMesh draw per imported glTF mesh, not ~350 scene instances.
     for key in batch_transforms.keys():

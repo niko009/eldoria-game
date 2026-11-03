@@ -41,6 +41,15 @@ CREATE TABLE IF NOT EXISTS eldoria_players (
     PRIMARY KEY (world_seed, identity_hash)
 );
 ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS axe integer NOT NULL DEFAULT 0 CHECK (axe BETWEEN 0 AND 1);
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS bandage integer NOT NULL DEFAULT 0 CHECK (bandage BETWEEN 0 AND 20);
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS repair_kit integer NOT NULL DEFAULT 0 CHECK (repair_kit BETWEEN 0 AND 20);
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS spear integer NOT NULL DEFAULT 0 CHECK (spear BETWEEN 0 AND 1);
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS bow integer NOT NULL DEFAULT 0 CHECK (bow BETWEEN 0 AND 1);
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS shield integer NOT NULL DEFAULT 0 CHECK (shield BETWEEN 0 AND 1);
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS arrow integer NOT NULL DEFAULT 0 CHECK (arrow BETWEEN 0 AND 40);
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS archery_xp integer NOT NULL DEFAULT 0 CHECK (archery_xp BETWEEN 0 AND 1000000);
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS spear_xp integer NOT NULL DEFAULT 0 CHECK (spear_xp BETWEEN 0 AND 1000000);
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS defense_xp integer NOT NULL DEFAULT 0 CHECK (defense_xp BETWEEN 0 AND 1000000);
 CREATE TABLE IF NOT EXISTS eldoria_buildings (
     world_seed integer NOT NULL REFERENCES eldoria_worlds(world_seed) ON DELETE CASCADE,
     building_id integer NOT NULL CHECK (building_id BETWEEN 1 AND 100000),
@@ -151,13 +160,15 @@ app.MapGet("/v1/world/{seed:int}", async (int seed, CancellationToken ct) =>
     }
     var profiles = new Dictionary<string, ProfileDto>();
     await using (var read = new NpgsqlCommand(
-        "SELECT identity_hash, avatar, wood, stone, herb, axe FROM eldoria_players WHERE world_seed=@seed", conn, snapshotTx))
+        "SELECT identity_hash,avatar,wood,stone,herb,axe,bandage,repair_kit,spear,bow,shield,arrow,archery_xp,spear_xp,defense_xp FROM eldoria_players WHERE world_seed=@seed", conn, snapshotTx))
     {
         read.Parameters.AddWithValue("seed", seed);
         await using var reader = await read.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
             profiles[reader.GetString(0)] = new ProfileDto(reader.GetInt16(1),
-                new InventoryDto(reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4), reader.GetInt32(5)));
+                new InventoryDto(reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4), reader.GetInt32(5),
+                    reader.GetInt32(6), reader.GetInt32(7), reader.GetInt32(8), reader.GetInt32(9), reader.GetInt32(10), reader.GetInt32(11)),
+                new SkillDto(reader.GetInt32(12),reader.GetInt32(13),reader.GetInt32(14)));
     }
     var buildings = new Dictionary<string, BuildingDto>();
     await using (var read = new NpgsqlCommand(
@@ -189,7 +200,16 @@ app.MapPut("/v1/world/{seed:int}", async (int seed, SnapshotDto? snapshot, Cance
             || kv.Value.inventory.wood is < 0 or > 1000000
             || kv.Value.inventory.stone is < 0 or > 1000000
             || kv.Value.inventory.herb is < 0 or > 1000000
-            || kv.Value.inventory.axe is < 0 or > 1))
+            || kv.Value.inventory.axe is < 0 or > 1
+            || kv.Value.inventory.bandage is < 0 or > 20
+            || kv.Value.inventory.repair_kit is < 0 or > 20
+            || kv.Value.inventory.spear is < 0 or > 1
+            || kv.Value.inventory.bow is < 0 or > 1
+            || kv.Value.inventory.shield is < 0 or > 1
+            || kv.Value.inventory.arrow is < 0 or > 40
+            || kv.Value.skills is not null && (kv.Value.skills.archery is < 0 or > 1000000
+                || kv.Value.skills.spear is < 0 or > 1000000
+                || kv.Value.skills.defense is < 0 or > 1000000)))
         return Results.BadRequest(new { error = "invalid_world_snapshot" });
 
     await using var conn = await source.OpenConnectionAsync(ct);
@@ -234,8 +254,8 @@ app.MapPut("/v1/world/{seed:int}", async (int seed, SnapshotDto? snapshot, Cance
         }
     }
     await using (var insert = new NpgsqlCommand(
-        "INSERT INTO eldoria_players(world_seed,identity_hash,avatar,wood,stone,herb,axe) " +
-        "VALUES (@seed,@hash,@avatar,@wood,@stone,@herb,@axe)", conn, tx))
+        "INSERT INTO eldoria_players(world_seed,identity_hash,avatar,wood,stone,herb,axe,bandage,repair_kit,spear,bow,shield,arrow,archery_xp,spear_xp,defense_xp) " +
+        "VALUES (@seed,@hash,@avatar,@wood,@stone,@herb,@axe,@bandage,@repair_kit,@spear,@bow,@shield,@arrow,@archery_xp,@spear_xp,@defense_xp)", conn, tx))
     {
         insert.Parameters.AddWithValue("seed", seed);
         insert.Parameters.Add("hash", NpgsqlTypes.NpgsqlDbType.Varchar);
@@ -244,6 +264,8 @@ app.MapPut("/v1/world/{seed:int}", async (int seed, SnapshotDto? snapshot, Cance
         insert.Parameters.Add("stone", NpgsqlTypes.NpgsqlDbType.Integer);
         insert.Parameters.Add("herb", NpgsqlTypes.NpgsqlDbType.Integer);
         insert.Parameters.Add("axe", NpgsqlTypes.NpgsqlDbType.Integer);
+        foreach (var item in new [] {"bandage","repair_kit","spear","bow","shield","arrow","archery_xp","spear_xp","defense_xp"})
+            insert.Parameters.Add(item, NpgsqlTypes.NpgsqlDbType.Integer);
         foreach (var pair in snapshot.profiles)
         {
             insert.Parameters["hash"].Value = pair.Key;
@@ -252,6 +274,15 @@ app.MapPut("/v1/world/{seed:int}", async (int seed, SnapshotDto? snapshot, Cance
             insert.Parameters["stone"].Value = pair.Value.inventory.stone;
             insert.Parameters["herb"].Value = pair.Value.inventory.herb;
             insert.Parameters["axe"].Value = pair.Value.inventory.axe;
+            insert.Parameters["bandage"].Value = pair.Value.inventory.bandage;
+            insert.Parameters["repair_kit"].Value = pair.Value.inventory.repair_kit;
+            insert.Parameters["spear"].Value = pair.Value.inventory.spear;
+            insert.Parameters["bow"].Value = pair.Value.inventory.bow;
+            insert.Parameters["shield"].Value = pair.Value.inventory.shield;
+            insert.Parameters["arrow"].Value = pair.Value.inventory.arrow;
+            insert.Parameters["archery_xp"].Value = pair.Value.skills?.archery ?? 0;
+            insert.Parameters["spear_xp"].Value = pair.Value.skills?.spear ?? 0;
+            insert.Parameters["defense_xp"].Value = pair.Value.skills?.defense ?? 0;
             await insert.ExecuteNonQueryAsync(ct);
         }
     }
@@ -371,8 +402,10 @@ sealed class TelemetryRetentionWorker(NpgsqlDataSource source) : BackgroundServi
     }
 }
 
-record InventoryDto(int wood, int stone, int herb, int axe = 0);
-record ProfileDto(int avatar, InventoryDto inventory);
+record InventoryDto(int wood, int stone, int herb, int axe = 0, int bandage = 0,
+    int repair_kit = 0, int spear = 0, int bow = 0, int shield = 0, int arrow = 0);
+record SkillDto(int archery = 0, int spear = 0, int defense = 0);
+record ProfileDto(int avatar, InventoryDto inventory, SkillDto? skills = null);
 record BuildingDto(string kind, double x, double z);
 record SnapshotDto(int schema, int world_seed, long revision,
     Dictionary<string, int> depleted, Dictionary<string, ProfileDto> profiles,

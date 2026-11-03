@@ -4,7 +4,7 @@ extends Control
 
 signal action_requested(action: String)
 signal build_requested(kind: String)
-signal craft_requested
+signal craft_requested(recipe_id: String)
 signal equip_requested(equip: bool)
 signal preview_requested(kind: String)
 signal joystick_moved(direction: Vector2)
@@ -30,6 +30,8 @@ var notice: Label
 var notice_timer: Timer
 var panel_tween: Tween
 var touch_scroll = TouchScroller.new()
+var combat_equipment := "unarmed"
+var bow_aim_hint: Label
 
 func _ready() -> void:
     mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -40,6 +42,7 @@ func _ready() -> void:
     state.connection_status = "Подключение..."
     state.selected_avatar = "knight"
     state.request_select_item.connect(_selected_item)
+    state.changed.connect(_refresh_bow_hint)
     resized.connect(_layout)
 
     hud = HudScene.instantiate()
@@ -53,6 +56,13 @@ func _ready() -> void:
     hud.item_selected.connect(state.select_item)
     hud.action_requested.connect(_on_action)
     add_child(hud)
+    bow_aim_hint = Style.label("+", 29, Color("f1e3ba"))
+    bow_aim_hint.name = "BowAimReticle"
+    bow_aim_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    bow_aim_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    bow_aim_hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    bow_aim_hint.visible = false
+    add_child(bow_aim_hint)
     hud.joystick.direction_changed.connect(func(vector: Vector2) -> void: joystick_moved.emit(vector))
 
     overlay = ColorRect.new()
@@ -111,8 +121,21 @@ func _ready() -> void:
     add_child(notice_timer)
     _layout()
 
+func set_combat_equipment(item: String) -> void:
+    combat_equipment = item
+    _refresh_bow_hint()
+
+func _refresh_bow_hint() -> void:
+    if bow_aim_hint == null or state == null:
+        return
+    bow_aim_hint.visible = combat_equipment == "bow" and active_panel.is_empty()
+    bow_aim_hint.tooltip_text = "Лук · стрел: %d · цельтесь поворотом камеры" % state.amount("arrow")
+
 func set_inventory(inventory: Dictionary) -> void:
-    var validated := {"wood": maxi(0, int(inventory.get("wood", 0))), "stone": maxi(0, int(inventory.get("stone", 0))), "herb": maxi(0, int(inventory.get("herb", 0))), "axe": clampi(int(inventory.get("axe", 0)), 0, 1)}
+    var validated := {}
+    for item_id in State.ITEMS:
+        var limit := 1 if ["axe", "spear", "bow", "shield"].has(item_id) else 40 if item_id == "arrow" else 20 if ["bandage", "repair_kit"].has(item_id) else 1000000
+        validated[item_id] = clampi(int(inventory.get(item_id, 0)), 0, limit)
     if state.inventory == validated:
         return
     state.inventory = validated
@@ -156,6 +179,18 @@ func set_raid_status(phase: String, round_number: int, kills: int, goal: int, se
     if hud != null:
         hud.set_raid_status(phase, round_number, kills, goal, seconds)
 
+func set_camp_health(hp: int, maximum: int) -> void:
+    if hud != null:
+        hud.set_camp_health(hp, maximum)
+
+func set_practice_points(points: int) -> void:
+    if hud != null:
+        hud.set_practice_points(points)
+
+func set_skills(skills: Dictionary) -> void:
+    if hud != null:
+        hud.set_skills(skills)
+
 func set_status(message: String) -> void:
     if state != null and state.connection_status != message:
         state.connection_status = message
@@ -182,6 +217,7 @@ func _open(kind: String) -> void:
         _close()
         return
     active_panel = kind
+    _refresh_bow_hint()
     touch_scroll.reset()
     # Opening an overlay must never leave a touch movement vector latched.
     hud.joystick.dragging = false
@@ -212,6 +248,9 @@ func _open(kind: String) -> void:
         elif current_panel is EldoriaCraftingPanel:
             current_panel.craft_enabled = true
             current_panel.craft_requested.connect(_craft)
+            current_panel.use_requested.connect(func(recipe_id: String) -> void:
+                _close()
+                action_requested.emit(recipe_id))
     current_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     panel_title.text = {"inventory": "РЮКЗАК", "build": "СТРОИТЕЛЬСТВО", "craft": "МАСТЕРСКАЯ", "settings": "НАСТРОЙКИ"}[kind]
     for tab in tabs.get_children():
@@ -247,12 +286,12 @@ func _preview_build(kind: String) -> void:
     preview_requested.emit(kind)
 
 func _craft(recipe_id: String) -> void:
-    if recipe_id != "axe" or not state.near_campfire or state.amount("axe") > 0:
+    if not state.near_campfire or not state.recipe_materials_ready(recipe_id):
         return
-    if not state.can_afford(State.RECIPES["axe"]["cost"]) or state.loading:
+    if state.loading:
         return
     _close()
-    craft_requested.emit()
+    craft_requested.emit(recipe_id)
 
 func _on_action(kind: String) -> void:
     if kind == "inventory":
@@ -264,6 +303,7 @@ func _close() -> void:
     if active_panel.is_empty():
         return
     active_panel = ""
+    _refresh_bow_hint()
     touch_scroll.reset()
     state.request_close.emit()
     _animate(false)
@@ -301,6 +341,9 @@ func _input(event: InputEvent) -> void:
 func _layout() -> void:
     if dialog == null:
         return
+    if bow_aim_hint != null:
+        bow_aim_hint.size = Vector2(44, 44)
+        bow_aim_hint.position = size*0.5 - bow_aim_hint.size*0.5
     var mobile := OS.has_feature("mobile") or OS.get_cmdline_user_args().has("--test-live-ui") or OS.get_cmdline_user_args().has("--test-mobile-ui")
     var top_margin := 49.0 if mobile else 16.0
     var bottom_margin := 30.0 if mobile else 16.0

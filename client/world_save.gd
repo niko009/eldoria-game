@@ -4,7 +4,7 @@ extends RefCounted
 # resource counts. No plaintext player token, no client-side authority.
 const SCHEMA := 1
 const WORLD_SEED := 20261101
-const ITEM_KINDS := ["wood","stone","herb","axe"]
+const ITEM_KINDS := ["wood","stone","herb","axe","bandage","repair_kit","spear","bow","shield","arrow"]
 var save_path := ""
 var last_error := ""
 var profiles: Dictionary = {}
@@ -97,15 +97,29 @@ func load_snapshot(world: Node3D) -> bool:
         if not original is Dictionary:
             last_error = "Invalid inventory"
             return false
-        var sanitized := {"wood":0,"stone":0,"herb":0,"axe":0}
+        var sanitized := {"wood":0,"stone":0,"herb":0,"axe":0,"bandage":0,
+            "repair_kit":0,"spear":0,"bow":0,"shield":0,"arrow":0}
         for kind in ITEM_KINDS:
             var v := int(original.get(kind,0))
-            if v < 0 or v > (1 if kind == "axe" else 1000000):
+            var limit := 1 if kind in ["axe","spear","bow","shield"] else 40 if kind == "arrow" else 20 if kind in ["bandage","repair_kit"] else 1000000
+            if v < 0 or v > limit:
                 last_error = "Inventory out of range"
                 return false
             sanitized[kind] = v
+        var skills := {"archery":0,"spear":0,"defense":0}
+        var source_skills: Variant = profile.get("skills",{})
+        if source_skills != null and not source_skills is Dictionary:
+            last_error = "Invalid skills"
+            return false
+        if source_skills is Dictionary:
+            for kind in skills:
+                var points := int(source_skills.get(kind,0))
+                if points < 0 or points > 1000000:
+                    last_error = "Skills out of range"
+                    return false
+                skills[kind] = points
         var choice := int(profile.get("avatar",0))
-        profiles[hash_key] = {"inventory":sanitized,"avatar":clampi(choice,0,2)}
+        profiles[hash_key] = {"inventory":sanitized,"avatar":clampi(choice,0,2),"skills":skills}
     return true
 
 func save_snapshot(remaining: Dictionary, world: Node3D) -> bool:

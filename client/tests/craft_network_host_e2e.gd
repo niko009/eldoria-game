@@ -35,12 +35,12 @@ func _run() -> void:
         await process_frame
         if game.player_inventories.get(crafter, {}).get("axe", 0) == 1:
             break
-    if game.player_inventories.get(crafter, {}) != {"wood": 2, "stone": 2, "herb": 0, "axe": 1}:
+    if game.player_inventories.get(crafter, {}).get("wood",-1) != 2 or game.player_inventories[crafter].get("stone",-1) != 2 or game.player_inventories[crafter].get("axe",0) != 1:
         _fail("server didn't debit exactly one valid craft: " + str(game.player_inventories.get(crafter, {})))
         return
     for i in range(250):
         await process_frame
-    if game.player_inventories.get(crafter, {}) != {"wood": 2, "stone": 2, "herb": 0, "axe": 1}:
+    if game.player_inventories.get(crafter, {}).get("wood",-1) != 2 or game.player_inventories[crafter].get("stone",-1) != 2 or game.player_inventories[crafter].get("axe",0) != 1:
         _fail("double submit spent resources again")
         return
     if game.player_inventories.get(observer, {}) != game._empty_inventory():

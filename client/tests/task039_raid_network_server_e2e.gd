@@ -29,6 +29,10 @@ func _run() -> void:
 	for id in [attacker,medic]:
 		game.player_inventories[id] = {"wood":0,"stone":0,"herb":4,"axe":0}
 		game.inventory_snapshot.rpc_id(id,game.player_inventories[id])
+	game.player_inventories[attacker]["shield"] = 1
+	if not game._equip_combat_on_server(attacker,"shield"):
+		_fail("attacker could not equip shield")
+		return
 	game.player_health[medic] = 60
 	game.health_snapshot.rpc_id(medic,60,100)
 	game.health_snapshot_for.rpc(medic,60)
@@ -37,6 +41,13 @@ func _run() -> void:
 	if game.raid.phase != "night":
 		_fail("authoritative raid not started")
 		return
+	if game.pack_wolves.size() != 2:
+		_fail("two simultaneous independent pack wolves missing")
+		return
+	for pack_id in [1,2]:
+		if not game.pack_wolves[pack_id]["alive"] or int(game.pack_wolves[pack_id]["hp"]) != 60:
+			_fail("pack wolf identity or HP missing")
+			return
 	for frame in 210:
 		await process_frame
 		if game.player_health[medic] == 95:
@@ -47,7 +58,18 @@ func _run() -> void:
 	# Allow the medic client to receive and assert the heal snapshot before
 	# the victory reward sends a newer herb balance.
 	await create_timer(1.1).timeout
-	for round_index in 4:
+	# The attacker defeats one independently tracked pack member first.
+	var pack_at: Vector3 = game.pack_wolves[1]["position"]
+	game.players[attacker].position = Vector3(pack_at.x+0.6,pack_at.y+0.9,pack_at.z)
+	for strike in 3:
+		game.last_attack_at.erase(attacker)
+		if not game._attack_on_server(attacker):
+			_fail("pack wolf hit rejected %d" % strike)
+			return
+	if game.pack_wolves[1]["alive"] or game.raid.kills != 1 or not game.pack_wolves[2]["alive"]:
+		_fail("pack wolf damage/independent identity invalid")
+		return
+	for round_index in 3:
 		var pos: Vector3 = game.players[attacker].position
 		game.wolf_position = Vector3(pos.x+0.9,pos.y-0.9,pos.z)
 		game.wolf_alive = true
@@ -58,7 +80,7 @@ func _run() -> void:
 			if not game._attack_on_server(attacker):
 				_fail("attacker rejected round %d hit %d" % [round_index,strike])
 				return
-		if round_index < 3:
+		if round_index < 2:
 			game.wolf_respawn_at = Time.get_ticks_msec()-1
 			game._combat_server_tick(0.02)
 	if game.raid.phase != "intermission" or game.raid.kills != 4:

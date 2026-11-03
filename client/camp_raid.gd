@@ -59,6 +59,14 @@ func wolf_defeated(now_ms: int) -> String:
 		return "night_won"
 	return "wolf_defeated"
 
+func camp_destroyed(now_ms: int) -> String:
+	if phase != "night" or resolved:
+		return ""
+	phase = "intermission"
+	deadline_ms = now_ms + INTERMISSION_MS
+	resolved = true
+	return "camp_lost"
+
 func remaining_seconds(now_ms: int) -> int:
 	return maxi(0, ceili(float(deadline_ms - now_ms) / 1000.0))
 

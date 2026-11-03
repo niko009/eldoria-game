@@ -42,7 +42,7 @@ func _run() -> void:
             await process_frame
             if game.player_inventories[game.own_id].get("axe", 0) == 1:
                 break
-        if game.player_inventories[game.own_id] != {"wood": 2, "stone": 2, "herb": 0, "axe": 1}:
+        if game.player_inventories[game.own_id].get("wood",-1) != 2 or game.player_inventories[game.own_id].get("stone",-1) != 2 or game.player_inventories[game.own_id].get("axe",0) != 1:
             _fail("craft snapshot incorrect")
             return
         if game.live_ui.state.amount("axe") != 1:

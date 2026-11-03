@@ -30,6 +30,9 @@ var avatar_name: Label
 var warning_detail: Label
 var resources_panel: HBoxContainer
 var resource_counts: Dictionary = {}
+var practice_label: Label
+var last_practice_points := 0
+var last_skills := {"archery":0,"spear":0,"defense":0}
 var hotbar: EldoriaHotbar
 var touch_layer: Control
 var joystick: Control
@@ -38,8 +41,12 @@ var top_actions: HBoxContainer
 var selected_tool_hint: Label
 var raid_banner: Label
 var heal_button: Button
+var repair_button: Button
+var camp_health := -1
 var action_controls: Dictionary = {}
 var top_controls: Dictionary = {}
+var craft_badge: PanelContainer
+var craft_badge_label: Label
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -123,6 +130,29 @@ func _create_resources() -> void:
 		content.add_child(quantity)
 		chip.tooltip_text = State.ITEMS[kind]["name"]
 		resource_counts[kind] = quantity
+	practice_label = Style.label("Тренировка: 0", 13, Color("c8edb5"))
+	practice_label.name = "PracticePoints"
+	practice_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	resources_panel.add_child(practice_label)
+
+func set_practice_points(points: int) -> void:
+	last_practice_points = points
+	_refresh_skills_label()
+
+func set_skills(skills: Dictionary) -> void:
+	last_skills = skills.duplicate(true)
+	_refresh_skills_label()
+
+func _refresh_skills_label() -> void:
+	if practice_label == null:
+		return
+	var a := 1+int(sqrt(float(maxi(0,int(last_skills.get("archery",0))))/25.0))
+	var s := 1+int(sqrt(float(maxi(0,int(last_skills.get("spear",0))))/25.0))
+	var d := 1+int(sqrt(float(maxi(0,int(last_skills.get("defense",0))))/25.0))
+	practice_label.text = "Л%d К%d Щ%d" % [a,s,d]
+	practice_label.tooltip_text = "Тренировка: %d · XP: лук %d, копьё %d, защита %d" % [
+		last_practice_points,int(last_skills.get("archery",0)),
+		int(last_skills.get("spear",0)),int(last_skills.get("defense",0))]
 
 func _create_menu() -> void:
 	top_actions = HBoxContainer.new()
@@ -154,6 +184,20 @@ func _create_menu() -> void:
 		icon.offset_right = -10
 		icon.offset_bottom = -10
 		top_controls[key] = button
+		if key == "craft":
+			craft_badge = PanelContainer.new()
+			craft_badge.name = "CraftReadyBadge"
+			craft_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			craft_badge.add_theme_stylebox_override("panel", _card(Color("38724d", 0.98), Color("b1f6ad", 0.95), 10, 2))
+			button.add_child(craft_badge)
+			craft_badge_label = Style.label("0", 12, Color("f0ffe8"))
+			craft_badge_label.name = "Count"
+			craft_badge_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			craft_badge_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			craft_badge_label.custom_minimum_size = Vector2(16, 17)
+			craft_badge.add_child(craft_badge_label)
+			craft_badge.position = Vector2(30, -4)
+			craft_badge.visible = false
 
 func _create_hotbar() -> void:
 	hotbar = HotbarScene.instantiate()
@@ -238,6 +282,24 @@ func _create_raid_ui() -> void:
 	heal_button.pressed.connect(func() -> void: action_requested.emit("heal"))
 	heal_button.visible = false
 	add_child(heal_button)
+	repair_button = Button.new()
+	repair_button.name = "RepairCamp"
+	repair_button.text = "Ремонт · 2 дерева + 1 камень"
+	repair_button.tooltip_text = "Возле костра восстановить 30 HP лагеря"
+	repair_button.focus_mode = Control.FOCUS_NONE
+	repair_button.pressed.connect(func() -> void: action_requested.emit("repair"))
+	repair_button.visible = false
+	add_child(repair_button)
+
+func set_camp_health(hp: int, maximum: int) -> void:
+	camp_health = clampi(hp, 0, maximum)
+	repair_button.tooltip_text = "Лагерь %d/%d HP · ремонт +30" % [camp_health, maximum]
+	_update_repair_visibility()
+
+func _update_repair_visibility() -> void:
+	if repair_button == null or state == null:
+		return
+	repair_button.visible = camp_health > 0 and camp_health < 120 and state.near_campfire and state.health_known and state.health > 0 and state.amount("wood") >= 2 and state.amount("stone") >= 1 and raid_banner.visible and raid_banner.text.contains("НОЧНАЯ")
 
 func set_raid_status(phase: String, round_number: int, kills: int, goal: int, seconds: int) -> void:
 	if raid_banner == null:
@@ -267,6 +329,11 @@ func _card(bg: Color, edge: Color = Color.TRANSPARENT, radius: int = 12, pad: in
 func refresh() -> void:
 	if state == null or status_panel == null:
 		return
+	var ready_count := state.ready_recipe_count()
+	if craft_badge != null:
+		craft_badge.visible = ready_count > 0
+		craft_badge_label.text = str(ready_count)
+		top_controls["craft"].tooltip_text = "Крафт · хватает материалов для %d рецептов (изготавливаются возле костра)" % ready_count
 	var names := {"knight": "РЫЦАРЬ", "rogue": "СЛЕДОПЫТ", "mage": "МАГ"}
 	avatar_name.text = names.get(state.selected_avatar, state.selected_avatar.to_upper())
 	health_detail.text = ("%d/%d" % [state.health, state.max_health]) if state.health_known else "—"
@@ -287,6 +354,7 @@ func refresh() -> void:
 	selected_tool_hint.text = "КАМЕННЫЙ ТОПОР" if state.selected_item == "axe" else ""
 	selected_tool_hint.visible = not selected_tool_hint.text.is_empty()
 	heal_button.visible = state.health_known and state.health > 0 and state.health < 100 and state.near_campfire and state.amount("herb") >= 2
+	_update_repair_visibility()
 	touch_layer.visible = show_touch_controls
 	_layout()
 
@@ -313,6 +381,8 @@ func _layout() -> void:
 	raid_banner.position = Vector2((size.x - raid_banner.size.x) * 0.5, hotbar.position.y - 78)
 	heal_button.size = Vector2(172, 37)
 	heal_button.position = Vector2(inset.x, inset.y + status_h + resources_panel.size.y + 16)
+	repair_button.size = Vector2(216, 37)
+	repair_button.position = Vector2(inset.x, heal_button.position.y + (43 if heal_button.visible else 0))
 	joystick.size = Vector2(116, 116)
 	joystick.position = Vector2(inset.x + 6, size.y - inset.w - joystick.size.y + 5)
 	action_buttons.position = Vector2.ZERO
