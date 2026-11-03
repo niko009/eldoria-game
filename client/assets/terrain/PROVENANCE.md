@@ -1,0 +1,6 @@
+# Meadow texture provenance
+
+`meadow_albedo.png` was generated for Eldoria using the built-in OpenAI image generation tool on 2026-11-03. No third-party downloaded asset. Original file retained in Codex generated_images. Runtime use: optional High terrain material, lazy-loaded only on first High selection. Low uses its existing material.
+
+Prompt:
+Create one seamless tileable square albedo game terrain texture, orthographic straight top down, a 2 meter patch of soft mossy meadow ground for a stylized fantasy mobile RPG. Hand-painted but physically plausible surface texture, fine interwoven short grass strokes, moss patches, very tiny dried leaf flecks, subtle olive sage and warm yellow-green color variation, restrained moderate detail. Even flat diffuse illumination, NO cast shadows, NO directional lighting, NO perspective, NO horizon, NO objects, NO tall grass clumps, NO flowers, NO stones larger than tiny pebbles, NO vignette, NO text, NO borders. Every edge must seamlessly tile with opposite edge. Surface fills entire square. Suitable for repeated ground material in 3D game, lush inviting art direction, not photorealistic and not cartoon outlines. Natural mid-value muted green palette, avoid neon saturation and avoid dark black cracks.

@@ -495,6 +495,8 @@ func _flush_batches() -> void:
 
 func apply_detail_quality(high: bool) -> void:
     _low_quality = not high
+    if high and _ground_high.get_shader_parameter("meadow_albedo") == null:
+        _ground_high.set_shader_parameter("meadow_albedo",load("res://assets/terrain/meadow_albedo.png"))
     if _terrain_instance != null:
         _terrain_instance.material_override = _ground_high if high else _ground_low
     if _pond_instance != null:
