@@ -1829,15 +1829,16 @@ func gather_effect(player_id: int, kind: String, resource_id: int, amount: int,
 
 func _gather_effect_local(player_id: int, kind: String, resource_id: int, amount: int,
         actor_position: Vector3) -> void:
+    var world: Node3D = get_node("Eldoria_Forest")
+    var entry: Dictionary = world.resource_by_id(resource_id)
     if players.has(player_id):
-        players[player_id].gather(kind)
-    if harvest_visuals != null:
-        var world: Node3D = get_node("Eldoria_Forest")
-        var entry: Dictionary = world.resource_by_id(resource_id)
         if not entry.is_empty():
-            harvest_visuals.play_pickup(kind,entry["pos"])
-            if kind == "wood" and amount == 0:
-                harvest_visuals.play_tree_fall(resource_id,world,actor_position)
+            players[player_id].face_interaction(entry["pos"])
+        players[player_id].gather(kind)
+    if harvest_visuals != null and not entry.is_empty():
+        harvest_visuals.play_pickup(kind,entry["pos"])
+        if kind == "wood" and amount == 0:
+            harvest_visuals.play_tree_fall(resource_id,world,actor_position)
     if player_id == own_id:
         _status("Collected %s" % kind)
 

@@ -154,13 +154,25 @@ func finish_jump() -> void:
 func gather(kind: String = "herb") -> void:
     if headless or animator == null or airborne:
         return
-    var chosen := "1H_Melee_Attack_Chop" if kind == "wood" else "PickUp"
+    # A character without an equipped axe should not swing an invisible tool.
+    # The selected clip is visual-only; the server authorizes yield separately.
+    var chosen := "1H_Melee_Attack_Chop" if kind == "wood" and axe_equipped else "PickUp"
     var clip := animator.get_animation(chosen)
     if clip == null:
         return
     emote_until_msec = Time.get_ticks_msec() + int(clip.length*1000.0)
     current_clip = ""
     set_clip(chosen)
+
+func face_interaction(target: Vector3) -> void:
+    # Turn toward the *validated* resource spot without modifying the
+    # authoritative player position, velocity or facing on the server.
+    if headless or airborne:
+        return
+    var direction := target - global_position
+    direction.y = 0.0
+    if direction.length_squared() > 0.02:
+        rotation.y = atan2(direction.x, direction.z)
 
 func celebrate() -> void:
     if headless or animator == null:

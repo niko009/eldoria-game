@@ -51,8 +51,13 @@ func _run() -> void:
                 _fail("character facing away from movement id=%d, dir=%s, facing=%s" % [id,direction,facing])
                 return
         actor.gather("wood")
+        if actor.current_clip != "PickUp":
+            _fail("bare-handed wood harvesting must not swing an invisible axe")
+            return
+        actor.set_axe_equipped(true)
+        actor.gather("wood")
         if actor.current_clip != "1H_Melee_Attack_Chop":
-            _fail("wood harvesting did not play chopping animation")
+            _fail("equipped wood harvesting did not play chopping animation")
             return
         if actor.animator.get_animation("1H_Melee_Attack_Chop").loop_mode != Animation.LOOP_NONE:
             _fail("chopping animation loops forever")

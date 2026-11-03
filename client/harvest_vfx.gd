@@ -2,6 +2,7 @@ extends Node3D
 # Lightweight, ephemeral visual feedback. Never run on the dedicated server.
 const MAX_FALLING_TREES := 3
 const MAX_PICKUP_BURSTS := 5
+const MAX_RESOURCE_FEEDBACK := 5
 const MAX_BUILD_BURSTS := 4
 const FALL_SECONDS := 1.25
 const MAX_SOUNDS := 6
@@ -11,6 +12,7 @@ const HERB_SFX := preload("res://assets/sfx/herb_rustle.wav")
 const BUILD_SFX := preload("res://assets/sfx/build_place.wav")
 var _falling: Dictionary = {}
 var _bursts: Array[Node3D] = []
+var _resource_feedback: Array[Node3D] = []
 var _particle_mesh: SphereMesh
 var _pickup_meshes: Dictionary = {}
 var _building_bursts: Array[Node3D] = []
@@ -96,12 +98,49 @@ func play_pickup(kind: String, spot: Vector3) -> bool:
     add_child(effect)
     _bursts.append(effect)
     effect.emitting = true
+    # Show a short, camera-facing reward marker at the actual resource, never
+    # for a rejected harvest. We deliberately omit quantities: the existing
+    # gather_effect RPC carries remaining stock, not awarded inventory units.
+    _show_resource_feedback(kind, spot)
     play_sound(kind,spot)
     get_tree().create_timer(1.0).timeout.connect(func() -> void:
         _bursts.erase(effect)
         if is_instance_valid(effect):
             effect.queue_free())
     return true
+
+func _show_resource_feedback(kind: String, spot: Vector3) -> void:
+    if _resource_feedback.size() >= MAX_RESOURCE_FEEDBACK:
+        return
+    var popup := Node3D.new()
+    popup.name = "GatherFeedback_%s" % kind
+    popup.position = spot + Vector3(0, 1.04, 0)
+    add_child(popup)
+    _resource_feedback.append(popup)
+    var label := Label3D.new()
+    label.name = "RewardLabel"
+    label.text = {"wood": "WOOD", "stone": "STONE", "herb": "HERBS"}[kind]
+    label.font_size = 26
+    label.pixel_size = 0.007
+    label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+    label.modulate = {"wood": Color("e9bf83"), "stone": Color("d8e0da"),
+        "herb": Color("b8e5a2")}[kind]
+    label.outline_size = 4
+    label.double_sided = true
+    label.no_depth_test = false
+    popup.add_child(label)
+    var tween := create_tween().bind_node(popup)
+    tween.set_parallel(true)
+    tween.tween_property(popup, "position:y", popup.position.y + 0.58, 0.82).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+    tween.tween_property(label, "modulate:a", 0.0, 0.82).set_delay(0.15)
+    tween.set_parallel(false)
+    tween.tween_callback(func() -> void:
+        _resource_feedback.erase(popup)
+        if is_instance_valid(popup):
+            popup.queue_free())
+
+func resource_feedback_count() -> int:
+    return _resource_feedback.size()
 
 func play_build_effect(kind: String, spot: Vector3) -> bool:
     # Created only on authoritative building_created events, never on save
@@ -198,6 +237,10 @@ func set_sound_enabled(enabled: bool) -> void:
         _sounds.clear()
 
 func clear_effects() -> void:
+    for marker in _resource_feedback:
+        if is_instance_valid(marker):
+            marker.queue_free()
+    _resource_feedback.clear()
     for effect in _building_bursts:
         if is_instance_valid(effect):
             effect.queue_free()
