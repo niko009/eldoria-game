@@ -160,7 +160,10 @@ cp -a "$SITE/index.html" "$SITE/latest.json" "$SITE/server.json" "$BACKUP/"
 cp -a /etc/systemd/system/eldoria-ws-test.service.d "$BACKUP/systemd-dropins"
 docker exec eldoria-prod-postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc --no-owner --no-acl' > "$BACKUP/world.pg.dump"
 test -s "$BACKUP/world.pg.dump"
-docker exec -i eldoria-prod-postgres pg_restore -l < "$BACKUP/world.pg.dump" | grep -q 'eldoria_worlds'
+# With pipefail, grep -q can close the pipe early and make pg_restore exit
+# SIGPIPE 141 even for a valid archive. Consume the whole TOC first.
+docker exec -i eldoria-prod-postgres pg_restore -l < "$BACKUP/world.pg.dump" > "$BACKUP/world.pg.list"
+grep -Fq 'eldoria_worlds' "$BACKUP/world.pg.list"
 echo "BACKUP_PASS $BACKUP"
 
 # Stage public assets before touching the live service.
@@ -211,7 +214,7 @@ fi
 systemctl restart eldoria-ws-test.service
 sleep 3
 systemctl is-active --quiet eldoria-ws-test.service
-ss -lnt | grep -q ':7788'
+ss -lnt | grep -F ':7788' >/dev/null
 echo "NEW_GODOT_SERVICE_UP"
 mv "$SITE/.server-$VERSION.next" "$SITE/server.json"
 mv "$SITE/.latest-$VERSION.next" "$SITE/latest.json"
