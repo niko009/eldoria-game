@@ -1853,7 +1853,9 @@ func _attack_on_server(id: int, aim: Vector3 = Vector3.ZERO) -> bool:
     var range_sq := 20.25 if weapon == "spear" else 9.0
     # The client aims with camera heading; the server selects only targets
     # IN FRONT of the swing. No more instant hits on wolves behind the player.
-    var facing := Vector2(aim.x,aim.z).normalized() if aim.is_finite() and aim.length_squared() > 0.1 else Vector2.ZERO
+    # Only spear requires precise facing. Preserve the established close-range
+    # unarmed behavior for early game and existing network co-op combat.
+    var facing := Vector2(aim.x,aim.z).normalized() if weapon == "spear" and aim.is_finite() and aim.length_squared() > 0.1 else Vector2.ZERO
     var hit_damage := COMBAT_PROGRESSION.weapon_damage("spear",
         int(player_skills.get(id,{}).get("spear",0))) if weapon == "spear" else 20
     var chosen := 0
