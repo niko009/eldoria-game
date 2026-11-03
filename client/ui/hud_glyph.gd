@@ -40,6 +40,12 @@ func _draw() -> void:
 				_line(Vector2(24,24) + vec * 12, Vector2(24,24) + vec * 19, accent, 5)
 			draw_arc(Vector2(24,24), 13, 0, TAU, 32, accent, 5)
 			draw_circle(Vector2(24,24), 5, pale)
+		"skills":
+			draw_arc(Vector2(24,25), 17, PI*0.18, PI*0.82, 12, muted, 3)
+			_poly([Vector2(24,7),Vector2(28,18),Vector2(40,20),
+				Vector2(30,27),Vector2(33,40),Vector2(24,32),
+				Vector2(15,40),Vector2(18,27),Vector2(8,20),Vector2(20,18)],accent)
+			draw_circle(Vector2(24,23),4,pale)
 		"attack":
 			_poly([Vector2(10,38), Vector2(14,42), Vector2(29,27), Vector2(25,23)], muted)
 			_poly([Vector2(25,25), Vector2(19,19), Vector2(36,6), Vector2(42,5), Vector2(40,12), Vector2(30,29)], pale)

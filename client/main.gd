@@ -63,12 +63,18 @@ var player_skills: Dictionary = {}
 var training_last_hit: Dictionary = {}
 const SKILL_KINDS := ["archery","spear","defense"]
 const SKILL_XP_MAX := 1000000
+const COMBAT_PROGRESSION := preload("res://combat_progression.gd")
 const CAMP_MAX_HP := 120
 var camp_hp := CAMP_MAX_HP
 var camp_target_id := 0
 var camp_last_hit := {}
 var repair_cooldowns := {}
 var equipped_combat := {}
+const SHIELD_TAUNT_DURATION_MS := 5000
+const SHIELD_TAUNT_COOLDOWN_MS := 15000
+const SHIELD_TAUNT_RANGE := 10.0
+var shield_taunt_until: Dictionary = {}
+var shield_taunt_ready_at: Dictionary = {}
 
 func _try_equip_combat(item: String) -> void:
     if own_id <= 0:
@@ -89,6 +95,12 @@ func _equip_combat_on_server(id: int, item: String) -> bool:
     if item != "unarmed" and int(player_inventories.get(id,{}).get(item,0)) < 1:
         return false
     equipped_combat[id] = item
+    if item != "shield":
+        shield_taunt_until.erase(id)
+        if players.has(id):
+            var marker: Node = players[id].get_node_or_null("TauntIndicator")
+            if marker != null:
+                marker.queue_free()
     combat_visual_snapshot.rpc(id,item)
     if players.has(id):
         players[id].set_combat_equipped(item)
@@ -108,6 +120,10 @@ func combat_equip_snapshot(item: String) -> void:
 func combat_visual_snapshot(id: int, item: String) -> void:
     if players.has(id) and ["unarmed","spear","bow","shield"].has(item):
         players[id].set_combat_equipped(item)
+        if item != "shield":
+            var indicator: Node = players[id].get_node_or_null("TauntIndicator")
+            if indicator != null:
+                indicator.queue_free()
 var raid: RefCounted = RAID_SCRIPT.new()
 var raid_next_broadcast := 0
 var raid_anchor := Vector3.ZERO
@@ -861,6 +877,8 @@ func _on_leave(id: int) -> void:
     player_identity_keys.erase(id)
     healing_cooldowns.erase(id)
     player_skills.erase(id)
+    shield_taunt_until.erase(id)
+    shield_taunt_ready_at.erase(id)
     training_last_hit.erase(id)
     _remove_actor(id)
     # SceneMultiplayer propagates peer_disconnected to all clients already.
@@ -884,6 +902,8 @@ func _remove_actor(id: int) -> void:
     player_inventories.erase(id)
     practice_points.erase(id)
     player_skills.erase(id)
+    shield_taunt_until.erase(id)
+    shield_taunt_ready_at.erase(id)
     training_last_hit.erase(id)
     last_gather_at.erase(id)
     last_remote_ticks.erase(id)
@@ -908,6 +928,8 @@ func _clear_session() -> void:
     passive_creatures.clear()
     practice_points.clear()
     player_skills.clear()
+    shield_taunt_until.clear()
+    shield_taunt_ready_at.clear()
     training_last_hit.clear()
     for actor in passive_actors.values():
         if is_instance_valid(actor):
@@ -1004,6 +1026,9 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
         # Late joiners see authoritative equipment on existing remote players.
         axe_visual_snapshot.rpc_id(id, int(existing), bool(equipped_axes.get(existing, false)))
         combat_visual_snapshot.rpc_id(id, int(existing), str(equipped_combat.get(existing,"unarmed")))
+        var remaining_taunt := int(shield_taunt_until.get(existing,0)) - Time.get_ticks_msec()
+        if remaining_taunt > 0:
+            shield_taunt_visual.rpc_id(id,int(existing),mini(remaining_taunt,SHIELD_TAUNT_DURATION_MS))
     var pos := Vector3(float(players.size() * 3), 1, 0)
     _spawn(id, pos, validated)
     player_health[id] = MAX_HEALTH
@@ -1528,16 +1553,7 @@ func _combat_server_tick(delta: float) -> void:
             _reset_wolf()
             wolf_snapshot.rpc(wolf_position, wolf_health, true, Vector3.ZERO)
         return
-    var target_id := 0
-    var distance_sq := 14.0 * 14.0
-    for id in player_health:
-        if not players.has(id) or int(player_health[id]) <= 0:
-            continue
-        var pos: Vector3 = players[id].position
-        var flat_distance := Vector2(pos.x - wolf_position.x, pos.z - wolf_position.z).length_squared()
-        if flat_distance < distance_sq:
-            target_id = int(id)
-            distance_sq = flat_distance
+    var target_id := _choose_wolf_target(wolf_position,now)
     wolf_direction = Vector3.ZERO
     if target_id != 0:
         var destination: Vector3 = players[target_id].position
@@ -1567,16 +1583,7 @@ func _tick_raid_pack(delta: float, now: int) -> void:
         if not enemy["alive"]:
             continue
         var at: Vector3 = enemy["position"]
-        var target_id := 0
-        var nearest := 196.0
-        for player_id in player_health:
-            if not players.has(player_id) or int(player_health[player_id]) <= 0:
-                continue
-            var pos: Vector3 = players[player_id].position
-            var distance_sq := Vector2(pos.x-at.x, pos.z-at.z).length_squared()
-            if distance_sq < nearest:
-                nearest = distance_sq
-                target_id = int(player_id)
+        var target_id := _choose_wolf_target(at,now)
         enemy["direction"] = Vector3.ZERO
         if target_id != 0:
             var destination: Vector3 = players[target_id].position
@@ -1703,7 +1710,8 @@ func _damage_player_on_server(id: int, damage: int) -> bool:
     if (not wolf_alive and pack_wolves.is_empty()) or damage <= 0:
         return false
     if str(equipped_combat.get(id,"")) == "shield" and int(player_inventories.get(id,{}).get("shield",0)) > 0:
-        damage = maxi(1, ceili(float(damage)*0.6))
+        damage = COMBAT_PROGRESSION.shield_damage_taken(damage,
+            int(player_skills.get(id,{}).get("defense",0)))
         _award_skill_xp(id,"defense",1)
         shield_block_visual.rpc(id)
         if not is_dedicated:
@@ -1726,6 +1734,13 @@ func shield_block_visual(id: int) -> void:
 
 func _try_attack() -> void:
     if own_id == 0 or not players.has(own_id) or int(player_health.get(own_id, MAX_HEALTH)) <= 0:
+        return
+    if (str(equipped_combat.get(own_id,"unarmed")) == "shield" if multiplayer.is_server() else
+        live_ui != null and live_ui.combat_equipment == "shield"):
+        if multiplayer.is_server():
+            _shield_taunt_on_server(own_id)
+        else:
+            request_shield_taunt.rpc_id(1)
         return
     var aim := _bow_aim_direction()
     if multiplayer.is_server():
@@ -1756,7 +1771,8 @@ func _attack_on_server(id: int, aim: Vector3 = Vector3.ZERO) -> bool:
     var actor: Vector3 = players[id].position
     var weapon: String = str(equipped_combat.get(id,"unarmed"))
     var range_sq := 20.25 if weapon == "spear" else 9.0
-    var hit_damage := 30 if weapon == "spear" else 20
+    var hit_damage := COMBAT_PROGRESSION.weapon_damage("spear",
+        int(player_skills.get(id,{}).get("spear",0))) if weapon == "spear" else 20
     var chosen := 0
     var nearest := range_sq
     if wolf_alive and absf(actor.y-wolf_position.y) <= 3.0:
@@ -1837,6 +1853,8 @@ func _bow_attack_on_server(id: int, aim: Vector3) -> bool:
         return false
     if not aim.is_finite() or absf(aim.length()-1.0) > 0.05 or aim.y < -0.96 or aim.y > 0.15:
         return false
+    var hit_damage := COMBAT_PROGRESSION.weapon_damage("bow",
+        int(player_skills.get(id,{}).get("archery",0)))
     var now := Time.get_ticks_msec()
     if now - int(last_attack_at.get(id,now-1000)) < 650:
         return false
@@ -1896,10 +1914,10 @@ func _bow_attack_on_server(id: int, aim: Vector3) -> bool:
     if struck == 0:
         return true # A real shot can miss; ammunition was still consumed.
     if struck > 100:
-        return _damage_passive_on_server(id,struck-100,20,now)
+        return _damage_passive_on_server(id,struck-100,hit_damage,now)
     if struck > 0:
         var wolf: Dictionary = pack_wolves[struck]
-        wolf["hp"] = maxi(0,int(wolf["hp"])-20)
+        wolf["hp"] = maxi(0,int(wolf["hp"])-hit_damage)
         _award_skill_xp(id,"archery",2)
         if wolf["hp"] == 0:
             wolf["alive"] = false
@@ -1911,7 +1929,7 @@ func _bow_attack_on_server(id: int, aim: Vector3) -> bool:
                 _broadcast_raid_state(now)
         pack_wolf_snapshot.rpc(struck,wolf["position"],int(wolf["hp"]),bool(wolf["alive"]),wolf["direction"])
     else:
-        wolf_health = maxi(0,wolf_health-20)
+        wolf_health = maxi(0,wolf_health-hit_damage)
         _award_skill_xp(id,"archery",2)
         if wolf_health == 0:
             wolf_alive = false
@@ -1992,6 +2010,103 @@ func wolf_snapshot(at: Vector3, hp: int, alive: bool, direction: Vector3) -> voi
 func _combat_ui_action(kind: String) -> void:
     if kind == "attack":
         _try_attack()
+
+func _choose_wolf_target(at: Vector3, now: int) -> int:
+    # Active shield defenders take priority only within their limited taunt
+    # radius. All positions and equipment are checked from server state.
+    var chosen := 0
+    var nearest := 14.0 * 14.0
+    for player_id in player_health:
+        if not players.has(player_id) or int(player_health[player_id]) <= 0:
+            continue
+        var position: Vector3 = players[player_id].position
+        var dist_sq := Vector2(position.x-at.x,position.z-at.z).length_squared()
+        if dist_sq < nearest:
+            chosen = int(player_id)
+            nearest = dist_sq
+    var taunter := 0
+    var closest_taunt_sq := SHIELD_TAUNT_RANGE * SHIELD_TAUNT_RANGE
+    for player_id in shield_taunt_until:
+        if not players.has(player_id) or int(player_health.get(player_id,0)) <= 0:
+            continue
+        if int(shield_taunt_until[player_id]) <= now or str(equipped_combat.get(player_id,"")) != "shield":
+            continue
+        if int(player_inventories.get(player_id,{}).get("shield",0)) < 1:
+            continue
+        var position: Vector3 = players[player_id].position
+        var dist_sq := Vector2(position.x-at.x,position.z-at.z).length_squared()
+        if dist_sq <= closest_taunt_sq:
+            taunter = int(player_id)
+            closest_taunt_sq = dist_sq
+    return taunter if taunter != 0 else chosen
+
+func _shield_taunt_on_server(id: int, now: int = -1) -> bool:
+    if not multiplayer.is_server() or not players.has(id) or int(player_health.get(id,0)) <= 0:
+        return false
+    if str(equipped_combat.get(id,"")) != "shield" or int(player_inventories.get(id,{}).get("shield",0)) < 1:
+        return false
+    if now < 0:
+        now = Time.get_ticks_msec()
+    if now < int(shield_taunt_ready_at.get(id,0)):
+        _shield_taunt_feedback(id,"Щит: перезарядка %d с" % ceili(float(shield_taunt_ready_at[id]-now)/1000.0))
+        return false
+    var at: Vector3 = players[id].position
+    var in_range := wolf_alive and Vector2(wolf_position.x-at.x,wolf_position.z-at.z).length_squared() <= SHIELD_TAUNT_RANGE*SHIELD_TAUNT_RANGE
+    for pack_id in pack_wolves:
+        var wolf: Dictionary = pack_wolves[pack_id]
+        if bool(wolf["alive"]) and Vector2(wolf["position"].x-at.x,wolf["position"].z-at.z).length_squared() <= SHIELD_TAUNT_RANGE*SHIELD_TAUNT_RANGE:
+            in_range = true
+            break
+    if not in_range:
+        _shield_taunt_feedback(id,"Щит: волков рядом нет")
+        return false
+    shield_taunt_until[id] = now+SHIELD_TAUNT_DURATION_MS
+    shield_taunt_ready_at[id] = now+SHIELD_TAUNT_COOLDOWN_MS
+    shield_block_visual.rpc(id)
+    shield_taunt_visual.rpc(id, SHIELD_TAUNT_DURATION_MS)
+    if not is_dedicated:
+        shield_block_visual(id)
+        shield_taunt_visual(id, SHIELD_TAUNT_DURATION_MS)
+    _shield_taunt_feedback(id,"Волки отвлечены на 5 с · откат 15 с")
+    return true
+
+@rpc("any_peer","reliable")
+func request_shield_taunt() -> void:
+    if multiplayer.is_server():
+        _shield_taunt_on_server(multiplayer.get_remote_sender_id())
+
+func _shield_taunt_feedback(id: int, message: String) -> void:
+    if id == own_id:
+        shield_taunt_message(message)
+    else:
+        shield_taunt_message.rpc_id(id,message)
+
+@rpc("authority","call_remote","reliable")
+func shield_taunt_message(message: String) -> void:
+    if live_ui != null:
+        live_ui.show_message(message)
+
+@rpc("authority","call_remote","reliable")
+func shield_taunt_visual(id: int, duration_ms: int) -> void:
+    if is_dedicated or not players.has(id) or duration_ms <= 0 or duration_ms > SHIELD_TAUNT_DURATION_MS:
+        return
+    var actor: Node3D = players[id]
+    var marker: Label3D = actor.get_node_or_null("TauntIndicator")
+    if marker == null:
+        marker = Label3D.new()
+        marker.name = "TauntIndicator"
+        marker.text = "ЗАЩИТНИК"
+        marker.position = Vector3(0,2.35,0)
+        marker.font_size = 30
+        marker.modulate = Color("b8edc2")
+        marker.outline_modulate = Color("18382a")
+        marker.outline_size = 6
+        marker.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+        actor.add_child(marker)
+    marker.set_meta("until",Time.get_ticks_msec()+duration_ms)
+    get_tree().create_timer(float(duration_ms)/1000.0).timeout.connect(func() -> void:
+        if is_instance_valid(marker) and Time.get_ticks_msec() >= int(marker.get_meta("until",0)):
+            marker.queue_free())
 
 
 # The server owns resource quantities and player inventories.

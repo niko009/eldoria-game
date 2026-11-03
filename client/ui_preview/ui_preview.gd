@@ -6,6 +6,7 @@ const HudScene = preload("res://ui/GameHud.tscn")
 const InventoryScene = preload("res://ui/InventoryPanel.tscn")
 const BuildingScene = preload("res://ui/BuildingPanel.tscn")
 const CraftingScene = preload("res://ui/CraftingPanel.tscn")
+const SkillsPanel = preload("res://ui/skills_panel.gd")
 const TouchScroller = preload("res://ui/touch_scroll.gd")
 
 var state: MockGameUiState
@@ -40,6 +41,7 @@ func _ready() -> void:
 	hud.open_inventory.connect(func() -> void: _open("inventory"))
 	hud.open_building.connect(func() -> void: _open("build"))
 	hud.open_crafting.connect(func() -> void: _open("craft"))
+	hud.open_skills.connect(func() -> void: _open("skills"))
 	hud.item_selected.connect(state.select_item)
 	hud.action_requested.connect(func(action: String) -> void: _show_notice("Preview: %s" % action))
 	add_child(hud)
@@ -85,7 +87,7 @@ func _ready() -> void:
 	panel_tabs = HBoxContainer.new()
 	panel_tabs.add_theme_constant_override("separation", 5)
 	column.add_child(panel_tabs)
-	for pair in [["Рюкзак", "inventory"], ["Строить", "build"], ["Крафт", "craft"]]:
+	for pair in [["Рюкзак", "inventory"], ["Строить", "build"], ["Крафт", "craft"], ["Навыки", "skills"]]:
 		var button := Button.new()
 		button.name = pair[1]
 		button.text = pair[0]
@@ -136,7 +138,11 @@ func _open(kind: String) -> void:
 		"inventory": panel = InventoryScene.instantiate()
 		"build": panel = BuildingScene.instantiate()
 		"craft": panel = CraftingScene.instantiate()
-	panel.set("state", state)
+		"skills": panel = SkillsPanel.new()
+	if kind == "skills":
+		panel.set_skills({"archery": 75, "spear": 25, "defense": 400})
+	else:
+		panel.set("state", state)
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content_scroll.add_child(panel)
 	if panel is EldoriaInventoryPanel:
@@ -145,7 +151,7 @@ func _open(kind: String) -> void:
 		panel.build_requested.connect(_request_build)
 	elif panel is EldoriaCraftingPanel:
 		panel.craft_requested.connect(_request_craft)
-	panel_title.text = {"inventory": "ПУТЕВОЙ РЮКЗАК", "build": "СТРОИТЕЛЬСТВО", "craft": "МАСТЕРСКАЯ"}[kind]
+	panel_title.text = {"inventory": "ПУТЕВОЙ РЮКЗАК", "build": "СТРОИТЕЛЬСТВО", "craft": "МАСТЕРСКАЯ", "skills": "НАВЫКИ"}[kind]
 	for tab in panel_tabs.get_children():
 		Style.button(tab, tab.name == kind)
 	_animate_panel(true)

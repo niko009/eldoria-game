@@ -23,7 +23,7 @@ func _run() -> void:
     ui._layout()
     var actions: Array[String] = []
     ui.action_requested.connect(func(id: String) -> void: actions.append(id))
-    for kind in ["settings", "inventory", "build", "craft"]:
+    for kind in ["settings", "inventory", "build", "craft", "skills"]:
         if kind == "inventory":
             ui.set_inventory({"wood": 6, "stone": 6, "herb": 6, "axe": 1})
             ui.state.select_item("axe")
@@ -94,7 +94,7 @@ func _run() -> void:
         if scroll.scroll_vertical < 25:
             _fail("UI preview inventory cannot scroll")
             return
-    print("ANDROID_MODAL_SCROLL_E2E PASS live settings/inventory/build/craft and preview")
+    print("ANDROID_MODAL_SCROLL_E2E PASS live settings/inventory/build/craft/skills and preview")
     preview.queue_free()
     quit(0)
 

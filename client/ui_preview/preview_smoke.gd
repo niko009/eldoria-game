@@ -51,6 +51,11 @@ func run() -> void:
 	if preview.content_scroll.get_child(0) is not EldoriaCraftingPanel:
 		push_error("Crafting panel did not open")
 		failures += 1
+	preview._open("skills")
+	await process_frame
+	if preview.content_scroll.get_child_count() != 1 or preview.content_scroll.get_child(0).get_node_or_null("Skill_archery") == null:
+		push_error("Skills panel did not open in standalone UI preview")
+		failures += 1
 	preview._close()
 	await create_timer(0.2).timeout
 	if preview.overlay.visible:

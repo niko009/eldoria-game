@@ -7,10 +7,12 @@ signal open_crafting
 signal item_selected(item_id: String)
 signal action_requested(action_id: String)
 signal open_settings
+signal open_skills
 
 const Style = preload("res://ui/ui_style.gd")
 const State = preload("res://ui/mock_game_ui_state.gd")
 const Glyph = preload("res://ui/hud_glyph.gd")
+const Progression = preload("res://combat_progression.gd")
 const HotbarScene = preload("res://ui/Hotbar.tscn")
 
 const CREAM := Color("f5eedc")
@@ -146,9 +148,9 @@ func set_skills(skills: Dictionary) -> void:
 func _refresh_skills_label() -> void:
 	if practice_label == null:
 		return
-	var a := 1+int(sqrt(float(maxi(0,int(last_skills.get("archery",0))))/25.0))
-	var s := 1+int(sqrt(float(maxi(0,int(last_skills.get("spear",0))))/25.0))
-	var d := 1+int(sqrt(float(maxi(0,int(last_skills.get("defense",0))))/25.0))
+	var a := Progression.level_for_xp(int(last_skills.get("archery",0)))
+	var s := Progression.level_for_xp(int(last_skills.get("spear",0)))
+	var d := Progression.level_for_xp(int(last_skills.get("defense",0)))
 	practice_label.text = "Л%d К%d Щ%d" % [a,s,d]
 	practice_label.tooltip_text = "Тренировка: %d · XP: лук %d, копьё %d, защита %d" % [
 		last_practice_points,int(last_skills.get("archery",0)),
@@ -159,7 +161,7 @@ func _create_menu() -> void:
 	top_actions.name = "QuickMenu"
 	top_actions.add_theme_constant_override("separation", 5)
 	add_child(top_actions)
-	for entry in [["bag", "inventory", "Рюкзак"], ["build", "build", "Строительство"], ["craft", "craft", "Крафт"], ["settings", "settings", "Настройки"]]:
+	for entry in [["bag", "inventory", "Рюкзак"], ["build", "build", "Строительство"], ["craft", "craft", "Крафт"], ["skills", "skills", "Навыки"], ["settings", "settings", "Настройки"]]:
 		var key: String = entry[1]
 		var button := Button.new()
 		button.name = "Menu_%s" % key
@@ -170,7 +172,10 @@ func _create_menu() -> void:
 		button.add_theme_stylebox_override("normal", _card(Color("142329", 0.84), Color("cfbd96", 0.30), 14, 0))
 		button.add_theme_stylebox_override("hover", _card(Color("30423e", 0.94), GOLD, 14, 0))
 		button.add_theme_stylebox_override("pressed", _card(Color("61573d", 0.96), GOLD, 14, 0))
-		button.pressed.connect(_open.bind(key))
+		if key == "skills":
+			button.pressed.connect(func() -> void: open_skills.emit())
+		else:
+			button.pressed.connect(_open.bind(key))
 		top_actions.add_child(button)
 		var icon: Control = Glyph.new()
 		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -247,12 +252,20 @@ func _create_touch() -> void:
 		icon.size = Vector2(36, 36)
 		button.add_child(icon)
 		var caption := Style.label(entry[1], 10, CREAM)
+		caption.name = "Caption"
 		caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		caption.position = Vector2(0, diameter - 22)
 		caption.size = Vector2(diameter, 16)
 		button.add_child(caption)
 		action_controls[id] = button
+
+func set_shield_mode(equipped: bool) -> void:
+	if not action_controls.has("attack"):
+		return
+	var button: Button = action_controls["attack"]
+	button.get_node("Caption").text = "ЗОВ" if equipped else "УДАР"
+	button.tooltip_text = "Привлечь волков (5 с, перезарядка 15 с)" if equipped else "Атаковать"
 
 func _create_warning() -> void:
 	warning_detail = Style.label("", 14, Color("ffe0af"))

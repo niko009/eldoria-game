@@ -15,6 +15,7 @@ const HudScene = preload("res://ui/GameHud.tscn")
 const InventoryScene = preload("res://ui/InventoryPanel.tscn")
 const BuildingScene = preload("res://ui/BuildingPanel.tscn")
 const CraftingScene = preload("res://ui/CraftingPanel.tscn")
+const SkillsPanel = preload("res://ui/skills_panel.gd")
 const TouchScroller = preload("res://ui/touch_scroll.gd")
 
 var state: MockGameUiState
@@ -32,6 +33,7 @@ var panel_tween: Tween
 var touch_scroll = TouchScroller.new()
 var combat_equipment := "unarmed"
 var bow_aim_hint: Label
+var saved_skills: Dictionary = {"archery":0,"spear":0,"defense":0}
 
 func _ready() -> void:
     mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -53,6 +55,7 @@ func _ready() -> void:
     hud.open_building.connect(func() -> void: _open("build"))
     hud.open_crafting.connect(func() -> void: _open("craft"))
     hud.open_settings.connect(func() -> void: _open("settings"))
+    hud.open_skills.connect(func() -> void: _open("skills"))
     hud.item_selected.connect(state.select_item)
     hud.action_requested.connect(_on_action)
     add_child(hud)
@@ -91,7 +94,7 @@ func _ready() -> void:
     tabs = HBoxContainer.new()
     tabs.add_theme_constant_override("separation", 5)
     col.add_child(tabs)
-    for entry in [["Рюкзак", "inventory"], ["Строить", "build"], ["Крафт", "craft"], ["Настройки", "settings"]]:
+    for entry in [["Рюкзак", "inventory"], ["Строить", "build"], ["Крафт", "craft"], ["Навыки", "skills"], ["Опции", "settings"]]:
         var btn := Button.new()
         btn.text = entry[0]
         btn.name = entry[1]
@@ -123,6 +126,8 @@ func _ready() -> void:
 
 func set_combat_equipment(item: String) -> void:
     combat_equipment = item
+    if hud != null:
+        hud.set_shield_mode(item == "shield")
     _refresh_bow_hint()
 
 func _refresh_bow_hint() -> void:
@@ -188,8 +193,11 @@ func set_practice_points(points: int) -> void:
         hud.set_practice_points(points)
 
 func set_skills(skills: Dictionary) -> void:
+    saved_skills = skills.duplicate(true)
     if hud != null:
         hud.set_skills(skills)
+    if active_panel == "skills" and current_panel != null and current_panel.is_inside_tree():
+        current_panel.set_skills(saved_skills)
 
 func set_status(message: String) -> void:
     if state != null and state.connection_status != message:
@@ -232,6 +240,10 @@ func _open(kind: String) -> void:
     if kind == "settings":
         current_panel = _settings_panel()
         contents.add_child(current_panel)
+    elif kind == "skills":
+        current_panel = SkillsPanel.new()
+        current_panel.set_skills(saved_skills)
+        contents.add_child(current_panel)
     else:
         match kind:
             "inventory": current_panel = InventoryScene.instantiate()
@@ -252,7 +264,7 @@ func _open(kind: String) -> void:
                 _close()
                 action_requested.emit(recipe_id))
     current_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    panel_title.text = {"inventory": "РЮКЗАК", "build": "СТРОИТЕЛЬСТВО", "craft": "МАСТЕРСКАЯ", "settings": "НАСТРОЙКИ"}[kind]
+    panel_title.text = {"inventory": "РЮКЗАК", "build": "СТРОИТЕЛЬСТВО", "craft": "МАСТЕРСКАЯ", "skills": "НАВЫКИ", "settings": "НАСТРОЙКИ"}[kind]
     for tab in tabs.get_children():
         Style.button(tab, tab.name == kind)
     _animate(true)
