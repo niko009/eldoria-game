@@ -50,6 +50,10 @@ func _draw() -> void:
 			_poly([Vector2(10,38), Vector2(14,42), Vector2(29,27), Vector2(25,23)], muted)
 			_poly([Vector2(25,25), Vector2(19,19), Vector2(36,6), Vector2(42,5), Vector2(40,12), Vector2(30,29)], pale)
 			_line(Vector2(19,27), Vector2(29,37), accent, 4)
+		"ability":
+			_poly([Vector2(25,5),Vector2(12,25),Vector2(22,25),Vector2(16,42),
+				Vector2(38,19),Vector2(27,19)],accent)
+			_line(Vector2(22,28),Vector2(32,17),pale,2)
 		"gather":
 			_poly([Vector2(24,11), Vector2(16,17), Vector2(13,27), Vector2(20,38), Vector2(29,40), Vector2(36,29), Vector2(32,17)], accent)
 			_line(Vector2(24,11), Vector2(24,26), pale, 3)

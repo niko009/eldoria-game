@@ -59,7 +59,8 @@ func _run() -> void:
         return
     # Repeat enemy attacks while standing next to the victim: no client input.
     game.wolf_position = game.players[id].position + Vector3(0, -0.9, 0)
-    for attempt in range(9):
+    # Knight now mitigates 12 damage to 11, so ten hits are needed from 100 HP.
+    for attempt in range(10):
         game.wolf_last_hit_at = -100000
         game._combat_server_tick(0.02)
     if game.player_health[id] != 0 or not game.player_respawn_at.has(id):

@@ -17,6 +17,7 @@ const BuildingScene = preload("res://ui/BuildingPanel.tscn")
 const CraftingScene = preload("res://ui/CraftingPanel.tscn")
 const SkillsPanel = preload("res://ui/skills_panel.gd")
 const TouchScroller = preload("res://ui/touch_scroll.gd")
+const HeroClasses = preload("res://hero_classes.gd")
 
 var state: MockGameUiState
 var hud: EldoriaGameHud
@@ -34,6 +35,7 @@ var touch_scroll = TouchScroller.new()
 var combat_equipment := "unarmed"
 var bow_aim_hint: Label
 var saved_skills: Dictionary = {"archery":0,"spear":0,"defense":0}
+var hero_mana := 100
 
 func _ready() -> void:
     mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -129,6 +131,20 @@ func set_combat_equipment(item: String) -> void:
     if hud != null:
         hud.set_shield_mode(item == "shield")
     _refresh_bow_hint()
+
+func set_hero_class(choice: int) -> void:
+    if hud != null:
+        hud.set_hero_class(choice)
+        hud.set_shield_mode(combat_equipment == "shield")
+        hud.set_mana(hero_mana,choice == HeroClasses.MAGE)
+    if choice == HeroClasses.MAGE:
+        set_hero_mana(hero_mana)
+
+func set_hero_mana(value: int) -> void:
+    hero_mana = clampi(value,0,HeroClasses.MAGE_MANA_MAX)
+    if hud != null and state.selected_avatar == "mage":
+        hud.set_mana(hero_mana,true)
+        hud.top_controls["skills"].tooltip_text = "Навыки · мана %d/%d" % [hero_mana,HeroClasses.MAGE_MANA_MAX]
 
 func _refresh_bow_hint() -> void:
     if bow_aim_hint == null or state == null:

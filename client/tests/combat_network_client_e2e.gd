@@ -39,9 +39,9 @@ func _run() -> void:
     else:
         for frame in range(490):
             await process_frame
-            if game.wolf_health == 40 and game.live_ui.state.health == 88:
+            if game.wolf_health == 40 and game.live_ui.state.health == 89:
                 break
-        if game.wolf_health != 40 or game.live_ui.state.health != 88:
+        if game.wolf_health != 40 or game.live_ui.state.health != 89:
             _fail("observer didn't receive wolf and own health updates")
             return
     print("COMBAT NETWORK CLIENT PASS " + ("A" if is_a else "B"))

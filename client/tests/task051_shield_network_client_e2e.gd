@@ -7,7 +7,7 @@ func _run() -> void:
 	var game: Node3D = GAME.instantiate()
 	root.add_child(game)
 	await process_frame
-	game.selected_avatar = 2 if defender else 0
+	game.selected_avatar = 0 if defender else 2
 	game._join_websocket("ws://127.0.0.1:7788")
 	for i in 450:
 		await process_frame
@@ -42,7 +42,7 @@ func _run() -> void:
 	else:
 		var defender_id := 0
 		for id in game.player_choices:
-			if game.player_choices[id] == 2:
+			if game.player_choices[id] == 0:
 				defender_id = int(id)
 				break
 		for i in 320:

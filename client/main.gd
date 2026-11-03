@@ -24,6 +24,7 @@ const PASSIVE_ACTOR_SCRIPT := preload("res://passive_actor.gd")
 const RAID_SCRIPT := preload("res://camp_raid.gd")
 const LIVE_UI_SCRIPT := preload("res://ui/live_ui.gd")
 const AVATAR_PROFILE := preload("res://avatar_profile.gd")
+const HERO_CLASSES := preload("res://hero_classes.gd")
 const JUMP_MOTION := preload("res://jump_motion.gd")
 const UPDATE_SCRIPT := preload("res://update_manager.gd")
 const MOVE_SPEED := 6.0
@@ -75,6 +76,8 @@ const SHIELD_TAUNT_COOLDOWN_MS := 15000
 const SHIELD_TAUNT_RANGE := 10.0
 var shield_taunt_until: Dictionary = {}
 var shield_taunt_ready_at: Dictionary = {}
+var hero_ability_ready_at: Dictionary = {}
+var hero_mana: Dictionary = {}
 
 func _try_equip_combat(item: String) -> void:
     if own_id <= 0:
@@ -106,7 +109,7 @@ func _equip_combat_on_server(id: int, item: String) -> bool:
         players[id].set_combat_equipped(item)
     if id == own_id:
         combat_equip_snapshot(item)
-    else:
+    elif multiplayer.get_peers().has(id):
         combat_equip_snapshot.rpc_id(id,item)
     return true
 
@@ -743,6 +746,7 @@ func _host() -> void:
     own_id = multiplayer.get_unique_id()
     _spawn(own_id, Vector3(0, 1, 0), selected_avatar)
     player_health[own_id] = MAX_HEALTH
+    hero_mana[own_id] = HERO_CLASSES.MAGE_MANA_MAX
     player_skills[own_id] = _empty_skills()
     skill_snapshot(player_skills[own_id])
     practice_points[own_id] = 0
@@ -890,6 +894,8 @@ func despawn_remote(id: int) -> void:
 
 func _remove_actor(id: int) -> void:
     player_health.erase(id)
+    hero_ability_ready_at.erase(id)
+    hero_mana.erase(id)
     player_respawn_at.erase(id)
     last_attack_at.erase(id)
     equipped_axes.erase(id)
@@ -930,6 +936,8 @@ func _clear_session() -> void:
     player_skills.clear()
     shield_taunt_until.clear()
     shield_taunt_ready_at.clear()
+    hero_ability_ready_at.clear()
+    hero_mana.clear()
     training_last_hit.clear()
     for actor in passive_actors.values():
         if is_instance_valid(actor):
@@ -1032,6 +1040,7 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
     var pos := Vector3(float(players.size() * 3), 1, 0)
     _spawn(id, pos, validated)
     player_health[id] = MAX_HEALTH
+    hero_mana[id] = HERO_CLASSES.MAGE_MANA_MAX
     player_inventories[id] = _empty_inventory()
     player_skills[id] = _empty_skills()
     practice_points[id] = 0
@@ -1047,6 +1056,7 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
     health_snapshot.rpc_id(id, MAX_HEALTH, MAX_HEALTH)
     practice_snapshot.rpc_id(id, int(practice_points[id]))
     skill_snapshot.rpc_id(id,player_skills[id])
+    mana_snapshot.rpc_id(id, int(hero_mana[id]))
     for existing_id in players:
         if int(existing_id) != id:
             health_snapshot_for.rpc_id(id, int(existing_id), int(player_health.get(existing_id, MAX_HEALTH)))
@@ -1079,6 +1089,9 @@ func _spawn(id: int, pos: Vector3, choice: int = -1) -> void:
     player_choices[id] = valid_choice
     if id == own_id and not is_dedicated:
         selected_avatar = valid_choice
+        if live_ui != null:
+            live_ui.set_avatar(valid_choice)
+            live_ui.set_hero_class(valid_choice)
         if avatar_selector != null:
             avatar_selector.select(valid_choice)
         if OS.get_cmdline_user_args().is_empty():
@@ -1088,15 +1101,15 @@ func _spawn(id: int, pos: Vector3, choice: int = -1) -> void:
 func _choose_avatar(choice: int) -> void:
     if not AVATAR_PROFILE.valid(choice):
         return
-    selected_avatar = choice
-    if live_ui != null:
-        live_ui.set_avatar(choice)
-    if AVATAR_PROFILE.save_choice(choice) != OK:
-        _status("Could not save avatar preference.")
     if own_id == 0:
+        selected_avatar = choice
+        if live_ui != null:
+            live_ui.set_avatar(choice)
+        if AVATAR_PROFILE.save_choice(choice) != OK:
+            _status("Could not save avatar preference.")
         return
     if multiplayer.is_server():
-        if _set_avatar_for_peer(own_id, choice):
+        if _change_hero_on_server(own_id, choice):
             for remote_peer in connected_peers.keys():
                 avatar_changed.rpc_id(int(remote_peer), own_id, choice)
     else:
@@ -1109,7 +1122,7 @@ func request_avatar_change(choice: int) -> void:
     var peer_id := multiplayer.get_remote_sender_id()
     if not players.has(peer_id):
         return
-    if _set_avatar_for_peer(peer_id, choice):
+    if _change_hero_on_server(peer_id, choice):
         avatar_changed.rpc(peer_id, choice)
 
 @rpc("authority", "call_remote", "reliable")
@@ -1130,11 +1143,46 @@ func _set_avatar_for_peer(id: int, choice: int) -> bool:
                     return false
     player_choices[id] = choice
     players[id].set_avatar(choice)
+    if id == own_id:
+        selected_avatar = choice
     if id == own_id and avatar_selector != null:
         avatar_selector.select(choice)
     if id == own_id and live_ui != null:
         live_ui.set_avatar(choice)
+        live_ui.set_hero_class(choice)
+    if id == own_id and not is_dedicated and OS.get_cmdline_user_args().is_empty():
+        AVATAR_PROFILE.save_choice(choice)
     return true
+
+func _change_hero_on_server(id: int, choice: int) -> bool:
+    if not multiplayer.is_server() or not players.has(id) or not AVATAR_PROFILE.valid(choice):
+        return false
+    if choice == int(player_choices[id]):
+        return true
+    if int(player_health.get(id,0)) <= 0 or not _near_campfire(id):
+        _send_hero_message(id,"Сменить героя можно только возле костра")
+        return false
+    if not _set_avatar_for_peer(id,choice):
+        _send_hero_message(id,"Не удалось сохранить смену героя")
+        return false
+    shield_taunt_until.erase(id)
+    hero_ability_ready_at.erase(id)
+    if choice == HERO_CLASSES.MAGE:
+        hero_mana[id] = HERO_CLASSES.MAGE_MANA_MAX
+        _send_mana_snapshot(id)
+    _send_hero_message(id,"Класс: " + HERO_CLASSES.class_description(choice))
+    return true
+
+func _send_hero_message(id: int, message: String) -> void:
+    if id == own_id:
+        hero_message(message)
+    elif multiplayer.get_peers().has(id):
+        hero_message.rpc_id(id,message)
+
+@rpc("authority","call_remote","reliable")
+func hero_message(message: String) -> void:
+    if live_ui != null:
+        live_ui.show_message(message)
 
 
 func _physics_process(delta: float) -> void:
@@ -1151,6 +1199,8 @@ func _physics_process(delta: float) -> void:
     var axis: Vector2 = input_driver.get_move_vector()
     var fast := sprint_active or Input.is_key_pressed(KEY_SHIFT)
     var speed := MOVE_SPEED * (1.5 if fast else 1.0)
+    if int(player_choices.get(own_id,-1)) == HERO_CLASSES.ROGUE:
+        speed *= HERO_CLASSES.ROGUE_SPEED_MULTIPLIER
     var delta_pos := Vector3(axis.x, 0, axis.y).rotated(Vector3.UP, input_driver.yaw) * speed * delta
     var world: Node3D = get_node("Eldoria_Forest")
     var before: Vector3 = players[own_id].position
@@ -1529,6 +1579,16 @@ func _combat_server_tick(delta: float) -> void:
     if not multiplayer.is_server() or multiplayer.multiplayer_peer is OfflineMultiplayerPeer:
         return
     var now := Time.get_ticks_msec()
+    for id in hero_mana:
+        if int(player_choices.get(id,-1)) != HERO_CLASSES.MAGE or not players.has(id):
+            continue
+        if int(player_health.get(id,0)) <= 0:
+            continue
+        var before := int(hero_mana[id])
+        hero_mana[id] = minf(float(HERO_CLASSES.MAGE_MANA_MAX),
+            float(hero_mana[id])+float(HERO_CLASSES.MAGE_MANA_REGEN_PER_SEC)*delta)
+        if int(hero_mana[id]) != before:
+            _send_mana_snapshot(int(id))
     _tick_passive_creatures(delta,now)
     _raid_server_tick(now)
     _tick_raid_pack(delta, now)
@@ -1709,6 +1769,8 @@ func _damage_player_on_server(id: int, damage: int) -> bool:
         return false
     if (not wolf_alive and pack_wolves.is_empty()) or damage <= 0:
         return false
+    if int(player_choices.get(id,-1)) == HERO_CLASSES.KNIGHT:
+        damage = maxi(1,ceili(float(damage)*HERO_CLASSES.KNIGHT_DAMAGE_TAKEN))
     if str(equipped_combat.get(id,"")) == "shield" and int(player_inventories.get(id,{}).get("shield",0)) > 0:
         damage = COMBAT_PROGRESSION.shield_damage_taken(damage,
             int(player_skills.get(id,{}).get("defense",0)))
@@ -1721,7 +1783,7 @@ func _damage_player_on_server(id: int, damage: int) -> bool:
     health_snapshot_for.rpc(id, remaining)
     if id == own_id:
         health_snapshot(remaining, MAX_HEALTH)
-    else:
+    elif multiplayer.get_peers().has(id):
         health_snapshot.rpc_id(id, remaining, MAX_HEALTH)
     if remaining == 0:
         player_respawn_at[id] = Time.get_ticks_msec() + 4000
@@ -1735,8 +1797,9 @@ func shield_block_visual(id: int) -> void:
 func _try_attack() -> void:
     if own_id == 0 or not players.has(own_id) or int(player_health.get(own_id, MAX_HEALTH)) <= 0:
         return
-    if (str(equipped_combat.get(own_id,"unarmed")) == "shield" if multiplayer.is_server() else
-        live_ui != null and live_ui.combat_equipment == "shield"):
+    if int(player_choices.get(own_id,-1)) == HERO_CLASSES.KNIGHT and (
+        (str(equipped_combat.get(own_id,"unarmed")) == "shield") if multiplayer.is_server() else
+        (live_ui != null and live_ui.combat_equipment == "shield")):
         if multiplayer.is_server():
             _shield_taunt_on_server(own_id)
         else:
@@ -2010,6 +2073,105 @@ func wolf_snapshot(at: Vector3, hp: int, alive: bool, direction: Vector3) -> voi
 func _combat_ui_action(kind: String) -> void:
     if kind == "attack":
         _try_attack()
+    elif kind == "ability":
+        _try_hero_ability()
+
+func _try_hero_ability() -> void:
+    if own_id <= 0 or not players.has(own_id) or int(player_health.get(own_id,0)) <= 0:
+        return
+    var axis: Vector2 = input_driver.get_move_vector()
+    var direction := Vector3(axis.x,0,axis.y).rotated(Vector3.UP,input_driver.yaw)
+    if direction.length_squared() < 0.01:
+        direction = Vector3.FORWARD.rotated(Vector3.UP,input_driver.yaw)
+    direction = direction.normalized()
+    if multiplayer.is_server():
+        _hero_ability_on_server(own_id,direction)
+    else:
+        request_hero_ability.rpc_id(1,direction)
+
+@rpc("any_peer","reliable")
+func request_hero_ability(direction: Vector3) -> void:
+    if multiplayer.is_server():
+        _hero_ability_on_server(multiplayer.get_remote_sender_id(),direction)
+
+func _hero_ability_on_server(id: int, direction: Vector3, now: int = -1) -> bool:
+    if not multiplayer.is_server() or not players.has(id) or int(player_health.get(id,0)) <= 0:
+        return false
+    if now < 0:
+        now = Time.get_ticks_msec()
+    var hero := int(player_choices.get(id,-1))
+    if hero == HERO_CLASSES.KNIGHT:
+        return _shield_taunt_on_server(id,now)
+    if now < int(hero_ability_ready_at.get(id,0)):
+        _send_hero_message(id,"Способность: перезарядка")
+        return false
+    if hero == HERO_CLASSES.ROGUE:
+        if not direction.is_finite() or absf(direction.length()-1.0) > 0.05 or absf(direction.y) > 0.05:
+            return false
+        var world: Node3D = get_node("Eldoria_Forest")
+        var before: Vector3 = players[id].position
+        var after: Vector3 = world.move_actor(before,direction*HERO_CLASSES.ROGUE_DASH_DISTANCE)
+        if after.distance_to(before) < 0.30:
+            _send_hero_message(id,"Рывок заблокирован")
+            return false
+        players[id].position = after
+        hero_ability_ready_at[id] = now+HERO_CLASSES.ROGUE_DASH_COOLDOWN_MS
+        if id == own_id:
+            correct_own_position(after)
+        elif multiplayer.get_peers().has(id):
+            correct_own_position.rpc_id(id,after)
+        sync_position.rpc(id,after)
+        _send_hero_message(id,"Рывок!")
+        return true
+    if hero == HERO_CLASSES.MAGE:
+        if float(hero_mana.get(id,0.0)) < HERO_CLASSES.MAGE_MANA_COST:
+            _send_hero_message(id,"Недостаточно маны")
+            return false
+        var caster: Vector3 = players[id].position
+        var target_id := 0
+        var missing := 0
+        var nearest_sq := INF
+        for ally_id in player_health:
+            if not players.has(ally_id):
+                continue
+            var health := int(player_health[ally_id])
+            if health <= 0 or health >= MAX_HEALTH:
+                continue
+            var pos: Vector3 = players[ally_id].position
+            var distance_sq := Vector2(caster.x-pos.x,caster.z-pos.z).length_squared()
+            if distance_sq > HERO_CLASSES.MAGE_HEAL_RADIUS*HERO_CLASSES.MAGE_HEAL_RADIUS:
+                continue
+            var deficit := MAX_HEALTH-health
+            if deficit > missing or (deficit == missing and distance_sq < nearest_sq):
+                target_id = int(ally_id)
+                missing = deficit
+                nearest_sq = distance_sq
+        if target_id == 0:
+            _send_hero_message(id,"Рядом нет раненых союзников")
+            return false
+        hero_mana[id] = float(hero_mana[id])-HERO_CLASSES.MAGE_MANA_COST
+        hero_ability_ready_at[id] = now+HERO_CLASSES.MAGE_HEAL_COOLDOWN_MS
+        player_health[target_id] = mini(MAX_HEALTH,int(player_health[target_id])+HERO_CLASSES.MAGE_HEAL_HP)
+        health_snapshot_for.rpc(target_id,int(player_health[target_id]))
+        if target_id == own_id:
+            health_snapshot(int(player_health[target_id]),MAX_HEALTH)
+        elif multiplayer.get_peers().has(target_id):
+            health_snapshot.rpc_id(target_id,int(player_health[target_id]),MAX_HEALTH)
+        _send_mana_snapshot(id)
+        _send_hero_message(id,"Лечение: +%d HP" % mini(missing,HERO_CLASSES.MAGE_HEAL_HP))
+        return true
+    return false
+
+func _send_mana_snapshot(id: int) -> void:
+    if id == own_id:
+        mana_snapshot(int(hero_mana.get(id,0.0)))
+    elif multiplayer.get_peers().has(id):
+        mana_snapshot.rpc_id(id,int(hero_mana.get(id,0.0)))
+
+@rpc("authority","call_remote","unreliable")
+func mana_snapshot(value: int) -> void:
+    if live_ui != null:
+        live_ui.set_hero_mana(clampi(value,0,HERO_CLASSES.MAGE_MANA_MAX))
 
 func _choose_wolf_target(at: Vector3, now: int) -> int:
     # Active shield defenders take priority only within their limited taunt
@@ -2042,6 +2204,8 @@ func _choose_wolf_target(at: Vector3, now: int) -> int:
 
 func _shield_taunt_on_server(id: int, now: int = -1) -> bool:
     if not multiplayer.is_server() or not players.has(id) or int(player_health.get(id,0)) <= 0:
+        return false
+    if int(player_choices.get(id,-1)) != HERO_CLASSES.KNIGHT:
         return false
     if str(equipped_combat.get(id,"")) != "shield" or int(player_inventories.get(id,{}).get("shield",0)) < 1:
         return false
@@ -2928,6 +3092,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
         _toggle_build_preview()
     elif event.keycode == KEY_J:
         _try_attack()
+    elif event.keycode == KEY_Q:
+        _try_hero_ability()
     elif event.keycode == KEY_R:
         _try_repair_camp()
 

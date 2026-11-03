@@ -40,7 +40,8 @@ func _run() -> void:
     if not game._damage_player_on_server(second, 12):
         _fail("server health reduction failed")
         return
-    if game.player_health[second] != 88:
+    # Knight passive: ceil(12 * 0.9) = 11 received damage.
+    if game.player_health[second] != 89:
         _fail("server health incorrect: " + str(game.player_health))
         return
     # Keep alive until clients report observing the replicated wolf and HP.

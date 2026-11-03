@@ -111,13 +111,21 @@ echo "PASS: TASK-011..017 gameplay, WAV sound, staged tree damage, Android build
 
 echo "[TASK-050] permanent combat bonuses and progression UI"
 for script in task050_skill_balance_e2e task050_skills_ui_e2e; do
-    "$GODOT_BIN" --headless --path "$ROOT/client" --script "res://tests/$script.gd" +        > "$ROOT/tests/logs/$script.log" 2>&1
+    "$GODOT_BIN" --headless --path "$ROOT/client" --script "res://tests/$script.gd" \
+        > "$ROOT/tests/logs/$script.log" 2>&1
     grep -q 'TASK050 .* PASS' "$ROOT/tests/logs/$script.log"
 done
 bash tests/run_task050_skills_network_e2e.sh
 sleep 1
 echo "[TASK-051] shield defender aggro, cooldown and team visibility"
-"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task051_shield_taunt_e2e.gd +    > "$ROOT/tests/logs/task051-shield-e2e.log" 2>&1
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task051_shield_taunt_e2e.gd \
+    > "$ROOT/tests/logs/task051-shield-e2e.log" 2>&1
 grep -q 'TASK051 SHIELD TAUNT PASS' "$ROOT/tests/logs/task051-shield-e2e.log"
 bash tests/run_task051_shield_network_e2e.sh
 echo "PASS: TASK-050..051 server-authoritative teamplay, XP benefits and Android skill UI."
+echo "[TASK-052] three hero classes, campfire switch and server-owned abilities"
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task052_hero_classes_e2e.gd \
+    > "$ROOT/tests/logs/task052-hero-classes.log" 2>&1
+grep -q 'TASK052 HERO CLASSES PASS' "$ROOT/tests/logs/task052-hero-classes.log"
+bash tests/run_task052_classes_network_e2e.sh
+echo "PASS: TASK-052 Knight/Rogue/Mage abilities and two-client validation."

@@ -16,7 +16,7 @@ func _run() -> void:
 	var defender := -1
 	var archer := -1
 	for id in game.players:
-		if game.player_choices[id] == 2:
+		if game.player_choices[id] == 0:
 			defender = int(id)
 		else:
 			archer = int(id)

@@ -13,15 +13,16 @@ func _run() -> void:
     game = SCENE.instantiate()
     root.add_child(game)
     await process_frame
+    # Hero class is chosen before connecting. In-world class switches require a campfire.
+    var choice: int = 1 if role == "A" else 2
+    var other_choice: int = 2 if role == "A" else 1
+    game._choose_avatar(choice)
     game._join()
     if not await _await_connected(480):
         _fail(role+" could not join two-player world")
         return
     var me: int = game.own_id
     var other := _other(me)
-    var choice: int = 1 if role == "A" else 2
-    var other_choice: int = 2 if role == "A" else 1
-    game._choose_avatar(choice)
     if not await _await_choices(me,other,choice,other_choice,300):
         _fail(role + " remote avatar selection not replicated")
         return

@@ -8,6 +8,7 @@ func _run() -> void:
 	var game: Node3D = GAME.instantiate()
 	root.add_child(game)
 	await process_frame
+	game.selected_avatar = 0
 	game._host()
 	game.set_physics_process(false)
 	var defender: int = game.own_id

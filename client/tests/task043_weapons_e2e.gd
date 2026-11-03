@@ -6,6 +6,7 @@ func _run() -> void:
 	var game: Node3D = GAME.instantiate()
 	root.add_child(game)
 	await process_frame
+	game.selected_avatar = 1 # Rogue: isolate shield item mitigation from Knight passive
 	game._host()
 	var id: int = game.own_id
 	game.placed_buildings[991] = {"kind":"campfire","x":0.0,"z":0.0}

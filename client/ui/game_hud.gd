@@ -33,6 +33,7 @@ var warning_detail: Label
 var resources_panel: HBoxContainer
 var resource_counts: Dictionary = {}
 var practice_label: Label
+var mana_label: Label
 var last_practice_points := 0
 var last_skills := {"archery":0,"spear":0,"defense":0}
 var hotbar: EldoriaHotbar
@@ -136,6 +137,16 @@ func _create_resources() -> void:
 	practice_label.name = "PracticePoints"
 	practice_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	resources_panel.add_child(practice_label)
+	mana_label = Style.label("Мана 100/100",13,Color("a5c7f3"))
+	mana_label.name = "HeroMana"
+	mana_label.visible = false
+	resources_panel.add_child(mana_label)
+
+func set_mana(value: int, mage: bool) -> void:
+	if mana_label != null:
+		mana_label.visible = mage
+		mana_label.text = "Мана %d/100" % clampi(value,0,100)
+
 
 func set_practice_points(points: int) -> void:
 	last_practice_points = points
@@ -231,7 +242,7 @@ func _create_touch() -> void:
 	action_buttons.name = "ActionCluster"
 	action_buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	touch_layer.add_child(action_buttons)
-	for entry in [["attack", "УДАР", 76], ["gather", "СБОР", 63], ["jump", "ПРЫЖОК", 63], ["sprint", "БЕГ", 63]]:
+	for entry in [["attack", "УДАР", 76], ["gather", "СБОР", 63], ["jump", "ПРЫЖОК", 63], ["sprint", "БЕГ", 63], ["ability", "ЗОВ", 63]]:
 		var id: String = entry[0]
 		var diameter: int = entry[2]
 		var button := Button.new()
@@ -264,8 +275,19 @@ func set_shield_mode(equipped: bool) -> void:
 	if not action_controls.has("attack"):
 		return
 	var button: Button = action_controls["attack"]
-	button.get_node("Caption").text = "ЗОВ" if equipped else "УДАР"
-	button.tooltip_text = "Привлечь волков (5 с, перезарядка 15 с)" if equipped else "Атаковать"
+	button.get_node("Caption").text = "ЗОВ" if equipped and state.selected_avatar == "knight" else "УДАР"
+	button.tooltip_text = "Привлечь волков (5 с, перезарядка 15 с)" if equipped and state.selected_avatar == "knight" else "Атаковать"
+
+func set_hero_class(choice: int) -> void:
+	if not action_controls.has("ability"):
+		return
+	var labels := ["ЗОВ","РЫВОК","ЛЕЧИТЬ"]
+	var ability: Button = action_controls["ability"]
+	ability.get_node("Caption").text = labels[clampi(choice,0,2)]
+	ability.tooltip_text = ["Рыцарь: привлечь волков со щитом (Q)",
+		"Разбойник: рывок без прохождения сквозь препятствия (Q)",
+		"Маг: вылечить союзника за 40 маны (Q)"][clampi(choice,0,2)]
+	set_shield_mode(false)
 
 func _create_warning() -> void:
 	warning_detail = Style.label("", 14, Color("ffe0af"))
@@ -347,7 +369,7 @@ func refresh() -> void:
 		craft_badge.visible = ready_count > 0
 		craft_badge_label.text = str(ready_count)
 		top_controls["craft"].tooltip_text = "Крафт · хватает материалов для %d рецептов (изготавливаются возле костра)" % ready_count
-	var names := {"knight": "РЫЦАРЬ", "rogue": "СЛЕДОПЫТ", "mage": "МАГ"}
+	var names := {"knight": "РЫЦАРЬ", "rogue": "РАЗБОЙНИК", "mage": "МАГ"}
 	avatar_name.text = names.get(state.selected_avatar, state.selected_avatar.to_upper())
 	health_detail.text = ("%d/%d" % [state.health, state.max_health]) if state.health_known else "—"
 	health_bar.max_value = maxi(1, state.max_health)
@@ -408,6 +430,7 @@ func _layout() -> void:
 		"gather": Vector2(right - 72, lower + 2),
 		"jump": Vector2(right + 6, lower - 88),
 		"sprint": Vector2(right - 68, lower - 79),
+		"ability": Vector2(right - 144, lower - 154),
 	}
 	for id in positions:
 		var button: Button = action_controls[id]

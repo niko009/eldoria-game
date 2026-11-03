@@ -7,6 +7,8 @@ func _run() -> void:
     var game: Node3D = GAME.instantiate()
     root.add_child(game)
     await process_frame
+    if not second:
+        game._choose_avatar(2) # select Mage before spawning; switching in world requires campfire
     game._join_websocket("wss://bacus.dev/eldoria/ws")
     for i in range(480):
         await process_frame
@@ -16,7 +18,6 @@ func _run() -> void:
         _fail("failed WSS live login")
         return
     if not second:
-        game._choose_avatar(2)
         for i in range(140):
             await process_frame
             if game.player_choices.get(game.own_id,-1)==2:

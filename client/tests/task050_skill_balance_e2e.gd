@@ -30,6 +30,7 @@ func _run() -> void:
 	var game: Node3D = GAME.instantiate()
 	root.add_child(game)
 	await process_frame
+	game.selected_avatar = 1 # Rogue: preserve the class-independent base shield balance assertions
 	game._host()
 	game.set_physics_process(false)
 	var id: int = game.own_id
