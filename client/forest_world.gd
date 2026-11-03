@@ -16,6 +16,9 @@ var batch_nodes: Array[MultiMeshInstance3D] = []
 var obstacle_positions: Array[Vector2] = []
 var obstacle_radii: Array[float] = []
 var obstacle_active: Array[bool] = []
+const OBSTACLE_GRID_CELL := 12.0
+var _obstacle_grid: Dictionary = {}
+var _largest_obstacle := 0.0
 const TREE_DAMAGE := preload("res://tree_damage.gd")
 var damage_markers: Dictionary = {}
 var _resource_exhausted := {}
@@ -453,10 +456,34 @@ func nearest_resource(position: Vector3, radius: float, remaining: Dictionary) -
     return best_id
 
 func _add_obstacle(pos: Vector2, radius: float) -> int:
+    var obstacle_id := obstacle_positions.size()
     obstacle_positions.append(pos)
     obstacle_radii.append(radius)
     obstacle_active.append(true)
-    return obstacle_positions.size()-1
+    _largest_obstacle = maxf(_largest_obstacle, radius)
+    var key := Vector2i(floori(pos.x / OBSTACLE_GRID_CELL), floori(pos.y / OBSTACLE_GRID_CELL))
+    var bucket: Array = _obstacle_grid.get(key, [])
+    bucket.append(obstacle_id)
+    _obstacle_grid[key] = bucket
+    return obstacle_id
+
+func _obstacles_in_corridor(from: Vector2, to: Vector2, radius: float) -> Array[int]:
+    # Each circle is indexed once by its centre; expand the search rectangle
+    # by the largest blocker radius to retain exact old collision semantics.
+    var padding := radius + _largest_obstacle
+    var lower := Vector2i(floori((minf(from.x, to.x)-padding) / OBSTACLE_GRID_CELL),
+        floori((minf(from.y, to.y)-padding) / OBSTACLE_GRID_CELL))
+    var upper := Vector2i(floori((maxf(from.x, to.x)+padding) / OBSTACLE_GRID_CELL),
+        floori((maxf(from.y, to.y)+padding) / OBSTACLE_GRID_CELL))
+    var indices: Array[int] = []
+    for x in range(lower.x, upper.x + 1):
+        for y in range(lower.y, upper.y + 1):
+            var key := Vector2i(x,y)
+            if _obstacle_grid.has(key):
+                for obstacle_id in _obstacle_grid[key]:
+                    indices.append(obstacle_id)
+    indices.sort() # preserve original first-hit/camera clipping order
+    return indices
 
 func _flush_batches() -> void:
     # A single MultiMesh draw per imported glTF mesh, not ~350 scene instances.
@@ -507,7 +534,7 @@ func apply_detail_quality(high: bool) -> void:
         node.visible = high or not node.name.ends_with("_extra")
 
 func collides_at(pos: Vector2, radius: float = 0.43) -> bool:
-    for i in range(obstacle_positions.size()):
+    for i in _obstacles_in_corridor(pos, pos, radius):
         if not obstacle_active[i]:
             continue
         var r: float = obstacle_radii[i] + radius
@@ -520,7 +547,7 @@ func _sweep_hits(start: Vector2, finish: Vector2, radius: float) -> bool:
     var squared := segment.length_squared()
     if squared < 0.0000001:
         return collides_at(finish, radius)
-    for i in range(obstacle_positions.size()):
+    for i in _obstacles_in_corridor(start, finish, radius):
         if not obstacle_active[i]:
             continue
         var center := obstacle_positions[i]
@@ -652,7 +679,7 @@ func camera_safe_target(focus: Vector3, requested: Vector3) -> Vector3:
     var flat_squared := segment2.length_squared()
     if flat_squared > 0.0001:
         var start2 := Vector2(focus.x,focus.z)
-        for i in range(obstacle_positions.size()):
+        for i in _obstacles_in_corridor(start2, start2 + segment2, 0.35):
             if not obstacle_active[i]:
                 continue
             var radius: float = obstacle_radii[i] + 0.35

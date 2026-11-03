@@ -63,6 +63,10 @@ bash tests/run_persistence_e2e.sh
 for test_name in camera_profile_e2e gather_validation_e2e collision_perf_e2e forest_update_e2e; do
     "$GODOT_BIN" --headless --path "$ROOT/client" --script "res://tests/$test_name.gd" -- --test
 done
+echo "[TASK-037] collision grid vs legacy full obstacle scan: movement and camera parity"
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task037_collision_benchmark.gd -- --test \
+    > "$ROOT/tests/logs/task037-collision-benchmark.log" 2>&1
+grep -q 'TASK037 COLLISION PARITY PASS' "$ROOT/tests/logs/task037-collision-benchmark.log"
 
 if command -v Xvfb >/dev/null 2>&1; then
     display_number=91

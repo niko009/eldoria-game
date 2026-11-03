@@ -116,6 +116,7 @@ var legacy_ui_controls: Array[Control] = []
 var sunlight: DirectionalLight3D
 var foliage: Array[SphereMesh] = []
 var graphics_quality := 1
+var next_proximity_ui_at_msec := 0
 var performance_overlay: CanvasLayer
 
 func _ready() -> void:
@@ -1046,8 +1047,15 @@ func _physics_process(delta: float) -> void:
             last_sent_position = at
 
 func _process(delta: float) -> void:
-    if live_ui != null:
-        live_ui.set_near_campfire(own_id != 0 and _near_campfire(own_id))
+    # UI-only proximity hints don't need full-frame broadphase queries and
+    # legacy label formatting. Craft/build requests still validate immediately
+    # on the authoritative server, so this never changes gameplay rules.
+    var ui_now := Time.get_ticks_msec()
+    if ui_now >= next_proximity_ui_at_msec:
+        next_proximity_ui_at_msec = ui_now + 200
+        if live_ui != null:
+            live_ui.set_near_campfire(own_id != 0 and _near_campfire(own_id))
+        _refresh_gather_hud()
     if not is_dedicated and telemetry != null and own_id != 0 and players.has(own_id):
         telemetry.sample_frame(delta)
         if Time.get_ticks_msec() - last_ping_at_msec > 15000 and last_ping_at_msec > 0:
@@ -1064,7 +1072,6 @@ func _process(delta: float) -> void:
     if fps_accumulator >= 0.65:
         fps_accumulator = 0.0
         fps_label.text = "FPS: %d | %s" % [Engine.get_frames_per_second(), "Low" if graphics_quality == GRAPHICS_SCRIPT.LOW else "High"]
-    _refresh_gather_hud()
     if preview_enabled and not is_dedicated and Time.get_ticks_msec()-preview_last_update_msec >= 260:
         _update_build_preview()
     if build_feedback_label != null and build_feedback_label.visible and Time.get_ticks_msec() > build_feedback_until:
