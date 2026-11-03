@@ -8,7 +8,7 @@ const State = preload("res://ui/mock_game_ui_state.gd")
 const Icon = preload("res://ui/tool_icon.gd")
 
 # Keep the crafted axe on keyboard/touch slot 4 for backwards-compatible controls.
-const SLOTS := ["unarmed", "sword", "pickaxe", "axe", "hammer", "bow"]
+const SLOTS := ["unarmed", "spear", "shield", "axe", "bow", "hammer"]
 
 var state: MockGameUiState
 var row: HBoxContainer

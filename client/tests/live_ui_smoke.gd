@@ -33,7 +33,7 @@ func _run() -> void:
         push_error("Crafting badge did not react to live inventory")
         quit(18)
         return
-    if EldoriaHotbar.SLOTS != ["unarmed", "sword", "pickaxe", "axe", "hammer", "bow"]:
+    if EldoriaHotbar.SLOTS != ["unarmed", "spear", "shield", "axe", "bow", "hammer"]:
         push_error("Tool-only hotbar layout or axe slot 4 incorrect")
         quit(14)
         return
@@ -95,6 +95,24 @@ func _run() -> void:
         quit(12)
         return
     ui.set_equipped_axe(false)
+    ui.set_inventory({"wood": 4, "stone": 3, "axe": 1, "spear": 1, "bow": 1, "shield": 1, "arrow": 5})
+    for weapon in ["spear","bow","shield"]:
+        if ui.hud.hotbar.slot_buttons[weapon].disabled:
+            push_error("Owned weapon unavailable on hotbar: "+weapon)
+            quit(19)
+            return
+    var combat_requests: Array[String] = []
+    ui.combat_equip_requested.connect(func(weapon: String) -> void: combat_requests.append(weapon))
+    ui.state.select_item("spear")
+    ui.set_combat_equipment("spear")
+    ui.state.select_item("bow")
+    ui.set_combat_equipment("bow")
+    ui.state.select_item("shield")
+    ui.set_combat_equipment("shield")
+    if combat_requests.slice(-3) != ["spear","bow","shield"] or ui.state.selected_item != "shield":
+        push_error("Hotbar did not route owned combat weapons to server equipment")
+        quit(20)
+        return
     ui._craft("axe")
     if requested[0] != 1:
         push_error("Duplicate stone axe request allowed by client")

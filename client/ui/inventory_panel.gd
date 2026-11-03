@@ -32,16 +32,15 @@ func refresh() -> void:
 		var slot := Button.new()
 		slot.text = "%s  %s\n%d шт." % [data["symbol"], data["name"], count]
 		slot.tooltip_text = data["name"]
-		# Materials and consumables are display-only here. Only the axe can
-		# be equipped through inventory; otherwise an Android swipe over a
-		# resource card may unintentionally select empty hands.
-		slot.disabled = item_id != "axe" or count == 0
-		Style.button(slot, state.selected_item == item_id and item_id == "axe")
+		# Consumables are used from crafting; equipment can be selected here.
+		# Inert resources never trigger equipment changes on Android swipe.
+		slot.disabled = item_id not in ["axe","spear","bow","shield"] or count == 0
+		Style.button(slot, state.selected_item == item_id and slot.disabled == false)
 		slot.custom_minimum_size = Vector2(180, 72)
-		if item_id == "axe":
+		if item_id in ["axe","spear","bow","shield"]:
 			slot.pressed.connect(func() -> void: item_selected.emit(item_id))
 		grid.add_child(slot)
 	if not any_item:
 		add_child(Style.label("Рюкзак пуст. Предметы появятся здесь.", 14, Style.MUTED))
-	add_child(Style.label("В руках: %s" % State.TOOLS[state.selected_item]["name"], 14, Style.MUTED))
+	add_child(Style.label("В руках: %s" % State.TOOLS.get(state.selected_item,{"name":state.selected_item})["name"], 14, Style.MUTED))
 	add_child(Style.label("Топор: экипирован" if state.equipped_axe else "Топор: не экипирован", 14, Style.MUTED))

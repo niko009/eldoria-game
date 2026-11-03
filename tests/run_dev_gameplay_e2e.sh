@@ -129,3 +129,12 @@ echo "[TASK-052] three hero classes, campfire switch and server-owned abilities"
 grep -q 'TASK052 HERO CLASSES PASS' "$ROOT/tests/logs/task052-hero-classes.log"
 bash tests/run_task052_classes_network_e2e.sh
 echo "PASS: TASK-052 Knight/Rogue/Mage abilities and two-client validation."
+echo '[TASK-053] crafted weapons usable from live UI and imported wildlife'
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task053_crafted_weapons_ui_e2e.gd -- --test-live-ui \
+    > "$ROOT/tests/logs/task053-craft-equip.log" 2>&1
+grep -q 'TASK053 CRAFTED WEAPONS UI PASS' "$ROOT/tests/logs/task053-craft-equip.log"
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task053_wildlife_models_e2e.gd \
+    > "$ROOT/tests/logs/task053-wildlife.log" 2>&1
+grep -q 'TASK053 WILDLIFE MODELS PASS' "$ROOT/tests/logs/task053-wildlife.log"
+bash tests/run_bow_network_e2e.sh
+echo 'PASS: TASK-053 equipment hotbar/rucksack/authoritative combat and wildlife GLB.'

@@ -40,6 +40,21 @@ func _draw() -> void:
 			_hammer(steel, edge, wood)
 		"bow":
 			_bow(steel, edge, wood)
+		"spear":
+			_spear(steel, edge, wood)
+		"shield":
+			_shield(steel, edge, wood)
+
+func _spear(steel: Color, edge: Color, wood: Color) -> void:
+	_stroke(Vector2(12,43),Vector2(35,11),wood,4)
+	_poly([Vector2(35,3),Vector2(41,14),Vector2(33,21),Vector2(28,13)],steel)
+	_stroke(Vector2(35,5),Vector2(33,17),edge,1.5)
+
+func _shield(steel: Color, edge: Color, wood: Color) -> void:
+	_poly([Vector2(24,5),Vector2(40,12),Vector2(38,31),Vector2(24,43),Vector2(10,31),Vector2(8,12)],steel)
+	_poly([Vector2(24,10),Vector2(34,15),Vector2(33,29),Vector2(24,36),Vector2(15,29),Vector2(14,15)],wood)
+	_stroke(Vector2(24,10),Vector2(24,36),edge,2)
+	draw_circle(Vector2(24,22),4,edge)
 
 func _poly(points: Array[Vector2], color: Color) -> void:
 	draw_colored_polygon(PackedVector2Array(points), color)

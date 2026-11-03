@@ -27,7 +27,9 @@ const TOOLS := {
 	"pickaxe": {"name": "Кирка · скоро", "implemented": false},
 	"axe": {"name": "Каменный топор", "implemented": true},
 	"hammer": {"name": "Молот · скоро", "implemented": false},
-	"bow": {"name": "Лук · скоро", "implemented": false},
+	"spear": {"name": "Копьё", "implemented": true},
+	"shield": {"name": "Щит", "implemented": true},
+	"bow": {"name": "Лук", "implemented": true},
 }
 const BUILDINGS := {
 	"campfire": {"name": "Костёр", "description": "Тепло и место для отдыха", "cost": {"wood": 3, "stone": 2}},
@@ -97,11 +99,11 @@ func can_select_tool(tool_id: String) -> bool:
 		return false
 	if not bool(TOOLS[tool_id]["implemented"]):
 		return false
-	return tool_id != "axe" or amount("axe") > 0
+	return not ["axe", "spear", "bow", "shield"].has(tool_id) or amount(tool_id) > 0
 
 func select_item(item_id: String) -> void:
 	# Legacy inventory material clicks mean empty hands, never a resource hotbar slot.
-	var tool_id := "unarmed" if ITEMS.has(item_id) and item_id != "axe" else item_id
+	var tool_id := "unarmed" if ITEMS.has(item_id) and item_id not in ["axe","spear","bow","shield"] else item_id
 	if not can_select_tool(tool_id):
 		return
 	if selected_item == tool_id:
@@ -115,6 +117,6 @@ func set_stock(mode: String) -> void:
 		"plenty": inventory = {"wood": 9, "stone": 7, "herb": 5, "axe": 1}
 		"scarce": inventory = {"wood": 1, "stone": 0, "herb": 0, "axe": 0}
 		"empty": inventory = {"wood": 0, "stone": 0, "herb": 0, "axe": 0}
-	if selected_item == "axe" and amount("axe") == 0:
+	if ["axe","spear","bow","shield"].has(selected_item) and amount(selected_item) == 0:
 		select_item("unarmed")
 	changed.emit()

@@ -6,6 +6,7 @@ signal action_requested(action: String)
 signal build_requested(kind: String)
 signal craft_requested(recipe_id: String)
 signal equip_requested(equip: bool)
+signal combat_equip_requested(weapon: String)
 signal preview_requested(kind: String)
 signal joystick_moved(direction: Vector2)
 
@@ -128,6 +129,14 @@ func _ready() -> void:
 
 func set_combat_equipment(item: String) -> void:
     combat_equipment = item
+    if state != null:
+        # Server equipment ACK is authoritative. Do not re-emit selection RPC.
+        var desired := item
+        if item == "unarmed" and state.selected_item == "axe":
+            desired = "axe"
+        if state.selected_item != desired:
+            state.selected_item = desired
+            state.changed.emit()
     if hud != null:
         hud.set_shield_mode(item == "shield")
     _refresh_bow_hint()
@@ -160,6 +169,8 @@ func set_inventory(inventory: Dictionary) -> void:
     if state.inventory == validated:
         return
     state.inventory = validated
+    if state.selected_item in ["spear","bow","shield"] and int(validated.get(state.selected_item,0)) == 0:
+        state.selected_item = "unarmed"
     if int(validated.get("axe", 0)) == 0:
         state.equipped_axe = false
         if state.selected_item == "axe":
@@ -190,6 +201,7 @@ func set_equipped_axe(equipped: bool) -> void:
 func _selected_item(item_id: String) -> void:
     # UI state is visual only: the actual equipment is acknowledged by server.
     equip_requested.emit(item_id == "axe")
+    combat_equip_requested.emit(item_id if item_id in ["spear","bow","shield"] else "unarmed")
 
 func set_near_campfire(near: bool) -> void:
     if state != null and state.near_campfire != near:

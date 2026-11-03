@@ -116,8 +116,18 @@ func _equip_combat_on_server(id: int, item: String) -> bool:
 @rpc("authority","call_remote","reliable")
 func combat_equip_snapshot(item: String) -> void:
     if live_ui != null and ["unarmed","spear","bow","shield"].has(item):
-        live_ui.show_message("Снаряжение: " + item)
         live_ui.set_combat_equipment(item)
+        match item:
+            "bow":
+                var arrows: int = live_ui.state.amount("arrow")
+                live_ui.show_message("Лук: %d стрел · атака J / УДАР" % arrows if arrows > 0
+                    else "Лук экипирован. Создайте стрелы у костра.")
+            "spear":
+                live_ui.show_message("Копьё экипировано · атака J / УДАР")
+            "shield":
+                live_ui.show_message("Щит экипирован · навык рыцаря Q / УМЕНИЕ")
+            _:
+                live_ui.show_message("Без оружия")
 
 @rpc("authority","call_remote","reliable")
 func combat_visual_snapshot(id: int, item: String) -> void:
@@ -537,6 +547,7 @@ func _ui() -> void:
         live_ui.build_requested.connect(_live_build)
         live_ui.craft_requested.connect(_try_craft_recipe)
         live_ui.equip_requested.connect(_try_equip_axe)
+        live_ui.combat_equip_requested.connect(_try_equip_combat)
         live_ui.preview_requested.connect(_live_preview)
         live_ui.set_avatar(selected_avatar)
         live_ui.set_inventory(_empty_inventory())
@@ -3124,6 +3135,8 @@ func _live_preview(kind: String) -> void:
 
 func _live_action(kind: String) -> void:
     match kind:
+        "spear", "bow", "shield":
+            _try_equip_combat(kind)
         "bandage":
             _try_use_consumable("bandage")
         "repair_kit":

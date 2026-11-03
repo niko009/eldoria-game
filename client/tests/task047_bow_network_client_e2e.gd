@@ -11,12 +11,20 @@ func _run() -> void:
 	game._join_websocket("ws://127.0.0.1:7788")
 	for frame in 450:
 		await process_frame
-		if game.own_id > 0 and game.players.size() == 2 and game.wolf_alive and (not attacker or (game.live_ui.state.amount("arrow") == 3 and game.live_ui.combat_equipment == "bow")):
+		if game.own_id > 0 and game.players.size() == 2 and game.wolf_alive and (not attacker or (game.live_ui.state.amount("arrow") == 3 and game.live_ui.state.amount("bow") == 1)):
 			break
 	if game.players.size() != 2 or not game.wolf_alive:
 		_fail("world state not replicated")
 		return
 	if attacker:
+		if game.live_ui.hud.hotbar.slot_buttons["bow"].disabled:
+			_fail("craftable bow remains disabled in live hotbar")
+			return
+		game.live_ui.hud.hotbar.slot_buttons["bow"].pressed.emit()
+		for frame in 180:
+			await process_frame
+			if game.live_ui.combat_equipment == "bow":
+				break
 		if game.live_ui.combat_equipment != "bow" or game.live_ui.state.amount("arrow") != 3 or not game.live_ui.bow_aim_hint.visible:
 			_fail("bow equipment, ammo or reticle not replicated")
 			return
