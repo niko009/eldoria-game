@@ -25,7 +25,6 @@ APP='/srv/bacus/apps'
 SITE="$APP/bacus-dev/site/projects/eldoria"
 ROOT="$APP/eldoria-releases"
 DATE="$(date -u +%Y%m%dT%H%M%SZ)"
-TAG="${VERSION//./}"
 STAGE="$ROOT/$VERSION-$DATE"
 WORK="$STAGE/repo"
 BACKUP="/srv/bacus/backups/eldoria-pre-$VERSION-$DATE"
@@ -38,7 +37,9 @@ GODOT_TEMPLATES='/home/mbacus/.local/share/godot/export_templates/4.5.2.stable'
 APK="Eldoria-$VERSION-debug.apk"
 ZIP="Eldoria-Windows-$VERSION.zip"
 KEYSTORE='/home/mbacus/.local/share/godot/keystores/debug.keystore'
-OVERRIDE="/etc/systemd/system/eldoria-ws-test.service.d/v${TAG}-release.conf"
+# A fixed lexicographically LAST name is essential: v0510 sorts BEFORE v059.
+# Reuse the stable file and keep its prior content in the per-release backup.
+OVERRIDE="/etc/systemd/system/eldoria-ws-test.service.d/zz-eldoria-release.conf"
 LOG="$STAGE/release.log"
 PREVIOUS="$(jq -r .version "$SITE/latest.json")"
 OLD_CLIENT="$(jq -r .client_version "$SITE/server.json")"
@@ -181,7 +182,11 @@ rollback() {
     cp -a "$BACKUP/server.json" "$SITE/server.json"
     cp -a "$BACKUP/latest.json" "$SITE/latest.json"
     cp -a "$BACKUP/index.html" "$SITE/index.html"
-    rm -f "$OVERRIDE"
+    if [[ -f "$BACKUP/systemd-dropins/$(basename "$OVERRIDE")" ]]; then
+      cp -a "$BACKUP/systemd-dropins/$(basename "$OVERRIDE")" "$OVERRIDE"
+    else
+      rm -f "$OVERRIDE"
+    fi
     systemctl daemon-reload
     systemctl restart eldoria-ws-test.service || true
   fi
@@ -189,7 +194,7 @@ rollback() {
   exit "$code"
 }
 trap rollback ERR INT TERM
-# Drop-in after v054-craft.conf: version number grows, so the newest wins.
+# Fixed override name stays after ALL earlier v0xx drop-ins, even v0.5.10+.
 cat > "$OVERRIDE" <<EOF
 [Service]
 WorkingDirectory=$WORK
@@ -199,7 +204,10 @@ EOF
 chmod 0644 "$OVERRIDE"
 ACTIVATED=1
 systemctl daemon-reload
-systemctl show eldoria-ws-test.service -p ExecStart --no-pager | grep -q "$WORK/client"
+if ! systemctl show eldoria-ws-test.service -p ExecStart --no-pager | grep -Fq "$WORK/client"; then
+  echo 'Systemd release override has wrong precedence; refusing activation.' >&2
+  exit 12
+fi
 systemctl restart eldoria-ws-test.service
 sleep 3
 systemctl is-active --quiet eldoria-ws-test.service
