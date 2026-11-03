@@ -6,11 +6,14 @@
 
 ```bash
 # Проверить/собрать без изменения production:
-sudo eldoria-release <version> release/<target-branch> --build-only
+sudo eldoria-release 0.5.11 release/eldoria-v0.5.11 --build-only
 
 # Одной командой собрать Android APK, Windows ZIP, проверить и выпустить:
-sudo eldoria-release <version> release/<target-branch> --deploy
+sudo eldoria-release 0.5.11 release/eldoria-v0.5.11 --deploy
 ```
+
+
+Здесь `0.5.11` — **пример следующей версии**; перед запуском должна существовать проверенная ветка `release/eldoria-v0.5.11`.
 
 ## Что происходит автоматически
 
