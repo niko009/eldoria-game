@@ -19,13 +19,14 @@ const OVERLAY_SCRIPT := preload("res://performance_overlay.gd")
 const FOREST_SCRIPT := preload("res://forest_world.gd")
 const ACTOR_SCRIPT := preload("res://animated_actor.gd")
 const WOLF_ACTOR_SCRIPT := preload("res://wolf_actor.gd")
+const RAID_SCRIPT := preload("res://camp_raid.gd")
 const LIVE_UI_SCRIPT := preload("res://ui/live_ui.gd")
 const AVATAR_PROFILE := preload("res://avatar_profile.gd")
 const JUMP_MOTION := preload("res://jump_motion.gd")
 const UPDATE_SCRIPT := preload("res://update_manager.gd")
 const MOVE_SPEED := 6.0
-const CLIENT_VERSION := "0.5.8-dev"
-# TASK-032/033 are not released: never connect this new visual RPC to production v0.5.7.
+const CLIENT_VERSION := "0.5.10-dev"
+# TASK-039 is a development protocol: never auto-connect to production v0.5.9.
 
 const DEVELOPMENT_BUILD := true
 const SERVER_CONFIG_URL := "https://bacus.dev/projects/eldoria/server.json"
@@ -49,6 +50,10 @@ var wolf_last_hit_at := 0
 var wolf_sync_timer := 0.0
 var wolf_direction := Vector3.ZERO
 var wolf_actor: Node3D
+var raid: RefCounted = RAID_SCRIPT.new()
+var raid_next_broadcast := 0
+var raid_anchor := Vector3.ZERO
+var healing_cooldowns := {}
 var equipped_axes := {} # Ephemeral server-authoritative equipment, reset on reconnect.
 var player_identity_keys := {}
 var persistent_profiles := {}
@@ -647,6 +652,8 @@ func _host() -> void:
     multiplayer.multiplayer_peer = peer
     _reset_resources()
     _reset_wolf()
+    raid.begin(Time.get_ticks_msec())
+    raid_next_broadcast = 0
     if not _configure_world_persistence():
         push_error("Eldoria save data invalid; refusing to host")
         peer.close()
@@ -789,6 +796,7 @@ func _on_leave(id: int) -> void:
     connected_peers.erase(id)
     last_telemetry_by_peer.erase(id)
     player_identity_keys.erase(id)
+    healing_cooldowns.erase(id)
     _remove_actor(id)
     # SceneMultiplayer propagates peer_disconnected to all clients already.
     # No extra RPC: a peer may have closed its ENet channel during this signal.
@@ -818,6 +826,8 @@ func _clear_session() -> void:
     player_respawn_at.clear()
     last_attack_at.clear()
     wolf_alive = false
+    raid.begin(0)
+    healing_cooldowns.clear()
     if wolf_actor != null:
         wolf_actor.visible = false
     equipped_axes.clear()
@@ -925,6 +935,7 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
             health_snapshot_for.rpc_id(id, int(existing_id), int(player_health.get(existing_id, MAX_HEALTH)))
     health_snapshot_for.rpc(id, MAX_HEALTH)
     wolf_snapshot.rpc_id(id, wolf_position, wolf_health, wolf_alive, wolf_direction)
+    raid_state.rpc_id(id, raid.snapshot(Time.get_ticks_msec()))
     building_snapshot.rpc_id(id, placed_buildings)
 
 @rpc("authority", "call_remote", "reliable")
@@ -1143,10 +1154,157 @@ func _reset_wolf() -> void:
     wolf_sync_timer = 0.0
     wolf_direction = Vector3.ZERO
 
+func _raid_server_tick(now: int) -> void:
+    var transition: String = raid.advance(now)
+    if transition == "night_started":
+        raid_anchor = Vector3.ZERO
+        for record in placed_buildings.values():
+            if str(record.get("kind", "")) == "campfire":
+                raid_anchor = Vector3(float(record["x"]), 0, float(record["z"]))
+                break
+        _spawn_raid_wolf()
+        _broadcast_raid_state(now)
+    elif transition != "":
+        _broadcast_raid_state(now)
+    if raid.phase == "night" and not wolf_alive and wolf_respawn_at > 0 and now >= wolf_respawn_at:
+        _spawn_raid_wolf()
+    if now >= raid_next_broadcast:
+        raid_next_broadcast = now + 1000
+        _broadcast_raid_state(now)
+
+func _spawn_raid_wolf() -> void:
+    var world: Node3D = get_node("Eldoria_Forest")
+    var angle := float(raid.kills % 4) * PI * 0.5 + PI * 0.25
+    var spawn := raid_anchor + Vector3(cos(angle) * 8.5, 0, sin(angle) * 8.5)
+    _reset_wolf()
+    wolf_position = Vector3(spawn.x, world.height_at(spawn.x, spawn.z) + 0.1, spawn.z)
+    wolf_snapshot.rpc(wolf_position, wolf_health, true, Vector3.ZERO)
+
+func _broadcast_raid_state(now: int) -> void:
+    var status: Dictionary = raid.snapshot(now)
+    raid_state.rpc(status)
+    if own_id != 0:
+        raid_state(status)
+
+@rpc("authority", "call_remote", "reliable")
+func raid_state(status: Dictionary) -> void:
+    if not ["prepare", "night", "intermission"].has(str(status.get("phase", ""))):
+        return
+    var round_number := clampi(int(status.get("round", 1)), 1, 10000)
+    var kills := clampi(int(status.get("kills", 0)), 0, 4)
+    var goal := clampi(int(status.get("goal", 4)), 1, 4)
+    var remaining := clampi(int(status.get("seconds", 0)), 0, 3600)
+    if live_ui != null:
+        live_ui.set_raid_status(str(status["phase"]), round_number, kills, goal, remaining)
+    _apply_raid_lighting(str(status["phase"]))
+
+func _apply_raid_lighting(phase: String) -> void:
+    if sunlight == null or is_dedicated:
+        return
+    var night := phase == "night"
+    var desired := 0.29 if night else 0.82
+    if absf(sunlight.light_energy - desired) < 0.01:
+        return
+    sunlight.light_energy = desired
+    sunlight.light_color = Color("a4b9e1") if night else Color("ffdda8")
+    var forest: Node3D = get_node("Eldoria_Forest")
+    if forest.environment_node != null:
+        var environment: Environment = forest.environment_node.environment
+        environment.ambient_light_color = Color("849abf") if night else Color("a9bfd0")
+        environment.ambient_light_energy = 0.20 if night else 0.48
+        var sky_mat := environment.sky.sky_material as ShaderMaterial
+        if sky_mat != null:
+            sky_mat.set_shader_parameter("night_mix", 1.0 if night else 0.0)
+
+func _reward_raid_survivors() -> void:
+    # Reward only living connected players. Persist everyone's reward as one
+    # snapshot; if persistence fails, roll back every in-memory inventory.
+    var old_inventories := player_inventories.duplicate(true)
+    var old_profiles := persistent_profiles.duplicate(true)
+    var recipients: Array[int] = []
+    for player_id in players.keys():
+        var id := int(player_id)
+        if int(player_health.get(id, 0)) <= 0:
+            continue
+        var inv: Dictionary = player_inventories.get(id, _empty_inventory()).duplicate(true)
+        inv["herb"] = int(inv.get("herb", 0)) + 2
+        inv["stone"] = int(inv.get("stone", 0)) + 2
+        player_inventories[id] = inv
+        if player_identity_keys.has(id):
+            var key: String = player_identity_keys[id]
+            persistent_profiles[key]["inventory"] = inv.duplicate(true)
+        recipients.append(id)
+    if not _save_world_state():
+        player_inventories = old_inventories
+        persistent_profiles = old_profiles
+        push_warning("Raid reward not saved; refusing to acknowledge unpersisted loot.")
+        return
+    for id in recipients:
+        if id == own_id:
+            inventory_snapshot(player_inventories[id])
+            if live_ui != null:
+                live_ui.show_message("Лагерь защищён! +2 камня и +2 травы")
+        else:
+            inventory_snapshot.rpc_id(id, player_inventories[id])
+            raid_reward.rpc_id(id, 2, 2)
+
+@rpc("authority", "call_remote", "reliable")
+func raid_reward(stone: int, herb: int) -> void:
+    if live_ui != null and stone == 2 and herb == 2:
+        live_ui.show_message("Победа! +2 камня и +2 травы")
+
+func _try_heal_at_camp() -> void:
+    if own_id == 0 or not players.has(own_id):
+        return
+    if multiplayer.is_server():
+        _heal_on_server(own_id)
+    else:
+        request_camp_heal.rpc_id(1)
+
+@rpc("any_peer", "reliable")
+func request_camp_heal() -> void:
+    if multiplayer.is_server():
+        _heal_on_server(multiplayer.get_remote_sender_id())
+
+func _heal_on_server(id: int) -> bool:
+    if not multiplayer.is_server() or not players.has(id):
+        return false
+    var hp := int(player_health.get(id, 0))
+    if hp <= 0 or hp >= MAX_HEALTH or not _near_campfire(id):
+        return false
+    var now := Time.get_ticks_msec()
+    if now - int(healing_cooldowns.get(id, now - 3000)) < 3000:
+        return false
+    var old_inventory: Dictionary = player_inventories.get(id, _empty_inventory()).duplicate(true)
+    if int(old_inventory.get("herb", 0)) < 2:
+        return false
+    var inventory := old_inventory.duplicate(true)
+    inventory["herb"] = int(inventory["herb"]) - 2
+    player_inventories[id] = inventory
+    if player_identity_keys.has(id):
+        var key: String = player_identity_keys[id]
+        persistent_profiles[key]["inventory"] = inventory.duplicate(true)
+    if not _save_world_state():
+        player_inventories[id] = old_inventory
+        if player_identity_keys.has(id):
+            persistent_profiles[player_identity_keys[id]]["inventory"] = old_inventory.duplicate(true)
+        return false
+    healing_cooldowns[id] = now
+    player_health[id] = mini(MAX_HEALTH, hp + 35)
+    health_snapshot_for.rpc(id, player_health[id])
+    if id == own_id:
+        health_snapshot(player_health[id], MAX_HEALTH)
+        inventory_snapshot(inventory)
+    else:
+        health_snapshot.rpc_id(id, player_health[id], MAX_HEALTH)
+        inventory_snapshot.rpc_id(id, inventory)
+    return true
+
 func _combat_server_tick(delta: float) -> void:
     if not multiplayer.is_server() or multiplayer.multiplayer_peer is OfflineMultiplayerPeer:
         return
     var now := Time.get_ticks_msec()
+    _raid_server_tick(now)
     for id in player_respawn_at.keys():
         if now < int(player_respawn_at[id]):
             continue
@@ -1246,6 +1404,13 @@ func _attack_on_server(id: int) -> bool:
     if wolf_health == 0:
         wolf_alive = false
         wolf_respawn_at = now + 10000
+        var result: String = raid.wolf_defeated(now)
+        if result == "wolf_defeated":
+            wolf_respawn_at = now + 2700
+            _broadcast_raid_state(now)
+        elif result == "night_won":
+            _reward_raid_survivors()
+            _broadcast_raid_state(now)
     wolf_snapshot.rpc(wolf_position, wolf_health, wolf_alive, wolf_direction)
     return true
 
@@ -1997,6 +2162,8 @@ func _live_preview(kind: String) -> void:
 
 func _live_action(kind: String) -> void:
     match kind:
+        "heal":
+            _try_heal_at_camp()
         "gather":
             _try_gather()
         "jump":

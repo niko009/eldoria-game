@@ -26,6 +26,14 @@ echo "[TASK-033] KayKit equipment socket and server-authoritative visual state"
     > "$ROOT/tests/logs/task033-equipment.log" 2>&1
 grep -q 'TASK033 EQUIPMENT PASS' "$ROOT/tests/logs/task033-equipment.log"
 bash tests/run_combat_e2e.sh
+echo "[TASK-039] cooperative preparation/night defense/medic rewards"
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task039_camp_raid_e2e.gd -- --test-live-ui \
+    > "$ROOT/tests/logs/task039-camp-raid.log" 2>&1
+grep -q 'TASK039 CAMP RAID PASS' "$ROOT/tests/logs/task039-camp-raid.log"
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task039_raid_faults_e2e.gd -- --test-live-ui \
+    > "$ROOT/tests/logs/task039-raid-faults.log" 2>&1
+grep -q 'TASK039 RAID FAULTS PASS' "$ROOT/tests/logs/task039-raid-faults.log"
+bash tests/run_raid_network_e2e.sh
 echo "[TASK-030] Android modal swipe and tap"
 "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/android_modal_scroll_e2e.gd -- --test-live-ui \
     > "$ROOT/tests/logs/android-modal-scroll.log" 2>&1

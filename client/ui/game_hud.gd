@@ -36,6 +36,8 @@ var joystick: Control
 var action_buttons: Control
 var top_actions: HBoxContainer
 var selected_tool_hint: Label
+var raid_banner: Label
+var heal_button: Button
 var action_controls: Dictionary = {}
 var top_controls: Dictionary = {}
 
@@ -48,6 +50,7 @@ func _ready() -> void:
 	_create_hotbar()
 	_create_touch()
 	_create_warning()
+	_create_raid_ui()
 	if state != null:
 		state.changed.connect(refresh)
 	refresh()
@@ -216,6 +219,42 @@ func _create_warning() -> void:
 	warning_detail.visible = false
 	add_child(warning_detail)
 
+func _create_raid_ui() -> void:
+	raid_banner = Style.label("", 14, CREAM)
+	raid_banner.name = "CoopRaidBanner"
+	raid_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	raid_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	raid_banner.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	raid_banner.add_theme_stylebox_override("normal", _card(Color("17272b", 0.84), Color("d4b781", 0.48), 13, 5))
+	raid_banner.visible = false
+	add_child(raid_banner)
+	heal_button = Button.new()
+	heal_button.name = "HealAtCampfire"
+	heal_button.text = "✚ Лечиться · 2 травы"
+	heal_button.tooltip_text = "Возле костра восстановить 35 HP за 2 травы"
+	heal_button.focus_mode = Control.FOCUS_NONE
+	heal_button.add_theme_stylebox_override("normal", _card(Color("294139", 0.88), Color("9bc69e", 0.66), 12, 5))
+	heal_button.add_theme_stylebox_override("pressed", _card(Color("436650", 0.97), Color("bce4b4"), 12, 5))
+	heal_button.pressed.connect(func() -> void: action_requested.emit("heal"))
+	heal_button.visible = false
+	add_child(heal_button)
+
+func set_raid_status(phase: String, round_number: int, kills: int, goal: int, seconds: int) -> void:
+	if raid_banner == null:
+		return
+	var minutes := seconds / 60
+	var remainder := seconds % 60
+	var clock := "%02d:%02d" % [minutes, remainder]
+	match phase:
+		"prepare":
+			raid_banner.text = "ДЕНЬ %d · Подготовьте лагерь  %s" % [round_number, clock]
+		"night":
+			raid_banner.text = "НОЧНАЯ АТАКА · Волки %d/%d  %s" % [kills, goal, clock]
+		"intermission":
+			raid_banner.text = "ПЕРЕДЫШКА · %s" % clock
+	raid_banner.visible = true
+	raid_banner.add_theme_color_override("font_color", Color("ffcf91") if phase == "night" else CREAM)
+
 func _card(bg: Color, edge: Color = Color.TRANSPARENT, radius: int = 12, pad: int = 8) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
 	box.bg_color = bg
@@ -247,6 +286,7 @@ func refresh() -> void:
 		counter.text = str(state.amount(kind))
 	selected_tool_hint.text = "КАМЕННЫЙ ТОПОР" if state.selected_item == "axe" else ""
 	selected_tool_hint.visible = not selected_tool_hint.text.is_empty()
+	heal_button.visible = state.health_known and state.health > 0 and state.health < 100 and state.near_campfire and state.amount("herb") >= 2
 	touch_layer.visible = show_touch_controls
 	_layout()
 
@@ -269,6 +309,10 @@ func _layout() -> void:
 	hotbar.size = hot_size
 	selected_tool_hint.size = Vector2(hot_size.x, 19)
 	selected_tool_hint.position = Vector2(hotbar.position.x, hotbar.position.y - 23)
+	raid_banner.size = Vector2(minf(310.0, size.x * 0.48), 37)
+	raid_banner.position = Vector2((size.x - raid_banner.size.x) * 0.5, hotbar.position.y - 78)
+	heal_button.size = Vector2(172, 37)
+	heal_button.position = Vector2(inset.x, inset.y + status_h + resources_panel.size.y + 16)
 	joystick.size = Vector2(116, 116)
 	joystick.position = Vector2(inset.x + 6, size.y - inset.w - joystick.size.y + 5)
 	action_buttons.position = Vector2.ZERO

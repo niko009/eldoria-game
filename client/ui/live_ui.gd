@@ -152,6 +152,10 @@ func set_near_campfire(near: bool) -> void:
         state.near_campfire = near
         state.changed.emit()
 
+func set_raid_status(phase: String, round_number: int, kills: int, goal: int, seconds: int) -> void:
+    if hud != null:
+        hud.set_raid_status(phase, round_number, kills, goal, seconds)
+
 func set_status(message: String) -> void:
     if state != null and state.connection_status != message:
         state.connection_status = message

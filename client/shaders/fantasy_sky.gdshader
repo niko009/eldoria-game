@@ -1,5 +1,6 @@
 shader_type sky;
 render_mode disable_fog;
+uniform float night_mix : hint_range(0.0, 1.0) = 0.0;
 
 // Analytic, static sky. No texture fetches, screen buffers or volumetrics.
 void sky() {
@@ -19,5 +20,9 @@ void sky() {
     float mask = smoothstep(0.39, 0.48, cloud) * smoothstep(0.035, 0.18, height);
     vec3 cloud_color = mix(vec3(0.79, 0.83, 0.85), vec3(1.0, 0.91, 0.77), pow(sun, 3.0));
     color = mix(color, cloud_color, mask * 0.88);
+    // A cheap dusk-to-night tint; no star textures, volumetric lights or
+    // extra material passes on low-end Android renderers.
+    vec3 night = mix(vec3(0.08, 0.14, 0.26), vec3(0.015, 0.045, 0.11), pow(height, 0.45));
+    color = mix(color, night, night_mix);
     COLOR = direction.y >= 0.0 ? color : vec3(0.32, 0.42, 0.39);
 }
