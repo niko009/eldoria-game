@@ -6,6 +6,7 @@ const HudScene = preload("res://ui/GameHud.tscn")
 const InventoryScene = preload("res://ui/InventoryPanel.tscn")
 const BuildingScene = preload("res://ui/BuildingPanel.tscn")
 const CraftingScene = preload("res://ui/CraftingPanel.tscn")
+const TouchScroller = preload("res://ui/touch_scroll.gd")
 
 var state: MockGameUiState
 var hud: EldoriaGameHud
@@ -21,6 +22,7 @@ var notice: Label
 var notice_timer: Timer
 var size_index := 0
 var panel_tween: Tween
+var touch_scroll = TouchScroller.new()
 const SIZES := [Vector2i(1280, 720), Vector2i(1920, 1080), Vector2i(800, 360)]
 
 func _ready() -> void:
@@ -93,6 +95,8 @@ func _ready() -> void:
 	content_scroll = ScrollContainer.new()
 	content_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	content_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	content_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	content_scroll.scroll_deadzone = 8
 	column.add_child(content_scroll)
 	column.add_child(Style.label("PREVIEW · действия не изменяют игровой мир", 12, Style.MUTED))
 
@@ -121,10 +125,12 @@ func _open(kind: String) -> void:
 		_close()
 		return
 	active_panel = kind
+	touch_scroll.reset()
 	overlay.visible = true
 	hud.touch_layer.visible = false
 	for child in content_scroll.get_children():
 		child.queue_free()
+	content_scroll.scroll_vertical = 0
 	var panel: Control
 	match kind:
 		"inventory": panel = InventoryScene.instantiate()
@@ -148,6 +154,7 @@ func _close() -> void:
 	if active_panel.is_empty():
 		return
 	active_panel = ""
+	touch_scroll.reset()
 	state.request_close.emit()
 	_animate_panel(false)
 
@@ -212,6 +219,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		_close()
 	elif event.keycode >= KEY_1 and event.keycode <= KEY_6 and active_panel.is_empty():
 		state.select_item(EldoriaHotbar.SLOTS[event.keycode - KEY_1])
+
+func _input(event: InputEvent) -> void:
+	touch_scroll.handle(event, content_scroll, not active_panel.is_empty(), get_viewport())
 
 func _layout() -> void:
 	if preview_tools == null or window_panel == null:

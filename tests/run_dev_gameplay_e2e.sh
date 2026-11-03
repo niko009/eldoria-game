@@ -22,6 +22,10 @@ bash tests/run_resource_e2e.sh
 bash tests/run_building_e2e.sh
 bash tests/run_craft_network_e2e.sh
 bash tests/run_combat_e2e.sh
+echo "[TASK-030] Android modal swipe and tap"
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/android_modal_scroll_e2e.gd -- --test-live-ui \
+    > "$ROOT/tests/logs/android-modal-scroll.log" 2>&1
+grep -q 'ANDROID_MODAL_SCROLL_E2E PASS' "$ROOT/tests/logs/android-modal-scroll.log"
 bash tests/run_telemetry_e2e.sh
 # Stone axe crafting persists across real Godot host restarts.
 TMP_AXE=$(mktemp -d)

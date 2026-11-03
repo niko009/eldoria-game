@@ -15,6 +15,7 @@ const HudScene = preload("res://ui/GameHud.tscn")
 const InventoryScene = preload("res://ui/InventoryPanel.tscn")
 const BuildingScene = preload("res://ui/BuildingPanel.tscn")
 const CraftingScene = preload("res://ui/CraftingPanel.tscn")
+const TouchScroller = preload("res://ui/touch_scroll.gd")
 
 var state: MockGameUiState
 var hud: EldoriaGameHud
@@ -28,6 +29,7 @@ var current_panel: Control
 var notice: Label
 var notice_timer: Timer
 var panel_tween: Tween
+var touch_scroll = TouchScroller.new()
 
 func _ready() -> void:
     mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -87,6 +89,8 @@ func _ready() -> void:
         tabs.add_child(btn)
     contents = ScrollContainer.new()
     contents.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    contents.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+    contents.scroll_deadzone = 8
     contents.size_flags_vertical = Control.SIZE_EXPAND_FILL
     col.add_child(contents)
     notice = Style.label("", 14)
@@ -168,6 +172,7 @@ func _open(kind: String) -> void:
         _close()
         return
     active_panel = kind
+    touch_scroll.reset()
     # Opening an overlay must never leave a touch movement vector latched.
     hud.joystick.dragging = false
     hud.joystick._set_direction(hud.joystick.size * 0.5)
@@ -177,6 +182,7 @@ func _open(kind: String) -> void:
     for child in contents.get_children():
         contents.remove_child(child)
         child.queue_free()
+    contents.scroll_vertical = 0
     if kind == "settings":
         current_panel = _settings_panel()
         contents.add_child(current_panel)
@@ -248,6 +254,7 @@ func _close() -> void:
     if active_panel.is_empty():
         return
     active_panel = ""
+    touch_scroll.reset()
     state.request_close.emit()
     _animate(false)
 
@@ -275,6 +282,11 @@ func _unhandled_key_input(event: InputEvent) -> void:
             get_viewport().set_input_as_handled()
         elif event.keycode >= KEY_1 and event.keycode <= KEY_6 and active_panel.is_empty():
             state.select_item(EldoriaHotbar.SLOTS[event.keycode - KEY_1])
+
+func _input(event: InputEvent) -> void:
+    # Always receive ScreenDrag even when a settings/inventory Button has
+    # mouse_filter=STOP; the scroll helper only handles an open modal.
+    touch_scroll.handle(event, contents, not active_panel.is_empty(), get_viewport())
 
 func _layout() -> void:
     if dialog == null:
