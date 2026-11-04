@@ -56,8 +56,8 @@ func _run() -> void:
 		if hud.resource_counts["wood"].text != "14" or hud.health_detail.text != "73/100":
 			_fail("state not reflected in compact HUD")
 			return
-		if hud.action_controls.size() != 6:
-			_fail("compact cluster should have spell selection and five regular actions")
+		if hud.action_controls.size() != 7:
+			_fail("compact cluster should have target selection, spell and five regular actions")
 			return
 		print("TASK032 LAYOUT PASS ", display, " logical_viewport=", hud.size)
 
@@ -78,9 +78,15 @@ func _run() -> void:
 	hud._touch_action("jump")
 	hud._touch_action("sprint")
 	hud._touch_action("ability")
-	if calls != ["attack", "gather", "jump", "sprint", "ability"]:
+	hud._touch_action("target")
+	if calls != ["attack", "gather", "jump", "sprint", "ability", "target"]:
 		_fail("mobile action bindings changed " + str(calls))
 		return
+	hud.set_hero_class(2)
+	if hud.action_controls["target"].get_global_rect().intersects(hud.action_controls["spell"].get_global_rect()):
+		_fail("mage target button overlaps spell selector")
+		return
+	hud.set_hero_class(0)
 	ui._open("settings")
 	await process_frame
 	if not ui.overlay.visible or ui.active_panel != "settings":

@@ -281,7 +281,7 @@ func _create_touch() -> void:
 	action_buttons.name = "ActionCluster"
 	action_buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	touch_layer.add_child(action_buttons)
-	for entry in [["attack", "УДАР", 76], ["gather", "СБОР", 63], ["jump", "ПРЫЖОК", 63], ["sprint", "БЕГ", 63], ["ability", "ЗОВ", 63], ["spell", "ОГОНЬ", 62]]:
+	for entry in [["attack", "УДАР", 76], ["gather", "СБОР", 63], ["jump", "ПРЫЖОК", 63], ["sprint", "БЕГ", 63], ["ability", "ЗОВ", 63], ["spell", "ОГОНЬ", 62], ["target", "ЦЕЛЬ", 62]]:
 		var id: String = entry[0]
 		var diameter: int = entry[2]
 		var button := Button.new()
@@ -289,7 +289,7 @@ func _create_touch() -> void:
 		button.custom_minimum_size = Vector2(diameter, diameter)
 		button.size = button.custom_minimum_size
 		button.focus_mode = Control.FOCUS_NONE
-		button.tooltip_text = entry[1]
+		button.tooltip_text = "Выбрать следующего врага; нажмите на моба для точного выбора" if id == "target" else entry[1]
 		button.text = ""
 		button.add_theme_stylebox_override("normal", _card(Color("1b2b2d", 0.80) if id != "attack" else Color("9c7653", 0.91), Color("e5bd77", 0.57), diameter / 2, 0))
 		button.add_theme_stylebox_override("pressed", _card(Color("af8c61", 0.96), GOLD, diameter / 2, 0))
@@ -354,6 +354,7 @@ func set_hero_class(choice: int) -> void:
 	if action_controls.has("attack"):
 		action_controls["attack"].get_node("Caption").text = "МАГИЯ" if choice == 2 else "УДАР"
 	set_shield_mode(false)
+	_layout()
 
 func _create_warning() -> void:
 	warning_detail = Style.label("", 14, Color("ffe0af"))
@@ -508,10 +509,12 @@ func _layout() -> void:
 		"sprint": Vector2(right - 68, lower - 79),
 		"ability": Vector2(right - 144, lower - 154),
 		"spell": Vector2(right - 145, lower - 226),
+		"target": Vector2(right - 145, lower - 226),
 	}
 	for id in positions:
 		var button: Button = action_controls[id]
-		button.position = positions[id]
+		# Mage spell and target cycling share a row but never overlap.
+		button.position = positions[id] + (Vector2(-71, 0) if id == "target" and action_controls["spell"].visible else Vector2.ZERO)
 		button.size = button.custom_minimum_size
 	warning_detail.size = Vector2(minf(400, size.x * 0.55), 48)
 	warning_detail.position = Vector2(inset.x, inset.y + status_h + resources_panel.size.y + 15)

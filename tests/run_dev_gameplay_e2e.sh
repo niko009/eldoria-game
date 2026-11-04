@@ -146,6 +146,9 @@ grep -q 'TASK051 SHIELD TAUNT PASS' "$ROOT/tests/logs/task051-shield-e2e.log"
 bash tests/run_task051_shield_network_e2e.sh
 echo "PASS: TASK-050..051 server-authoritative teamplay, XP benefits and Android skill UI."
 echo "[TASK-066] hunt loot, shared quest, leather armor and rare deer"
+echo "[TASK-068] target lock, touch/cycle selection and server-authoritative focus fire"
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task068_target_lock_e2e.gd -- --test-live-ui > "$ROOT/tests/logs/task068-target-lock.log" 2>&1
+grep -q 'TASK068 TARGET LOCK PASS' "$ROOT/tests/logs/task068-target-lock.log"
 "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task067_food_alpha_e2e.gd -- --test-live-ui > "$ROOT/tests/logs/task067-food-alpha.log" 2>&1
 grep -q 'TASK067 FOOD ALPHA PASS' "$ROOT/tests/logs/task067-food-alpha.log"
 "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task066_hunt_coop_e2e.gd -- --test-live-ui > "$ROOT/tests/logs/task066-hunt-coop.log" 2>&1

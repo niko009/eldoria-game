@@ -61,6 +61,9 @@ var pack_sync_timer := 0.0
 var passive_creatures: Dictionary = {}
 var passive_actors: Dictionary = {}
 var passive_sync_timer := 0.0
+var selected_target_id := 0 # Local-only lock-on; server always validates incoming target IDs.
+var selected_target_marker: Node3D
+var target_status_timer := 0.0
 var practice_points: Dictionary = {}
 var shared_hunt_kills := 0
 const SHARED_HUNT_GOAL := 5
@@ -1012,6 +1015,10 @@ func _clear_session() -> void:
     equipped_axes.clear()
     equipped_combat.clear()
     passive_creatures.clear()
+    selected_target_id = 0
+    if is_instance_valid(selected_target_marker):
+        selected_target_marker.queue_free()
+    selected_target_marker = null
     practice_points.clear()
     alpha_available_at = 0
     alpha_last_bite = 0
@@ -1331,6 +1338,11 @@ func _physics_process(delta: float) -> void:
             last_sent_position = at
 
 func _process(delta: float) -> void:
+    if selected_target_id != 0:
+        target_status_timer += delta
+        if target_status_timer >= 0.1:
+            target_status_timer = 0.0
+            _refresh_selected_target()
     # UI-only proximity hints don't need full-frame broadphase queries and
     # legacy label formatting. Craft/build requests still validate immediately
     # on the authoritative server, so this never changes gameplay rules.
@@ -2187,6 +2199,10 @@ func player_hurt_visual(id: int) -> void:
 func _try_attack() -> void:
     if own_id == 0 or not players.has(own_id) or int(player_health.get(own_id, MAX_HEALTH)) <= 0:
         return
+    if selected_target_id != 0:
+        var target := _combat_target_data(selected_target_id)
+        if not target.is_empty():
+            players[own_id].face_interaction(target["at"])
     if int(player_choices.get(own_id,-1)) == HERO_CLASSES.KNIGHT and (
         (str(equipped_combat.get(own_id,"unarmed")) == "shield") if multiplayer.is_server() else
         (live_ui != null and live_ui.combat_equipment == "shield")):
@@ -2200,30 +2216,177 @@ func _try_attack() -> void:
             (str(equipped_combat.get(own_id,"unarmed")) == "unarmed") if multiplayer.is_server() else
             (live_ui != null and live_ui.combat_equipment == "unarmed")):
         if multiplayer.is_server():
-            _mage_attack_on_server(own_id,aim,mage_spell_index)
+            _mage_attack_on_server(own_id,aim,mage_spell_index,selected_target_id)
         else:
-            request_mage_attack.rpc_id(1,aim,mage_spell_index)
+            request_mage_attack.rpc_id(1,aim,mage_spell_index,selected_target_id)
         return
     if multiplayer.is_server():
-        _attack_on_server(own_id, aim)
+        _attack_on_server(own_id, aim,selected_target_id)
     else:
-        request_attack.rpc_id(1, aim)
+        request_attack.rpc_id(1, aim,selected_target_id)
 
 func _bow_aim_direction() -> Vector3:
     # Camera yaw and pitch are input-only; origin and hit detection are
     # reconstructed from authoritative player/world positions on the server.
     return Vector3(0.0, sin(input_driver.pitch), -cos(input_driver.pitch)).rotated(Vector3.UP, input_driver.yaw).normalized()
 
-@rpc("any_peer", "reliable")
-func request_attack(aim: Vector3) -> void:
-    if multiplayer.is_server():
-        _attack_on_server(multiplayer.get_remote_sender_id(), aim)
+# Target IDs share the existing hit codes: -1 = lone wolf, 1..2 = raid
+# wolves, 101+ = wildlife/training targets. The client never supplies HP or
+# coordinates for a locked hit; those come from authoritative server state.
+func _combat_target_data(target_id: int) -> Dictionary:
+    if target_id == 0:
+        return {}
+    var at := Vector3.ZERO
+    var hp := 0
+    var maximum := 60
+    var title := "Волк"
+    var height := 0.65
+    var radius := 0.8
+    var alive := false
+    if target_id == -1:
+        if multiplayer.is_server():
+            at = wolf_position
+            hp = wolf_health
+            alive = wolf_alive
+        elif is_instance_valid(wolf_actor):
+            at = wolf_actor.position
+            hp = int(wolf_actor.visual_hp)
+            alive = wolf_actor.visible and not wolf_actor.down
+    elif target_id >= 1 and target_id <= 2:
+        title = "Волк стаи"
+        if multiplayer.is_server() and pack_wolves.has(target_id):
+            var wolf: Dictionary = pack_wolves[target_id]
+            at = wolf["position"]
+            hp = int(wolf["hp"])
+            alive = bool(wolf["alive"])
+        elif pack_actors.has(target_id) and is_instance_valid(pack_actors[target_id]):
+            var wolf_actor_node: Node3D = pack_actors[target_id]
+            at = wolf_actor_node.position
+            hp = int(wolf_actor_node.visual_hp)
+            alive = wolf_actor_node.visible and not wolf_actor_node.down
+    elif target_id > 100 and target_id <= 100+PASSIVE_SCRIPT.SPAWNS.size():
+        var creature_id := target_id-100
+        var species := ""
+        if multiplayer.is_server() and passive_creatures.has(creature_id):
+            var mob: Dictionary = passive_creatures[creature_id]
+            species = str(mob["species"])
+            at = mob["position"]
+            hp = int(mob["hp"])
+            maximum = int(mob["max_hp"])
+            alive = bool(mob["alive"])
+        elif passive_actors.has(creature_id) and is_instance_valid(passive_actors[creature_id]):
+            var node: Node3D = passive_actors[creature_id]
+            species = "alpha_wolf" if creature_id == ALPHA_WOLF_ID else str(node.species)
+            at = node.position
+            alive = node.visible and (not node.down if species == "alpha_wolf" else true)
+            maximum = 180 if species == "alpha_wolf" else 95 if species == "rare_deer" else 100 if species == "dummy" else 55 if species == "deer" else 24
+            hp = int(node.visual_hp) if species == "alpha_wolf" else roundi(node.life*maximum)
+        title = {"rabbit":"Кролик","deer":"Олень","rare_deer":"Редкий олень","alpha_wolf":"Вожак волков","dummy":"Манекен"}.get(species,"Существо")
+        height = 1.2 if species == "alpha_wolf" else 0.8 if species in ["deer","rare_deer","dummy"] else 0.35
+        radius = 0.95 if species == "alpha_wolf" else 0.75 if species in ["deer","rare_deer"] else 0.55 if species == "dummy" else 0.4
+    if not alive or hp <= 0:
+        return {}
+    return {"at":at,"center":at+Vector3.UP*height,"radius":radius,"hp":hp,"max":maximum,"title":title}
 
-func _attack_on_server(id: int, aim: Vector3 = Vector3.ZERO) -> bool:
+func _select_combat_target(target_id: int) -> void:
+    if target_id != 0 and _combat_target_data(target_id).is_empty():
+        return
+    selected_target_id = target_id
+    if target_id == 0:
+        if is_instance_valid(selected_target_marker):
+            selected_target_marker.visible = false
+        return
+    if not is_instance_valid(selected_target_marker):
+        selected_target_marker = Node3D.new()
+        selected_target_marker.name = "SelectedEnemyMarker"
+        add_child(selected_target_marker)
+        var circle := MeshInstance3D.new()
+        circle.name = "TargetRing"
+        var torus := TorusMesh.new()
+        torus.inner_radius = 0.78
+        torus.outer_radius = 0.9
+        circle.mesh = torus
+        var marker_material := StandardMaterial3D.new()
+        marker_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+        marker_material.albedo_color = Color("ffd568")
+        marker_material.emission_enabled = true
+        marker_material.emission = Color("ffae36")
+        circle.material_override = marker_material
+        selected_target_marker.add_child(circle)
+        var label := Label3D.new()
+        label.name = "EnemyName"
+        label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+        label.font_size = 34
+        label.modulate = Color("ffe2a1")
+        label.outline_size = 6
+        label.outline_modulate = Color("251915")
+        label.position.y = 2.0
+        selected_target_marker.add_child(label)
+    _refresh_selected_target()
+
+func _refresh_selected_target() -> void:
+    if selected_target_id == 0 or is_dedicated:
+        return
+    var target := _combat_target_data(selected_target_id)
+    if target.is_empty() or own_id == 0 or not players.has(own_id) or players[own_id].position.distance_to(target["at"]) > 35.0:
+        _select_combat_target(0)
+        return
+    selected_target_marker.visible = true
+    selected_target_marker.position = target["at"]
+    selected_target_marker.get_node("EnemyName").text = "%s · %d/%d HP" % [target["title"],target["hp"],target["max"]]
+
+func _visible_target_candidates() -> Array[int]:
+    var candidates: Array[int] = []
+    if own_id == 0 or not players.has(own_id):
+        return candidates
+    var available: Array[int] = [-1,1,2]
+    for creature_id in range(1,PASSIVE_SCRIPT.SPAWNS.size()+1):
+        available.append(100+creature_id)
+    for target_id in available:
+        var mob := _combat_target_data(target_id)
+        if mob.is_empty():
+            continue
+        if players[own_id].position.distance_to(mob["at"]) > 22.0 or camera.is_position_behind(mob["center"]):
+            continue
+        var screen := camera.unproject_position(mob["center"])
+        if not Rect2(Vector2.ZERO,get_viewport().get_visible_rect().size).has_point(screen):
+            continue
+        candidates.append(target_id)
+    return candidates
+
+func _cycle_combat_target() -> void:
+    var candidates := _visible_target_candidates()
+    candidates.sort_custom(func(a: int,b: int) -> bool:
+        return players[own_id].position.distance_squared_to(_combat_target_data(a)["at"]) < players[own_id].position.distance_squared_to(_combat_target_data(b)["at"]))
+    if candidates.is_empty():
+        _select_combat_target(0)
+        return
+    var index := candidates.find(selected_target_id)
+    _select_combat_target(candidates[index+1] if index+1 < candidates.size() else 0)
+
+func _select_target_at_screen(screen: Vector2, clear_on_miss: bool = false) -> void:
+    var closest := 85.0
+    var picked := 0
+    for target_id in _visible_target_candidates():
+        var target := _combat_target_data(target_id)
+        var distance := camera.unproject_position(target["center"]).distance_to(screen)
+        if distance < closest:
+            closest = distance
+            picked = target_id
+    if picked == 0 and not clear_on_miss:
+        return # Touch camera gestures must not accidentally drop a locked enemy.
+    _select_combat_target(0 if picked == selected_target_id else picked)
+
+@rpc("any_peer", "reliable")
+func request_attack(aim: Vector3, target_id: int = 0) -> void:
+    if multiplayer.is_server():
+        _attack_on_server(multiplayer.get_remote_sender_id(), aim,target_id)
+
+func _attack_on_server(id: int, aim: Vector3 = Vector3.ZERO, target_id: int = 0) -> bool:
     if not multiplayer.is_server() or not players.has(id) or int(player_health.get(id, 0)) <= 0:
         return false
     if str(equipped_combat.get(id,"unarmed")) == "bow":
-        return _bow_attack_on_server(id, aim)
+        return _bow_attack_on_server(id, aim,-1,target_id)
     if not wolf_alive and pack_wolves.is_empty() and passive_creatures.is_empty():
         _attack_feedback(id,"Нет целей поблизости")
         return false
@@ -2242,12 +2405,26 @@ func _attack_on_server(id: int, aim: Vector3 = Vector3.ZERO) -> bool:
         int(player_skills.get(id,{}).get("spear",0))) if weapon == "spear" else 20
     var chosen := 0
     var nearest := range_sq
-    if wolf_alive and absf(actor.y-wolf_position.y) <= 3.0:
+    if target_id != 0:
+        var locked := _combat_target_data(target_id)
+        if locked.is_empty():
+            _attack_feedback(id,"Выбранная цель недоступна")
+            return false
+        var at: Vector3 = locked["at"]
+        var dist_sq := Vector2(actor.x-at.x,actor.z-at.z).length_squared()
+        var from := actor+Vector3.UP*0.8
+        var destination: Vector3 = locked["center"]
+        var world: Node3D = get_node("Eldoria_Forest")
+        if dist_sq > range_sq or absf(actor.y-at.y) > 3.0 or world.arrow_block_fraction(from,destination) < 0.98:
+            _attack_feedback(id,"Цель слишком далеко или за препятствием")
+            return false
+        chosen = target_id
+    elif wolf_alive and absf(actor.y-wolf_position.y) <= 3.0:
         var distance_sq := Vector2(actor.x-wolf_position.x, actor.z-wolf_position.z).length_squared()
         if distance_sq <= nearest and _in_attack_arc(actor,wolf_position,facing):
             nearest = distance_sq
             chosen = -1
-    for pack_id in pack_wolves:
+    for pack_id in pack_wolves if target_id == 0 else []:
         var enemy: Dictionary = pack_wolves[pack_id]
         if not enemy["alive"]:
             continue
@@ -2256,7 +2433,7 @@ func _attack_on_server(id: int, aim: Vector3 = Vector3.ZERO) -> bool:
         if absf(actor.y-at.y) <= 3.0 and distance_sq < nearest and _in_attack_arc(actor,at,facing):
             nearest = distance_sq
             chosen = int(pack_id)
-    for creature_id in passive_creatures:
+    for creature_id in passive_creatures if target_id == 0 else []:
         var animal: Dictionary = passive_creatures[creature_id]
         if not bool(animal["alive"]):
             continue
@@ -2405,26 +2582,40 @@ func attack_feedback(message: String) -> void:
 # Aim direction comes from the player, but all geometry, targets, ammunition,
 # cooldown and damage are resolved on the authoritative server.
 @rpc("any_peer", "reliable")
-func request_mage_attack(aim: Vector3, spell: int) -> void:
+func request_mage_attack(aim: Vector3, spell: int, target_id: int = 0) -> void:
     if multiplayer.is_server():
-        _mage_attack_on_server(multiplayer.get_remote_sender_id(),aim,spell)
+        _mage_attack_on_server(multiplayer.get_remote_sender_id(),aim,spell,target_id)
 
-func _mage_attack_on_server(id: int, aim: Vector3, spell: int) -> bool:
+func _mage_attack_on_server(id: int, aim: Vector3, spell: int, target_id: int = 0) -> bool:
     if not multiplayer.is_server() or int(player_choices.get(id,-1)) != HERO_CLASSES.MAGE:
         return false
     if spell < 0 or spell >= MAGE_SPELLS.size():
         return false
     if str(equipped_combat.get(id,"unarmed")) != "unarmed":
         return false
-    return _bow_attack_on_server(id,aim,spell)
+    return _bow_attack_on_server(id,aim,spell,target_id)
 
-func _bow_attack_on_server(id: int, aim: Vector3, spell: int = -1) -> bool:
+func _bow_attack_on_server(id: int, aim: Vector3, spell: int = -1, target_id: int = 0) -> bool:
     if not multiplayer.is_server() or not players.has(id) or int(player_health.get(id,0)) <= 0:
         return false
     if spell < 0 and (str(equipped_combat.get(id,"unarmed")) != "bow" or int(player_inventories.get(id,{}).get("bow",0)) < 1):
         return false
     if not aim.is_finite() or absf(aim.length()-1.0) > 0.05 or aim.y < -0.96 or aim.y > 0.80:
         return false
+    var locked := {}
+    if target_id != 0:
+        locked = _combat_target_data(target_id)
+        if locked.is_empty():
+            _attack_feedback(id,"Выбранная цель недоступна")
+            return false
+        var start: Vector3 = players[id].position+Vector3.UP*0.8
+        var destination: Vector3 = locked["center"]
+        if start.distance_to(destination) > 12.0+float(locked["radius"]):
+            _attack_feedback(id,"Цель вне дальности (12 м)")
+            return false
+        aim = (destination-start).normalized()
+        if aim.y < -0.96 or aim.y > 0.80:
+            return false
     var hit_damage := COMBAT_PROGRESSION.weapon_damage("bow",
         int(player_skills.get(id,{}).get("archery",0)))
     if spell >= 0:
@@ -2464,12 +2655,17 @@ func _bow_attack_on_server(id: int, aim: Vector3, spell: int = -1) -> bool:
     var world: Node3D = get_node("Eldoria_Forest")
     var nearest: float = world.arrow_block_fraction(origin,end) * 12.0
     var struck := 0
-    if wolf_alive:
+    if target_id != 0:
+        var hit_distance := _ray_wolf_hit_distance(origin,aim,locked["center"],float(locked["radius"]))
+        if hit_distance < nearest:
+            nearest = hit_distance
+            struck = target_id
+    elif wolf_alive:
         var distance := _ray_wolf_hit_distance(origin,aim,wolf_position+Vector3.UP*0.65)
         if distance < nearest:
             nearest = distance
             struck = -1
-    for pack_id in pack_wolves:
+    for pack_id in pack_wolves if target_id == 0 else []:
         var wolf: Dictionary = pack_wolves[pack_id]
         if not bool(wolf["alive"]):
             continue
@@ -2477,7 +2673,7 @@ func _bow_attack_on_server(id: int, aim: Vector3, spell: int = -1) -> bool:
         if distance < nearest:
             nearest = distance
             struck = int(pack_id)
-    for creature_id in passive_creatures:
+    for creature_id in passive_creatures if target_id == 0 else []:
         var animal: Dictionary = passive_creatures[creature_id]
         if not bool(animal["alive"]):
             continue
@@ -2707,6 +2903,8 @@ func wolf_attack_visual(wolf_id: int) -> void:
 func _combat_ui_action(kind: String) -> void:
     if kind == "attack":
         _try_attack()
+    elif kind == "target":
+        _cycle_combat_target()
     elif kind == "ability":
         _try_hero_ability()
     elif kind == "spell":
@@ -3800,6 +3998,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
         _toggle_build_preview()
     elif event.keycode == KEY_J:
         _try_attack()
+    elif event.keycode == KEY_TAB:
+        _cycle_combat_target()
+        get_viewport().set_input_as_handled()
     elif event.keycode == KEY_Q:
         _try_hero_ability()
     elif event.keycode == KEY_G:
@@ -3808,6 +4009,17 @@ func _unhandled_key_input(event: InputEvent) -> void:
         _try_repair_camp()
 
 func _unhandled_input(event: InputEvent) -> void:
+    if is_dedicated or (live_ui != null and not live_ui.active_panel.is_empty()):
+        return
+    if event is InputEventScreenTouch and event.pressed:
+        _select_target_at_screen(event.position)
+        if selected_target_id != 0:
+            get_viewport().set_input_as_handled()
+        return
+    if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
+        _select_target_at_screen(event.position,true)
+        get_viewport().set_input_as_handled()
+        return
     if event is InputEventMouseButton and event.pressed and not is_dedicated and (
             live_ui == null or live_ui.active_panel.is_empty()):
         if event.button_index == MOUSE_BUTTON_WHEEL_UP:
