@@ -27,6 +27,8 @@
 
 ## Проверки
 
+**Результат 4 ноября 2026:** полный набор tests/run_dev_gameplay_e2e.sh завершился с **exit 0 / PASS**. Подтверждены обе новые проверки (TASK057 ANIMATIONS PASS, TASK058 WOLF REACTION PASS), OpenGL, сетевые сценарии с двумя клиентами, Android UI, сохранения, бой и предыдущие TASK-011–056. Это автоматизированный тест, а не проверка на реальном Android.
+
 - `client/tests/task057_animation_action_e2e.gd`: все 3 модели × 4 оружия, loop_mode, длительность, завершение анимаций, щит, класс-способности, damage и отклонённый рывок.
 - `client/tests/task058_wolf_reaction_e2e.gd`: подтверждённый сервером волчий укус, cooldown, flash только на уменьшение HP, 2 одинаковых снапшота, неверный ID, пакетный волк, завершение tween.
 - `tests/run_dev_gameplay_e2e.sh`: обе задачи включены в общий набор, плюс старый реальный WebSocket и OpenGL тесты из TASK-011–056.
