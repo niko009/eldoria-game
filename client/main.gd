@@ -193,6 +193,8 @@ var client_jump_start_msec := 0
 var jump_request_msec := 0
 var server_jump_times := {}
 var last_remote_ticks := {}
+var next_footstep_at: Dictionary = {}
+var footstep_variant: Dictionary = {}
 var camera: Camera3D
 var resource_target_marker: Node3D
 var selected_resource_id := -1
@@ -959,10 +961,14 @@ func _remove_actor(id: int) -> void:
     training_last_hit.erase(id)
     last_gather_at.erase(id)
     last_remote_ticks.erase(id)
+    next_footstep_at.erase(id)
+    footstep_variant.erase(id)
     server_jump_times.erase(id)
 
 func _clear_session() -> void:
     own_id = 0
+    next_footstep_at.clear()
+    footstep_variant.clear()
     player_health.clear()
     player_respawn_at.clear()
     last_attack_at.clear()
@@ -1260,6 +1266,7 @@ func _physics_process(delta: float) -> void:
             after.y += JUMP_MOTION.elevation(elapsed)
     players[own_id].position = after
     players[own_id].set_motion((after-before)/maxf(delta,0.001),fast)
+    _play_movement_audio(own_id,after-before,fast)
     var focus: Vector3 = players[own_id].position + Vector3(0, 1.6, 0)
     var zoom: float = input_driver.camera_distance
     var offset := Vector3(0, -sin(input_driver.pitch) * zoom, cos(input_driver.pitch) * zoom)
@@ -1370,8 +1377,22 @@ func _note_remote_motion(id: int, before: Vector3, after: Vector3) -> void:
     last_remote_ticks[id] = now
     var elapsed := maxf(0.02,float(now-prev)/1000.0)
     players[id].set_motion((after-before)/elapsed)
+    _play_movement_audio(id,after-before,false)
     if players[id].airborne and int(Time.get_ticks_msec()-int(players[id].get_meta("jump_start_msec",0))) > int(JUMP_MOTION.DURATION*1000.0):
         players[id].finish_jump()
+
+func _play_movement_audio(id: int, delta_position: Vector3, running: bool) -> void:
+    if is_dedicated or harvest_visuals == null or not players.has(id) or players[id].airborne:
+        return
+    if Vector2(delta_position.x,delta_position.z).length_squared() < 0.0009:
+        return
+    var now := Time.get_ticks_msec()
+    if now < int(next_footstep_at.get(id,0)):
+        return
+    var side := int(footstep_variant.get(id,0))
+    if harvest_visuals.play_sound("step_a" if side % 2 == 0 else "step_b",players[id].position):
+        footstep_variant[id] = side+1
+        next_footstep_at[id] = now + (320 if running else 460)
 
 # TASK-025: one server-owned enemy and non-persistent session health.
 # Client RPCs carry no damage or target coordinates. Distance, cooldown,
@@ -1447,6 +1468,8 @@ func pack_wolf_snapshot(pack_id: int, at: Vector3, hp: int, alive: bool, directi
         add_child(actor)
         pack_actors[pack_id] = actor
     if pack_actors.has(pack_id):
+        if not alive and pack_actors[pack_id].initialized and not pack_actors[pack_id].down and harvest_visuals != null:
+            harvest_visuals.play_sound("wolf_death",at)
         pack_actors[pack_id].update_state(at, clampi(hp, 0, WOLF_MAX_HEALTH), alive, direction)
 
 @rpc("authority", "call_remote", "reliable")
@@ -2093,6 +2116,10 @@ func combat_impact(at: Vector3, damage: int, kind: String) -> void:
         return
     if harvest_visuals != null:
         harvest_visuals.play_combat_impact(kind,at,damage)
+        if kind in ["wolf","wildlife"] and damage > 0:
+            harvest_visuals.play_sound("wolf_hit",at)
+        elif kind == "obstacle":
+            harvest_visuals.play_sound("obstacle_hit",at)
 
 @rpc("authority","call_remote","reliable")
 func attack_feedback(message: String) -> void:
@@ -2232,6 +2259,8 @@ func bow_shot_visual(start: Vector3, target: Vector3) -> void:
     var direction := target-start
     if direction.length() < 0.01:
         return
+    if harvest_visuals != null:
+        harvest_visuals.play_sound("bow",start)
     var tracer := MeshInstance3D.new()
     tracer.name = "ArrowTracer"
     var mesh := CylinderMesh.new()
@@ -2249,6 +2278,14 @@ func bow_shot_visual(start: Vector3, target: Vector3) -> void:
 func _play_attack(id: int) -> void:
     if players.has(id):
         players[id].melee_attack()
+        if harvest_visuals != null and not is_dedicated:
+            var equipment: String = str(players[id].combat_item)
+            if equipment == "spear":
+                harvest_visuals.play_sound("spear_swing",players[id].position)
+            elif equipment == "shield":
+                harvest_visuals.play_sound("shield_hit",players[id].position)
+            elif equipment == "unarmed":
+                harvest_visuals.play_sound("punch",players[id].position)
 
 @rpc("authority", "call_remote", "reliable")
 func health_snapshot(hp: int, maximum: int) -> void:
@@ -2270,6 +2307,8 @@ func wolf_snapshot(at: Vector3, hp: int, alive: bool, direction: Vector3) -> voi
     wolf_alive = alive
     wolf_direction = direction
     if wolf_actor != null:
+        if not alive and wolf_actor.initialized and not wolf_actor.down and harvest_visuals != null:
+            harvest_visuals.play_sound("wolf_death",at)
         wolf_actor.update_state(at, wolf_health, wolf_alive, direction)
 
 @rpc("authority","call_remote","unreliable")
@@ -2279,6 +2318,8 @@ func wolf_attack_visual(wolf_id: int) -> void:
     var actor: Node3D = wolf_actor if wolf_id == 0 else pack_actors.get(wolf_id)
     if actor != null and is_instance_valid(actor):
         actor.play_bite()
+        if harvest_visuals != null:
+            harvest_visuals.play_sound("wolf_bite",actor.position)
 
 func _combat_ui_action(kind: String) -> void:
     if kind == "attack":
@@ -2387,6 +2428,7 @@ func hero_ability_visual(id: int, kind: String, target_id: int = 0) -> void:
             if kind == "heal" and players.has(target_id):
                 position = players[target_id].position
             harvest_visuals.play_ability_effect(kind,position)
+            harvest_visuals.play_sound(kind,position)
 
 func _send_mana_snapshot(id: int) -> void:
     if id == own_id:
@@ -2484,6 +2526,7 @@ func shield_taunt_visual(id: int, duration_ms: int) -> void:
     # Joining mid-taunt receives the ongoing marker, not a fake new cast burst.
     if duration_ms >= SHIELD_TAUNT_DURATION_MS-150 and harvest_visuals != null:
         harvest_visuals.play_ability_effect("taunt",actor.position)
+        harvest_visuals.play_sound("taunt",actor.position)
     var marker: Label3D = actor.get_node_or_null("TauntIndicator")
     if marker == null:
         marker = Label3D.new()

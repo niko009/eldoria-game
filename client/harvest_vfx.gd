@@ -12,6 +12,28 @@ const WOOD_SFX := preload("res://assets/sfx/wood_chop.wav")
 const STONE_SFX := preload("res://assets/sfx/stone_hit.wav")
 const HERB_SFX := preload("res://assets/sfx/herb_rustle.wav")
 const BUILD_SFX := preload("res://assets/sfx/build_place.wav")
+const SOUND_CLIPS := {
+    "step_a": preload("res://assets/sfx/kenney/step_grass_a.ogg"),
+    "step_b": preload("res://assets/sfx/kenney/step_grass_b.ogg"),
+    "punch": preload("res://assets/sfx/kenney/punch.ogg"),
+    "spear_swing": preload("res://assets/sfx/kenney/spear_swing.ogg"),
+    "spear_hit": preload("res://assets/sfx/kenney/spear_hit.ogg"),
+    "shield_hit": preload("res://assets/sfx/kenney/hit_shield.ogg"),
+    "wolf_hit": preload("res://assets/sfx/kenney/hit_wolf.ogg"),
+    "obstacle_hit": preload("res://assets/sfx/kenney/hit_obstacle.ogg"),
+    "gear_swish": preload("res://assets/sfx/kenney/gear_swish.ogg"),
+    "bow": preload("res://assets/sfx/bow_twang.wav"),
+    "wolf_bite": preload("res://assets/sfx/wolf_snarl.wav"),
+    "wolf_death": preload("res://assets/sfx/wolf_death.wav"),
+    "heal": preload("res://assets/sfx/mage_heal.wav"),
+    "dash": preload("res://assets/sfx/rogue_dash.wav"),
+    "taunt": preload("res://assets/sfx/knight_taunt.wav")
+}
+const SOUND_COOLDOWN_MS := {
+    "step_a": 280, "step_b": 280, "wolf_bite": 240,
+    "wolf_hit": 110, "spear_hit": 100, "shield_hit": 140,
+    "punch": 160, "obstacle_hit": 120, "wolf_death": 250
+}
 var _falling: Dictionary = {}
 var _bursts: Array[Node3D] = []
 var _resource_feedback: Array[Node3D] = []
@@ -22,6 +44,7 @@ var _combat_bursts: Array[Node3D] = []
 var _ability_bursts: Array[Node3D] = []
 var _combat_high_detail := true
 var _sounds: Array[AudioStreamPlayer3D] = []
+var _sound_last_played: Dictionary = {}
 var sound_enabled := true
 
 func _ready() -> void:
@@ -328,24 +351,29 @@ func play_combat_impact(kind: String, at: Vector3, damage: int) -> bool:
     return true
 
 func play_sound(kind: String, world_position: Vector3) -> bool:
-    if DisplayServer.get_name() == "headless" or not sound_enabled or _sounds.size() >= MAX_SOUNDS:
+    if DisplayServer.get_name() == "headless" or not sound_enabled or _sounds.size() >= MAX_SOUNDS or not world_position.is_finite():
         return false
-    var stream: AudioStream = null
+    var stream: AudioStream = SOUND_CLIPS.get(kind)
     match kind:
         "wood": stream = WOOD_SFX
         "stone": stream = STONE_SFX
         "herb": stream = HERB_SFX
         "build": stream = BUILD_SFX
-        _: return false
+    if stream == null:
+        return false
+    var now := Time.get_ticks_msec()
+    if now-int(_sound_last_played.get(kind,-999999)) < int(SOUND_COOLDOWN_MS.get(kind,90)):
+        return false
     var audio := AudioStreamPlayer3D.new()
     audio.name = "Sound_" + kind
     audio.stream = stream
     audio.position = world_position
     audio.unit_size = 3.5
     audio.max_distance = 25.0
-    audio.volume_db = -8.0
+    audio.volume_db = -15.0 if kind.begins_with("step") else (-10.0 if kind.begins_with("wolf") else -8.0)
     add_child(audio)
     _sounds.append(audio)
+    _sound_last_played[kind] = now
     audio.finished.connect(func() -> void:
         _sounds.erase(audio)
         if is_instance_valid(audio):
@@ -361,6 +389,7 @@ func set_sound_enabled(enabled: bool) -> void:
                 sound.stop()
                 sound.queue_free()
         _sounds.clear()
+        _sound_last_played.clear()
 
 func clear_effects() -> void:
     for ability in _ability_bursts:
@@ -392,6 +421,7 @@ func clear_effects() -> void:
             sound.stop()
             sound.queue_free()
     _sounds.clear()
+    _sound_last_played.clear()
 
 func active_sound_count() -> int:
     return _sounds.size()

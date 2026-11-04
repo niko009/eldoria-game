@@ -105,6 +105,9 @@ if command -v Xvfb >/dev/null 2>&1; then
     echo "[TASK-059] real OpenGL: class ability visual effects and low/high particle budgets"
     DISPLAY=":$display_number" timeout 95 "$GODOT_BIN" --path "$ROOT/client" --resolution 900x600 --rendering-method gl_compatibility --audio-driver Dummy --script res://tests/task059_ability_vfx_e2e.gd -- --test > "$ROOT/tests/logs/task059-ability-opengl.log" 2>&1
     grep -q "TASK059 ABILITY VFX OPENGL PASS" "$ROOT/tests/logs/task059-ability-opengl.log"
+    echo "[TASK-062] real OpenGL: 3D gameplay audio, confirmed events, bounded voices and mute"
+    DISPLAY=":$display_number" timeout 95 "$GODOT_BIN" --path "$ROOT/client" --resolution 900x600 --rendering-method gl_compatibility --audio-driver Dummy --script res://tests/task062_game_audio_e2e.gd -- --test > "$ROOT/tests/logs/task062-audio-opengl.log" 2>&1
+    grep -q "TASK062 AUDIO OPENGL PASS" "$ROOT/tests/logs/task062-audio-opengl.log"
     DISPLAY=":$display_number" timeout 90 "$GODOT_BIN" --path "$ROOT/client" --resolution 720x360 --rendering-method gl_compatibility --audio-driver Dummy --script res://tests/task017_sound_mobile_e2e.gd -- --test-mobile-ui > "$ROOT/tests/logs/task017-mobile-opengl.log" 2>&1
     grep -q "TASK017 OPENGL PASS" "$ROOT/tests/logs/task017-mobile-opengl.log"
     kill "$xvfb" 2>/dev/null || true
