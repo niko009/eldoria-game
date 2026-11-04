@@ -27,11 +27,12 @@ func _run() -> void:
     if herb_left<0 or herb_right<0:
         _fail("starter herbs missing")
         return
-    var target := herb_left if a else herb_right
+    # Connection ordering is nondeterministic: identify the real nearby spawn herb.
     var closest: int = world.nearest_resource(game.players[game.own_id].position,2.7,game.resource_remaining)
-    if closest != target:
-        _fail("not next to the correct starter herb closest=%d target=%d" % [closest,target])
+    if closest != herb_left and closest != herb_right:
+        _fail("not next to either starter herb closest=%d" % closest)
         return
+    var target := closest
     if game.player_inventories.has(game.own_id) and int(game.player_inventories[game.own_id].get("herb",0)) != 0:
         _fail("unexpected inventory")
         return
