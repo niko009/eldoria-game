@@ -41,11 +41,16 @@ rows=$(docker exec -i "$C" psql -X -t -A -U "$USER" -d "$DB" -c \
 ASPNETCORE_URLS="http://127.0.0.1:$API_PORT" ELDORIA_INTERNAL_KEY="$KEY" \
  ELDORIA_POSTGRES_CONNECTION="Host=127.0.0.1;Port=$PG_PORT;Database=$DB;Username=$USER;Password=$PASS" \
  "$API_BINARY" > /tmp/task069-api-integration.log 2>&1 & api_pid=$!
-for i in $(seq 1 60); do
+for i in $(seq 1 160); do
   if curl -fsS --max-time 1 -H "X-Eldoria-Server-Key: $KEY" "http://127.0.0.1:$API_PORT/health" >/dev/null 2>&1; then break; fi
   if ! kill -0 "$api_pid" 2>/dev/null; then echo API_EXITED; tail -15 /tmp/task069-api-integration.log; exit 1; fi
-  sleep 0.5
+  sleep 0.75
 done
+if ! curl -fsS --max-time 5 -H "X-Eldoria-Server-Key: $KEY" "http://127.0.0.1:$API_PORT/health" >/dev/null 2>&1; then
+  echo TASK069_API_NOT_READY
+  tail -30 /tmp/task069-api-integration.log
+  exit 8
+fi
 curl -fsS --max-time 5 -H "X-Eldoria-Server-Key: $KEY" "http://127.0.0.1:$API_PORT/v1/world/20261101" > /tmp/task069-old.json
 jq -e '.profiles[("b" * 64)].inventory.meat == 0 and .profiles[("b" * 64)].inventory.wood == 8 and .profiles[("b" * 64)].skills.archery == 31' /tmp/task069-old.json >/dev/null
 jq '.profiles[("b" * 64)].inventory |= (. + {meat:7,hide:4,bone:3,leather_armor:1,grilled_meat:2})' /tmp/task069-old.json > /tmp/task069-next.json
