@@ -151,3 +151,12 @@ echo '[TASK-055] directional gathering, selection highlight and cross-platform z
     > "$ROOT/tests/logs/task055-targeting-zoom.log" 2>&1
 grep -q 'TASK055 TARGETING ZOOM PASS' "$ROOT/tests/logs/task055-targeting-zoom.log"
 echo 'PASS: TASK-055 directional gathering, Android pinch, desktop wheel and aim indicators.'
+echo '[TASK-057] real KayKit weapon, damage and class ability animations'
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task057_animation_action_e2e.gd -- --test-live-ui \
+    > "$ROOT/tests/logs/task057-animations.log" 2>&1
+grep -q 'TASK057 ANIMATIONS PASS' "$ROOT/tests/logs/task057-animations.log"
+echo '[TASK-058] server-confirmed wolf bites and reaction animation'
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task058_wolf_reaction_e2e.gd -- --test-live-ui \
+    > "$ROOT/tests/logs/task058-wolf-reactions.log" 2>&1
+grep -q 'TASK058 WOLF REACTION PASS' "$ROOT/tests/logs/task058-wolf-reactions.log"
+echo 'PASS: TASK-057..058 character and wolf animations with authoritative network events.'

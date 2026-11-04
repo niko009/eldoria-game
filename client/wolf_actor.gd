@@ -10,12 +10,17 @@ var stride := 0.0
 var moving := false
 var legs: Array[MeshInstance3D] = []
 var tail: MeshInstance3D
+var jaw: MeshInstance3D
+var fur_material: StandardMaterial3D
+var bite_count := 0
+var hurt_count := 0
 
 func _ready() -> void:
     body = Node3D.new()
     add_child(body)
     var fur := StandardMaterial3D.new()
     fur.albedo_color = Color(0.39, 0.34, 0.28)
+    fur_material = fur
     var dark := StandardMaterial3D.new()
     dark.albedo_color = Color(0.22, 0.20, 0.18)
     var eyes := StandardMaterial3D.new()
@@ -23,6 +28,7 @@ func _ready() -> void:
     _part("Body", Vector3(0, 0.62, 0), Vector3(0.72, 0.64, 1.20), fur)
     _part("Head", Vector3(0, 0.83, -0.70), Vector3(0.55, 0.49, 0.61), fur)
     _part("Muzzle", Vector3(0, 0.66, -1.02), Vector3(0.31, 0.25, 0.40), dark)
+    jaw = _part("LowerJaw", Vector3(0, 0.52, -1.05), Vector3(0.33, 0.10, 0.38), dark)
     for side in [-1.0, 1.0]:
         _part("Ear", Vector3(side * 0.22, 1.10, -0.70), Vector3(0.20, 0.35, 0.20), dark)
         _part("Eye", Vector3(side * 0.24, 0.91, -0.94), Vector3(0.09, 0.085, 0.10), eyes)
@@ -56,6 +62,8 @@ func _part(label: String, at: Vector3, dimensions: Vector3, material: Material) 
 
 func update_state(point: Vector3, hp: int, alive: bool, direction: Vector3 = Vector3.ZERO) -> void:
     position = point
+    if alive and not down and hp < visual_hp:
+        play_hit_reaction()
     visual_hp = clampi(hp, 0, 60)
     down = not alive
     visible = alive
@@ -63,6 +71,25 @@ func update_state(point: Vector3, hp: int, alive: bool, direction: Vector3 = Vec
         rotation.y = atan2(-direction.x, -direction.z)
     moving = alive and direction.length_squared() > 0.01
     _update_health()
+
+func play_bite() -> void:
+    if down or body == null or jaw == null:
+        return
+    bite_count += 1
+    jaw.rotation.x = -0.47
+    body.position.z = -0.26
+    var attack := create_tween()
+    attack.set_parallel(true)
+    attack.tween_property(jaw,"rotation:x",0.0,0.28)
+    attack.tween_property(body,"position:z",0.0,0.30).set_trans(Tween.TRANS_CUBIC)
+
+func play_hit_reaction() -> void:
+    if down or body == null or fur_material == null:
+        return
+    hurt_count += 1
+    fur_material.albedo_color = Color("f18c72")
+    var flash := create_tween()
+    flash.tween_property(fur_material,"albedo_color",Color(0.39,0.34,0.28),0.23)
 
 func _process(delta: float) -> void:
     if down or body == null:

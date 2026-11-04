@@ -7,7 +7,13 @@ const KNIGHT := preload("res://assets/characters/Knight.glb")
 const ROGUE := preload("res://assets/characters/Rogue_Hooded.glb")
 const MAGE := preload("res://assets/characters/Mage.glb")
 const AXE_VISUAL := preload("res://stone_axe_visual.gd")
-const CLIPS := ["Idle", "Walking_A", "Running_A", "Cheer", "Jump_Start", "Jump_Idle", "Jump_Land", "PickUp", "1H_Melee_Attack_Chop"]
+const ACTION_CLIPS := ["Cheer","PickUp","1H_Melee_Attack_Chop",
+    "2H_Ranged_Shoot","2H_Melee_Attack_Stab","Block_Hit",
+    "Unarmed_Melee_Attack_Punch_A","Spellcast_Shoot","Dodge_Forward","Hit_A"]
+const CLIPS := ["Idle", "Walking_A", "Running_A", "Cheer",
+    "Jump_Start", "Jump_Idle", "Jump_Land", "PickUp", "1H_Melee_Attack_Chop",
+    "2H_Ranged_Shoot","2H_Melee_Attack_Stab","Block_Hit",
+    "Unarmed_Melee_Attack_Punch_A","Spellcast_Shoot","Dodge_Forward","Hit_A"]
 
 var player_id := 0
 var avatar_choice := -1
@@ -71,10 +77,7 @@ func _create_visual() -> void:
         if animation == null:
             push_error("Missing KayKit animation " + clip)
             continue
-        if clip not in ["Cheer", "PickUp", "1H_Melee_Attack_Chop"]:
-            animation.loop_mode = Animation.LOOP_LINEAR
-        else:
-            animation.loop_mode = Animation.LOOP_NONE
+        animation.loop_mode = Animation.LOOP_NONE if clip in ACTION_CLIPS else Animation.LOOP_LINEAR
     # Accessories are optional, but keep only the recognizable outfit, not
     # every alternative shield, melee weapon, and hat in the original GLB.
     _hide_unused_accessories(visual)
@@ -283,16 +286,17 @@ func celebrate() -> void:
 func melee_attack() -> void:
     if headless or animator == null or airborne:
         return
-    # KayKit rig has no dedicated bow-draw clip in the current imported set.
-    # Use a short upper-body action and an equipment recoil until bespoke
-    # spear/bow/defense animations are imported.
-    var selected := "PickUp" if combat_item == "bow" else "1H_Melee_Attack_Chop"
-    var clip := animator.get_animation(selected)
-    if clip == null:
-        return
-    emote_until_msec = Time.get_ticks_msec() + int(clip.length * 1000.0)
-    current_clip = ""
-    set_clip(selected)
+    # These are real KayKit clips present in all three imported skeletons.
+    # Fit their visual duration to the 650-ms server attack cooldown.
+    match combat_item:
+        "bow":
+            _play_action_clip("2H_Ranged_Shoot",0.52)
+        "spear":
+            _play_action_clip("2H_Melee_Attack_Stab",0.56)
+        "shield":
+            _play_action_clip("Block_Hit",0.52)
+        _:
+            _play_action_clip("Unarmed_Melee_Attack_Punch_A",0.56)
     if combat_item == "bow" and combat_visual != null:
         var recoil := create_tween()
         combat_visual.rotation_degrees.x = 65
@@ -309,6 +313,7 @@ func shield_block() -> void:
         return
     if combat_visual.has_meta("blocking"):
         return
+    _play_action_clip("Block_Hit",0.46)
     combat_visual.set_meta("blocking",true)
     var shield_tween := create_tween()
     shield_tween.tween_property(combat_visual,"scale",Vector3(1.12,1.12,1.12),0.10)
@@ -317,6 +322,33 @@ func shield_block() -> void:
         if is_instance_valid(combat_visual):
             combat_visual.remove_meta("blocking"))
 
+func hero_ability_animation(kind: String) -> void:
+    if headless or animator == null or airborne:
+        return
+    match kind:
+        "dash":
+            _play_action_clip("Dodge_Forward",0.38)
+        "heal":
+            _play_action_clip("Spellcast_Shoot",0.68)
+
+func hit_reaction() -> void:
+    if headless or animator == null or airborne:
+        return
+    if combat_item == "shield":
+        shield_block()
+    else:
+        _play_action_clip("Hit_A",0.37)
+
+func _play_action_clip(clip: String, duration: float) -> void:
+    if headless or animator == null or not animator.has_animation(clip):
+        return
+    var animation: Animation = animator.get_animation(clip)
+    # Do not let movement packets or Idle truncate a successful attack.
+    emote_until_msec = Time.get_ticks_msec() + int(duration*1000.0)
+    current_clip = clip
+    animation_changes += 1
+    animator.play(clip,0.08,animation.length/maxf(0.10,duration))
+
 func _process(_delta: float) -> void:
     if headless:
         return
@@ -324,7 +356,7 @@ func _process(_delta: float) -> void:
         set_clip("Jump_Idle")
     if airborne or Time.get_ticks_msec() < landing_until_msec:
         return
-    if Time.get_ticks_msec() > emote_until_msec and current_clip in ["Cheer", "PickUp", "1H_Melee_Attack_Chop"]:
+    if Time.get_ticks_msec() > emote_until_msec and current_clip in ACTION_CLIPS:
         set_clip("Idle")
     elif Time.get_ticks_msec() > emote_until_msec and last_motion_msec > 0 and Time.get_ticks_msec() - last_motion_msec > 300:
         set_clip("Idle")

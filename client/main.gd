@@ -1686,7 +1686,10 @@ func _combat_server_tick(delta: float) -> void:
             wolf_position = next
         elif absf(destination.y - wolf_position.y) <= 2.8 and now - wolf_last_hit_at >= 1500:
             wolf_last_hit_at = now
-            _damage_player_on_server(target_id, 12)
+            if _damage_player_on_server(target_id, 12):
+                wolf_attack_visual.rpc(0)
+                if not is_dedicated:
+                    wolf_attack_visual(0)
     wolf_sync_timer += delta
     if wolf_sync_timer >= 0.15:
         wolf_sync_timer = 0.0
@@ -1721,7 +1724,10 @@ func _tick_raid_pack(delta: float, now: int) -> void:
                 enemy["position"] = next
             elif absf(destination.y-at.y) <= 2.8 and now-int(enemy["last_hit"]) >= 1500:
                 enemy["last_hit"] = now
-                _damage_player_on_server(target_id, 12)
+                if _damage_player_on_server(target_id, 12):
+                    wolf_attack_visual.rpc(int(pack_id))
+                    if not is_dedicated:
+                        wolf_attack_visual(int(pack_id))
         elif camp_target_id != 0:
             var offset := Vector3(raid_anchor.x-at.x, 0, raid_anchor.z-at.z)
             if offset.length() > 1.9:
@@ -1730,7 +1736,10 @@ func _tick_raid_pack(delta: float, now: int) -> void:
                 step.y = world.height_at(step.x, step.z) + 0.1
                 enemy["position"] = step
             else:
-                _damage_camp(9, now, int(pack_id))
+                if _damage_camp(9, now, int(pack_id)):
+                    wolf_attack_visual.rpc(int(pack_id))
+                    if not is_dedicated:
+                        wolf_attack_visual(int(pack_id))
     if raid.phase != "night":
         _clear_raid_pack()
         return
@@ -1847,12 +1856,20 @@ func _damage_player_on_server(id: int, damage: int) -> bool:
         health_snapshot.rpc_id(id, remaining, MAX_HEALTH)
     if remaining == 0:
         player_respawn_at[id] = Time.get_ticks_msec() + 4000
+    player_hurt_visual.rpc(id)
+    if not is_dedicated:
+        player_hurt_visual(id)
     return true
 
 @rpc("authority","call_remote","unreliable")
 func shield_block_visual(id: int) -> void:
     if players.has(id):
         players[id].shield_block()
+
+@rpc("authority","call_remote","unreliable")
+func player_hurt_visual(id: int) -> void:
+    if not is_dedicated and players.has(id):
+        players[id].hit_reaction()
 
 func _try_attack() -> void:
     if own_id == 0 or not players.has(own_id) or int(player_health.get(own_id, MAX_HEALTH)) <= 0:
@@ -2233,6 +2250,14 @@ func wolf_snapshot(at: Vector3, hp: int, alive: bool, direction: Vector3) -> voi
     if wolf_actor != null:
         wolf_actor.update_state(at, wolf_health, wolf_alive, direction)
 
+@rpc("authority","call_remote","unreliable")
+func wolf_attack_visual(wolf_id: int) -> void:
+    if is_dedicated or wolf_id < 0 or wolf_id > 2:
+        return
+    var actor: Node3D = wolf_actor if wolf_id == 0 else pack_actors.get(wolf_id)
+    if actor != null and is_instance_valid(actor):
+        actor.play_bite()
+
 func _combat_ui_action(kind: String) -> void:
     if kind == "attack":
         _try_attack()
@@ -2284,6 +2309,9 @@ func _hero_ability_on_server(id: int, direction: Vector3, now: int = -1) -> bool
         elif multiplayer.get_peers().has(id):
             correct_own_position.rpc_id(id,after)
         sync_position.rpc(id,after)
+        hero_ability_visual.rpc(id,"dash")
+        if not is_dedicated:
+            hero_ability_visual(id,"dash")
         _send_hero_message(id,"Рывок!")
         return true
     if hero == HERO_CLASSES.MAGE:
@@ -2321,9 +2349,17 @@ func _hero_ability_on_server(id: int, direction: Vector3, now: int = -1) -> bool
         elif multiplayer.get_peers().has(target_id):
             health_snapshot.rpc_id(target_id,int(player_health[target_id]),MAX_HEALTH)
         _send_mana_snapshot(id)
+        hero_ability_visual.rpc(id,"heal")
+        if not is_dedicated:
+            hero_ability_visual(id,"heal")
         _send_hero_message(id,"Лечение: +%d HP" % mini(missing,HERO_CLASSES.MAGE_HEAL_HP))
         return true
     return false
+
+@rpc("authority","call_remote","reliable")
+func hero_ability_visual(id: int, kind: String) -> void:
+    if not is_dedicated and kind in ["dash","heal"] and players.has(id):
+        players[id].hero_ability_animation(kind)
 
 func _send_mana_snapshot(id: int) -> void:
     if id == own_id:
