@@ -27,6 +27,8 @@
 
 ## Автоматические проверки
 
+**Проверено 4 ноября 2026:** полный `bash tests/run_dev_gameplay_e2e.sh` завершился **exit 0 / PASS**. Включены задача TASK-055, TASK-054 с направленными атаками, автоматизированные Android UI/джойстик проверки, реальные два WebSocket-клиента, сохранение ресурсов и профилей после перезапуска, OpenGL и проверка столкновений камеры.
+
 - `Godot --headless --path client --script res://tests/task055_targeting_zoom_e2e.gd -- --test-live-ui`: выбор ресурса по лучу/углу/дистанции, истощение, смена направления, кольцо+HUD, реальный сбор, desktop wheel, Android pinch, диапазоны zoom, цветовая индикация прицела.
 - `bash tests/run_dev_gameplay_e2e.sh`: обновлённые legacy-проверки `resource_e2e.gd`, `persistence_e2e.gd`, сетевой бой и все TASK-011..055.
 
