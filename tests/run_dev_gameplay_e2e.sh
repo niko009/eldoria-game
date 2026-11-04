@@ -146,6 +146,8 @@ grep -q 'TASK051 SHIELD TAUNT PASS' "$ROOT/tests/logs/task051-shield-e2e.log"
 bash tests/run_task051_shield_network_e2e.sh
 echo "PASS: TASK-050..051 server-authoritative teamplay, XP benefits and Android skill UI."
 echo "[TASK-052] three hero classes, campfire switch and server-owned abilities"
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task065_mage_combat_e2e.gd -- --test-live-ui > "$ROOT/tests/logs/task065-mage-combat.log" 2>&1
+grep -q 'TASK065 MAGE COMBAT PASS' "$ROOT/tests/logs/task065-mage-combat.log"
 "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task052_hero_classes_e2e.gd \
     > "$ROOT/tests/logs/task052-hero-classes.log" 2>&1
 grep -q 'TASK052 HERO CLASSES PASS' "$ROOT/tests/logs/task052-hero-classes.log"

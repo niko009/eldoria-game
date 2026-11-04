@@ -80,6 +80,12 @@ var shield_taunt_until: Dictionary = {}
 var shield_taunt_ready_at: Dictionary = {}
 var hero_ability_ready_at: Dictionary = {}
 var hero_mana: Dictionary = {}
+const MAGE_SPELLS := ["fire", "frost", "storm"]
+const MAGE_SPELL_COST := [14.0, 22.0, 34.0]
+const MAGE_SPELL_DAMAGE := [18, 24, 34]
+var mage_spell_index := 0
+var mage_health_regen_accum := 0.0
+var mage_chilled_until: Dictionary = {}
 
 func _try_equip_combat(item: String) -> void:
     if own_id <= 0:
@@ -1695,6 +1701,21 @@ func _combat_server_tick(delta: float) -> void:
             float(hero_mana[id])+float(HERO_CLASSES.MAGE_MANA_REGEN_PER_SEC)*delta)
         if int(hero_mana[id]) != before:
             _send_mana_snapshot(int(id))
+    mage_health_regen_accum += delta
+    if mage_health_regen_accum >= 1.0:
+        mage_health_regen_accum = 0.0
+        for id in player_health:
+            if int(player_choices.get(id,-1)) != HERO_CLASSES.MAGE:
+                continue
+            var hp: int = int(player_health[id])
+            if hp <= 0 or hp >= MAX_HEALTH:
+                continue
+            player_health[id] = mini(MAX_HEALTH,hp+2)
+            health_snapshot_for.rpc(int(id),int(player_health[id]))
+            if id == own_id:
+                health_snapshot(int(player_health[id]),MAX_HEALTH)
+            elif multiplayer.get_peers().has(id):
+                health_snapshot.rpc_id(int(id),int(player_health[id]),MAX_HEALTH)
     _tick_passive_creatures(delta,now)
     _raid_server_tick(now)
     _tick_raid_pack(delta, now)
@@ -1727,7 +1748,8 @@ func _combat_server_tick(delta: float) -> void:
         var distance := displacement.length()
         if distance > 1.5:
             wolf_direction = displacement.normalized()
-            var step := minf(2.5 * delta, distance - 1.5)
+            var chill_factor := 0.45 if now < int(mage_chilled_until.get(0,0)) else 1.0
+            var step := minf(2.5 * chill_factor * delta, distance - 1.5)
             var next := wolf_position + wolf_direction * step
             var world: Node3D = get_node("Eldoria_Forest")
             next.y = world.height_at(next.x, next.z) + 0.1
@@ -1786,7 +1808,8 @@ func _tick_raid_pack(delta: float, now: int) -> void:
             var distance := displacement.length()
             if distance > 1.5:
                 enemy["direction"] = displacement.normalized()
-                var next: Vector3 = at + enemy["direction"] * minf(2.5*delta, distance-1.5)
+                var chill_factor := 0.45 if now < int(mage_chilled_until.get(int(pack_id),0)) else 1.0
+                var next: Vector3 = at + enemy["direction"] * minf(2.5*chill_factor*delta, distance-1.5)
                 next.y = world.height_at(next.x, next.z) + 0.1
                 enemy["position"] = next
             elif absf(destination.y-at.y) <= 2.8 and now-int(enemy["last_hit"]) >= 1500:
@@ -1799,7 +1822,8 @@ func _tick_raid_pack(delta: float, now: int) -> void:
             var offset := Vector3(raid_anchor.x-at.x, 0, raid_anchor.z-at.z)
             if offset.length() > 1.9:
                 enemy["direction"] = offset.normalized()
-                var step: Vector3 = at + enemy["direction"] * minf(2.5*delta, offset.length()-1.9)
+                var chill_factor := 0.45 if now < int(mage_chilled_until.get(int(pack_id),0)) else 1.0
+                var step: Vector3 = at + enemy["direction"] * minf(2.5*chill_factor*delta, offset.length()-1.9)
                 step.y = world.height_at(step.x, step.z) + 0.1
                 enemy["position"] = step
             else:
@@ -1953,6 +1977,14 @@ func _try_attack() -> void:
             request_shield_taunt.rpc_id(1)
         return
     var aim := _bow_aim_direction()
+    if int(player_choices.get(own_id,-1)) == HERO_CLASSES.MAGE and (
+            (str(equipped_combat.get(own_id,"unarmed")) == "unarmed") if multiplayer.is_server() else
+            (live_ui != null and live_ui.combat_equipment == "unarmed")):
+        if multiplayer.is_server():
+            _mage_attack_on_server(own_id,aim,mage_spell_index)
+        else:
+            request_mage_attack.rpc_id(1,aim,mage_spell_index)
+        return
     if multiplayer.is_server():
         _attack_on_server(own_id, aim)
     else:
@@ -2153,37 +2185,61 @@ func attack_feedback(message: String) -> void:
 
 # Aim direction comes from the player, but all geometry, targets, ammunition,
 # cooldown and damage are resolved on the authoritative server.
-func _bow_attack_on_server(id: int, aim: Vector3) -> bool:
+@rpc("any_peer", "reliable")
+func request_mage_attack(aim: Vector3, spell: int) -> void:
+    if multiplayer.is_server():
+        _mage_attack_on_server(multiplayer.get_remote_sender_id(),aim,spell)
+
+func _mage_attack_on_server(id: int, aim: Vector3, spell: int) -> bool:
+    if not multiplayer.is_server() or int(player_choices.get(id,-1)) != HERO_CLASSES.MAGE:
+        return false
+    if spell < 0 or spell >= MAGE_SPELLS.size():
+        return false
+    if str(equipped_combat.get(id,"unarmed")) != "unarmed":
+        return false
+    return _bow_attack_on_server(id,aim,spell)
+
+func _bow_attack_on_server(id: int, aim: Vector3, spell: int = -1) -> bool:
     if not multiplayer.is_server() or not players.has(id) or int(player_health.get(id,0)) <= 0:
         return false
-    if str(equipped_combat.get(id,"unarmed")) != "bow" or int(player_inventories.get(id,{}).get("bow",0)) < 1:
+    if spell < 0 and (str(equipped_combat.get(id,"unarmed")) != "bow" or int(player_inventories.get(id,{}).get("bow",0)) < 1):
         return false
     if not aim.is_finite() or absf(aim.length()-1.0) > 0.05 or aim.y < -0.96 or aim.y > 0.80:
         return false
     var hit_damage := COMBAT_PROGRESSION.weapon_damage("bow",
         int(player_skills.get(id,{}).get("archery",0)))
+    if spell >= 0:
+        hit_damage = MAGE_SPELL_DAMAGE[spell]
     var now := Time.get_ticks_msec()
     if now - int(last_attack_at.get(id,now-1000)) < 650:
         return false
-    var before: Dictionary = player_inventories.get(id,{}).duplicate(true)
-    if int(before.get("arrow",0)) < 1:
-        _attack_feedback(id,"Нет стрел! Создайте их в мастерской")
-        return false
-    var inv := before.duplicate(true)
-    inv["arrow"] = int(inv["arrow"])-1
-    player_inventories[id] = inv
-    if player_identity_keys.has(id):
-        persistent_profiles[player_identity_keys[id]]["inventory"] = inv.duplicate(true)
-    if not _save_world_state():
-        player_inventories[id] = before
-        if player_identity_keys.has(id):
-            persistent_profiles[player_identity_keys[id]]["inventory"] = before.duplicate(true)
-        return false
-    last_attack_at[id] = now
-    if id == own_id:
-        inventory_snapshot(inv)
+    var inv: Dictionary = player_inventories.get(id,{}).duplicate(true)
+    if spell >= 0:
+        if float(hero_mana.get(id,0.0)) < MAGE_SPELL_COST[spell]:
+            _attack_feedback(id,"Недостаточно маны")
+            return false
+        hero_mana[id] = float(hero_mana[id])-MAGE_SPELL_COST[spell]
+        _send_mana_snapshot(id)
     else:
-        inventory_snapshot.rpc_id(id,inv)
+        if int(inv.get("arrow",0)) < 1:
+            _attack_feedback(id,"Нет стрел! Создайте их в мастерской")
+            return false
+        var before := inv.duplicate(true)
+        inv["arrow"] = int(inv["arrow"])-1
+        player_inventories[id] = inv
+        if player_identity_keys.has(id):
+            persistent_profiles[player_identity_keys[id]]["inventory"] = inv.duplicate(true)
+        if not _save_world_state():
+            player_inventories[id] = before
+            if player_identity_keys.has(id):
+                persistent_profiles[player_identity_keys[id]]["inventory"] = before.duplicate(true)
+            return false
+    last_attack_at[id] = now
+    if spell < 0:
+        if id == own_id:
+            inventory_snapshot(inv)
+        else:
+            inventory_snapshot.rpc_id(id,inv)
     var origin: Vector3 = players[id].position + Vector3.UP*0.8
     var end: Vector3 = origin + aim*12.0
     var world: Node3D = get_node("Eldoria_Forest")
@@ -2213,16 +2269,21 @@ func _bow_attack_on_server(id: int, aim: Vector3) -> bool:
             nearest = distance
             struck = 100+int(creature_id)
     var impact := origin + aim*nearest
-    bow_shot_visual.rpc(origin, impact)
-    if not is_dedicated:
-        bow_shot_visual(origin, impact)
-    combat_swing.rpc(id)
-    if id == own_id:
-        _play_attack(id)
+    if spell >= 0:
+        mage_spell_visual.rpc(id,origin,impact,spell)
+        if not is_dedicated:
+            mage_spell_visual(id,origin,impact,spell)
+    else:
+        bow_shot_visual.rpc(origin, impact)
+        if not is_dedicated:
+            bow_shot_visual(origin, impact)
+        combat_swing.rpc(id)
+        if id == own_id:
+            _play_attack(id)
     if struck == 0:
         if nearest < 11.99:
             _send_combat_impact(impact,0,"obstacle")
-        _attack_feedback(id,"Стрела попала в препятствие" if nearest < 11.99 else "Промах — наведите прицел на цель")
+        _attack_feedback(id,("Заклинание попало в препятствие" if nearest < 11.99 else "Магия: промах") if spell >= 0 else ("Стрела попала в препятствие" if nearest < 11.99 else "Промах — наведите прицел на цель"))
         return true # A real shot can miss; ammunition was still consumed.
     if struck > 100:
         var landed := _damage_passive_on_server(id,struck-100,hit_damage,now)
@@ -2233,7 +2294,8 @@ func _bow_attack_on_server(id: int, aim: Vector3) -> bool:
         var wolf: Dictionary = pack_wolves[struck]
         wolf["hp"] = maxi(0,int(wolf["hp"])-hit_damage)
         _send_combat_impact(wolf["position"]+Vector3.UP*0.8,hit_damage,"wolf")
-        _award_skill_xp(id,"archery",2)
+        if spell < 0:
+            _award_skill_xp(id,"archery",2)
         if wolf["hp"] == 0:
             wolf["alive"] = false
             var outcome: String = raid.wolf_defeated(now)
@@ -2243,10 +2305,13 @@ func _bow_attack_on_server(id: int, aim: Vector3) -> bool:
             if outcome != "":
                 _broadcast_raid_state(now)
         pack_wolf_snapshot.rpc(struck,wolf["position"],int(wolf["hp"]),bool(wolf["alive"]),wolf["direction"])
+        if spell >= 0:
+            _mage_spell_secondary(spell,struck,wolf["position"],now)
     else:
         wolf_health = maxi(0,wolf_health-hit_damage)
         _send_combat_impact(wolf_position+Vector3.UP*0.8,hit_damage,"wolf")
-        _award_skill_xp(id,"archery",2)
+        if spell < 0:
+            _award_skill_xp(id,"archery",2)
         if wolf_health == 0:
             wolf_alive = false
             wolf_respawn_at = now+10000
@@ -2259,8 +2324,41 @@ func _bow_attack_on_server(id: int, aim: Vector3) -> bool:
                 _reward_raid_survivors()
                 _broadcast_raid_state(now)
         wolf_snapshot.rpc(wolf_position,wolf_health,wolf_alive,wolf_direction)
-    _attack_feedback(id,"Попадание из лука! -%d HP" % hit_damage)
+        if spell >= 0:
+            _mage_spell_secondary(spell,0,wolf_position,now)
+    _attack_feedback(id,("Магия: -%d HP" if spell >= 0 else "Попадание из лука! -%d HP") % hit_damage)
     return true
+
+func _mage_spell_secondary(spell: int, primary_id: int, point: Vector3, now: int) -> void:
+    # Ice slows the target for three seconds. Fire splashes nearby wolves;
+    # lightning jumps to the closest additional wolf. Secondary damage cannot
+    # kill outright: this keeps raid kill accounting on the direct-hit path.
+    if spell == 1:
+        mage_chilled_until[primary_id] = now + 3000
+        return
+    if spell != 0 and spell != 2:
+        return
+    var targets: Array[int] = []
+    for key in pack_wolves:
+        var enemy: Dictionary = pack_wolves[key]
+        if int(key) != primary_id and bool(enemy["alive"]) and point.distance_to(enemy["position"]) <= (2.8 if spell == 0 else 5.0):
+            targets.append(int(key))
+    if primary_id != 0 and wolf_alive and point.distance_to(wolf_position) <= (2.8 if spell == 0 else 5.0):
+        targets.append(0)
+    targets.sort()
+    if spell == 2 and targets.size() > 1:
+        targets.resize(1)
+    var extra_damage := 8 if spell == 0 else 14
+    for key in targets:
+        if key == 0:
+            wolf_health = maxi(1,wolf_health-extra_damage)
+            wolf_snapshot.rpc(wolf_position,wolf_health,wolf_alive,wolf_direction)
+            _send_combat_impact(wolf_position+Vector3.UP*0.8,extra_damage,"wolf")
+        else:
+            var enemy: Dictionary = pack_wolves[key]
+            enemy["hp"] = maxi(1,int(enemy["hp"])-extra_damage)
+            pack_wolf_snapshot.rpc(key,enemy["position"],int(enemy["hp"]),true,enemy["direction"])
+            _send_combat_impact(enemy["position"]+Vector3.UP*0.8,extra_damage,"wolf")
 
 func _ray_wolf_hit_distance(origin: Vector3, direction: Vector3, center: Vector3, radius: float = 0.8) -> float:
     var to_center := center-origin
@@ -2299,6 +2397,47 @@ func bow_shot_visual(start: Vector3, target: Vector3) -> void:
     var tween := create_tween()
     tween.tween_property(tracer, "position", target, 0.16)
     tween.tween_callback(tracer.queue_free)
+
+@rpc("authority","call_remote","reliable")
+func mage_spell_visual(caster_id: int, start: Vector3, target: Vector3, spell: int) -> void:
+    if is_dedicated or spell < 0 or spell >= MAGE_SPELLS.size() or not start.is_finite() or not target.is_finite() or start.distance_to(target) > 13.0:
+        return
+    var palette := [Color("ff923e"),Color("8be5ff"),Color("c4a3ff")]
+    var hue: Color = palette[spell]
+    if players.has(caster_id):
+        players[caster_id].hero_ability_animation("spell")
+    var orb := MeshInstance3D.new()
+    orb.name = "MagicProjectile"
+    var mesh := SphereMesh.new()
+    mesh.radius = [0.18,0.13,0.23][spell]
+    mesh.height = mesh.radius*2.0
+    orb.mesh = mesh
+    var material := StandardMaterial3D.new()
+    material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    material.albedo_color = hue
+    material.emission_enabled = true
+    material.emission = hue
+    material.emission_energy_multiplier = 3.0
+    orb.material_override = material
+    orb.position = start
+    add_child(orb)
+    var tween := create_tween()
+    tween.tween_property(orb,"position",target,[0.27,0.21,0.11][spell])
+    tween.tween_callback(func() -> void:
+        if not is_instance_valid(orb):
+            return
+        var impact := MeshInstance3D.new()
+        impact.mesh = SphereMesh.new()
+        impact.position = target
+        impact.scale = Vector3.ONE*0.08
+        impact.material_override = material
+        add_child(impact)
+        orb.queue_free()
+        var burst := create_tween()
+        burst.set_parallel(true)
+        burst.tween_property(impact,"scale",Vector3.ONE*[0.8,0.65,1.1][spell],0.22)
+        burst.tween_property(impact,"transparency",1.0,0.22)
+        burst.chain().tween_callback(impact.queue_free))
 
 func _play_attack(id: int) -> void:
     if players.has(id):
@@ -2351,6 +2490,16 @@ func _combat_ui_action(kind: String) -> void:
         _try_attack()
     elif kind == "ability":
         _try_hero_ability()
+    elif kind == "spell":
+        _cycle_mage_spell()
+
+func _cycle_mage_spell() -> void:
+    if own_id <= 0 or int(player_choices.get(own_id,-1)) != HERO_CLASSES.MAGE:
+        return
+    mage_spell_index = (mage_spell_index+1) % MAGE_SPELLS.size()
+    if live_ui != null:
+        live_ui.hud.set_spell(mage_spell_index)
+        live_ui.show_message(["Огненный шар · 14 маны", "Ледяная стрела · 22 маны", "Молния · 34 маны"][mage_spell_index])
 
 func _try_hero_ability() -> void:
     if own_id <= 0 or not players.has(own_id) or int(player_health.get(own_id,0)) <= 0:
@@ -3427,6 +3576,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
         _try_attack()
     elif event.keycode == KEY_Q:
         _try_hero_ability()
+    elif event.keycode == KEY_G:
+        _cycle_mage_spell()
     elif event.keycode == KEY_R:
         _try_repair_camp()
 

@@ -271,7 +271,7 @@ func _create_touch() -> void:
 	action_buttons.name = "ActionCluster"
 	action_buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	touch_layer.add_child(action_buttons)
-	for entry in [["attack", "УДАР", 76], ["gather", "СБОР", 63], ["jump", "ПРЫЖОК", 63], ["sprint", "БЕГ", 63], ["ability", "ЗОВ", 63]]:
+	for entry in [["attack", "УДАР", 76], ["gather", "СБОР", 63], ["jump", "ПРЫЖОК", 63], ["sprint", "БЕГ", 63], ["ability", "ЗОВ", 63], ["spell", "ОГОНЬ", 62]]:
 		var id: String = entry[0]
 		var diameter: int = entry[2]
 		var button := Button.new()
@@ -299,6 +299,12 @@ func _create_touch() -> void:
 		caption.size = Vector2(diameter, 16)
 		button.add_child(caption)
 		action_controls[id] = button
+		if id == "spell":
+			button.visible = false
+
+func set_spell(index: int) -> void:
+	if action_controls.has("spell"):
+		action_controls["spell"].get_node("Caption").text = ["ОГОНЬ","ЛЁД","ГРОМ"][clampi(index,0,2)]
 
 func set_shield_mode(equipped: bool) -> void:
 	if not action_controls.has("attack"):
@@ -333,6 +339,10 @@ func set_hero_class(choice: int) -> void:
 	ability.tooltip_text = ["Рыцарь: привлечь волков со щитом (Q)",
 		"Разбойник: рывок без прохождения сквозь препятствия (Q)",
 		"Маг: вылечить союзника за 40 маны (Q)"][clampi(choice,0,2)]
+	if action_controls.has("spell"):
+		action_controls["spell"].visible = choice == 2
+	if action_controls.has("attack"):
+		action_controls["attack"].get_node("Caption").text = "МАГИЯ" if choice == 2 else "УДАР"
 	set_shield_mode(false)
 
 func _create_warning() -> void:
@@ -487,6 +497,7 @@ func _layout() -> void:
 		"jump": Vector2(right + 6, lower - 88),
 		"sprint": Vector2(right - 68, lower - 79),
 		"ability": Vector2(right - 144, lower - 154),
+		"spell": Vector2(right - 145, lower - 226),
 	}
 	for id in positions:
 		var button: Button = action_controls[id]

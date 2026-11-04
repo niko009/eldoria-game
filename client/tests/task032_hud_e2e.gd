@@ -56,8 +56,8 @@ func _run() -> void:
 		if hud.resource_counts["wood"].text != "14" or hud.health_detail.text != "73/100":
 			_fail("state not reflected in compact HUD")
 			return
-		if hud.action_controls.size() != 5:
-			_fail("compact cluster should have five independent touch actions including hero ability")
+		if hud.action_controls.size() != 6:
+			_fail("compact cluster should have spell selection and five regular actions")
 			return
 		print("TASK032 LAYOUT PASS ", display, " logical_viewport=", hud.size)
 

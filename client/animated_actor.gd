@@ -109,7 +109,7 @@ func _set_combat_visual() -> void:
         combat_visual = null
     if axe_visual != null:
         axe_visual.visible = axe_equipped and combat_item == "unarmed"
-    if headless or visual == null or combat_item == "unarmed":
+    if headless or visual == null or (combat_item == "unarmed" and avatar_choice != 2):
         return
     var hand := visual.get_node_or_null("Rig/Skeleton3D/handslot_r") as BoneAttachment3D
     if hand == null:
@@ -117,7 +117,22 @@ func _set_combat_visual() -> void:
     combat_visual = Node3D.new()
     combat_visual.name = "CombatEquipment"
     hand.add_child(combat_visual)
-    if combat_item == "spear":
+    if combat_item == "unarmed" and avatar_choice == 2:
+        _equipment_segment("MageStaff",Vector3(0,-0.55,0),Vector3(0,0.95,0),0.045,Color("665078"))
+        var crystal := MeshInstance3D.new()
+        crystal.name = "StaffCrystal"
+        var gem := SphereMesh.new()
+        gem.radius = 0.13
+        gem.height = 0.26
+        crystal.mesh = gem
+        crystal.position.y = 1.05
+        var material := _equipment_material(Color("62d5ff"))
+        material.emission_enabled = true
+        material.emission = Color("247ecf")
+        material.emission_energy_multiplier = 2.0
+        crystal.material_override = material
+        combat_visual.add_child(crystal)
+    elif combat_item == "spear":
         # A long wooden shaft with a tapered steel head is readable in third person.
         _equipment_segment("SpearShaft", Vector3(0,-0.75,0), Vector3(0,0.92,0),
             0.037,Color("926644"))
@@ -328,7 +343,7 @@ func hero_ability_animation(kind: String) -> void:
     match kind:
         "dash":
             _play_action_clip("Dodge_Forward",0.38)
-        "heal":
+        "heal", "spell":
             _play_action_clip("Spellcast_Shoot",0.68)
 
 func hit_reaction() -> void:

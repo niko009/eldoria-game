@@ -169,6 +169,7 @@ func set_hero_class(choice: int) -> void:
         hud.set_mana(hero_mana,choice == HeroClasses.MAGE)
     if choice == HeroClasses.MAGE:
         set_hero_mana(hero_mana)
+    _refresh_bow_hint()
 
 func set_hero_mana(value: int) -> void:
     hero_mana = clampi(value,0,HeroClasses.MAGE_MANA_MAX)
@@ -179,7 +180,7 @@ func set_hero_mana(value: int) -> void:
 func _refresh_bow_hint() -> void:
     if bow_aim_hint == null or state == null:
         return
-    var ranged := combat_equipment in ["bow","spear"]
+    var ranged := combat_equipment in ["bow","spear"] or (state.selected_avatar == "mage" and combat_equipment == "unarmed")
     bow_aim_hint.visible = ranged and active_panel.is_empty()
     bow_aim_hint.text = "⊕" if combat_equipment == "bow" else "◇"
     bow_aim_hint.add_theme_color_override("font_color",
