@@ -32,9 +32,9 @@ func _run() -> void:
     game.wolf_snapshot.rpc(game.wolf_position, game.wolf_health, true, Vector3.ZERO)
     for frame in range(560):
         await process_frame
-        if game.wolf_health == 40:
+        if game.wolf_health == 42:
             break
-    if game.wolf_health != 40:
+    if game.wolf_health != 42:
         _fail("authoritative wolf hit not accepted")
         return
     if not game._damage_player_on_server(second, 12):

@@ -28,20 +28,23 @@ func _run() -> void:
         _fail("server health HUD missing own=" + str(game.own_id) + " dict=" + str(game.player_health) + " ui=" + str(game.live_ui != null))
         return
     if is_a:
-        game._try_attack()
+        # Mage casts an aimed projectile rather than a directionless punch.
+        var origin: Vector3 = game.players[game.own_id].position+Vector3.UP*0.8
+        var target: Vector3 = game.wolf_position+Vector3.UP*0.65
+        game.request_mage_attack.rpc_id(1,(target-origin).normalized(),0)
         for frame in range(440):
             await process_frame
-            if game.wolf_health == 40:
+            if game.wolf_health == 42:
                 break
-        if game.wolf_health != 40:
+        if game.wolf_health != 42:
             _fail("server wolf damage not replicated")
             return
     else:
         for frame in range(490):
             await process_frame
-            if game.wolf_health == 40 and game.live_ui.state.health == 89:
+            if game.wolf_health == 42 and game.live_ui.state.health == 89:
                 break
-        if game.wolf_health != 40 or game.live_ui.state.health != 89:
+        if game.wolf_health != 42 or game.live_ui.state.health != 89:
             _fail("observer didn't receive wolf and own health updates")
             return
     print("COMBAT NETWORK CLIENT PASS " + ("A" if is_a else "B"))
