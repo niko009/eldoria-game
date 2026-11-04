@@ -143,3 +143,8 @@ echo '[TASK-054] bow/spear combat clarity and icon inventory/crafting'
     > "$ROOT/tests/logs/task054-combat-icons.log" 2>&1
 grep -q 'TASK054 COMBAT ICONS PASS' "$ROOT/tests/logs/task054-combat-icons.log"
 echo 'PASS: TASK-054 server-facing melee, bow feedback and icon UI.'
+echo '[TASK-055] directional gathering, selection highlight and cross-platform zoom'
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task055_targeting_zoom_e2e.gd -- --test-live-ui \
+    > "$ROOT/tests/logs/task055-targeting-zoom.log" 2>&1
+grep -q 'TASK055 TARGETING ZOOM PASS' "$ROOT/tests/logs/task055-targeting-zoom.log"
+echo 'PASS: TASK-055 directional gathering, Android pinch, desktop wheel and aim indicators.'

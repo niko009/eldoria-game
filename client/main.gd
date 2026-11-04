@@ -6,6 +6,7 @@ const PORT := 7777
 const WEBSOCKET_PORT := 7788
 const MAX_PLAYERS := 10
 const INPUT_SCRIPT := preload("res://platform_input.gd")
+const RESOURCE_TARGETING := preload("res://resource_targeting.gd")
 const JOYSTICK_SCRIPT := preload("res://mobile_joystick.gd")
 const WORLD_SAVE_SCRIPT := preload("res://world_save.gd")
 const POSTGRES_WORLD_STORE_SCRIPT := preload("res://postgres_world_store.gd")
@@ -193,6 +194,8 @@ var jump_request_msec := 0
 var server_jump_times := {}
 var last_remote_ticks := {}
 var camera: Camera3D
+var resource_target_marker: Node3D
+var selected_resource_id := -1
 var info: Label
 var ip_input: LineEdit
 var config_request: HTTPRequest
@@ -209,6 +212,7 @@ var sunlight: DirectionalLight3D
 var foliage: Array[SphereMesh] = []
 var graphics_quality := 1
 var next_proximity_ui_at_msec := 0
+var next_aim_hint_at_msec := 0
 var performance_overlay: CanvasLayer
 
 func _ready() -> void:
@@ -270,6 +274,35 @@ func _world() -> void:
     camera.far = 220.0
     add_child(camera)
     camera.look_at(Vector3(0, 1, 0), Vector3.UP)
+    if not is_dedicated:
+        _create_resource_target_marker()
+
+func _create_resource_target_marker() -> void:
+    resource_target_marker = Node3D.new()
+    resource_target_marker.name = "SelectedGatherResource"
+    resource_target_marker.visible = false
+    add_child(resource_target_marker)
+    var ring := MeshInstance3D.new()
+    ring.name = "GroundRing"
+    var mesh := TorusMesh.new()
+    mesh.inner_radius = 0.65
+    mesh.outer_radius = 0.80
+    ring.mesh = mesh
+    var material := StandardMaterial3D.new()
+    material.albedo_color = Color("a9e38d",0.85)
+    material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    ring.material_override = material
+    resource_target_marker.add_child(ring)
+    var label := Label3D.new()
+    label.name = "GatherLabel"
+    label.position.y = 1.45
+    label.pixel_size = 0.008
+    label.font_size = 24
+    label.outline_size = 6
+    label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+    label.modulate = Color("cff5bc")
+    resource_target_marker.add_child(label)
 
 func _ui() -> void:
     config_request = HTTPRequest.new()
@@ -1226,16 +1259,23 @@ func _physics_process(delta: float) -> void:
     players[own_id].position = after
     players[own_id].set_motion((after-before)/maxf(delta,0.001),fast)
     var focus: Vector3 = players[own_id].position + Vector3(0, 1.6, 0)
-    var offset := Vector3(0, -sin(input_driver.pitch) * 13.0, cos(input_driver.pitch) * 13.0)
+    var zoom: float = input_driver.camera_distance
+    var offset := Vector3(0, -sin(input_driver.pitch) * zoom, cos(input_driver.pitch) * zoom)
     var target: Vector3 = focus + offset.rotated(Vector3.UP, input_driver.yaw)
     var smoothed: Vector3 = camera.position.lerp(target, minf(1.0, delta * 7.0))
     camera.position = world.camera_safe_target(focus, smoothed)
     camera.look_at(focus, Vector3.UP)
     if live_ui != null and ["bow","spear"].has(live_ui.combat_equipment):
         var from: Vector3 = players[own_id].position + Vector3.UP*0.8
-        var projection: Vector3 = from + _bow_aim_direction() * (12.0 if live_ui.combat_equipment == "bow" else 4.5)
+        var direction: Vector3 = _bow_aim_direction()
+        var projection: Vector3 = from + direction * (12.0 if live_ui.combat_equipment == "bow" else 4.5)
         if not camera.is_position_behind(projection):
             live_ui.set_combat_reticle(camera.unproject_position(projection))
+        if Time.get_ticks_msec() >= next_aim_hint_at_msec:
+            next_aim_hint_at_msec = Time.get_ticks_msec() + 125
+            live_ui.set_combat_target_status(
+                _bow_reticle_state(from,direction) if live_ui.combat_equipment == "bow"
+                else _spear_reticle_state(players[own_id].position,direction))
     send_accumulator += delta
     var at: Vector3 = players[own_id].position
     if send_accumulator >= 0.05:
@@ -1946,6 +1986,48 @@ func _in_attack_arc(from: Vector3, target: Vector3, facing: Vector2) -> bool:
         return true
     var to_target := Vector2(target.x-from.x,target.z-from.z)
     return to_target.length_squared() < 0.04 or to_target.normalized().dot(facing) >= 0.35
+
+func _spear_reticle_state(origin: Vector3, direction: Vector3) -> String:
+    var front := Vector2(direction.x,direction.z).normalized()
+    var candidates: Array[Vector3] = []
+    if wolf_alive:
+        candidates.append(wolf_position)
+    for wolf in pack_wolves.values():
+        if bool(wolf["alive"]):
+            candidates.append(wolf["position"])
+    for animal in passive_creatures.values():
+        if bool(animal["alive"]):
+            candidates.append(animal["position"])
+    for target in candidates:
+        if absf(origin.y-target.y) <= 3.0 and Vector2(origin.x-target.x,
+                origin.z-target.z).length_squared() <= 4.5*4.5 and _in_attack_arc(
+                    origin,target,front):
+            return "target"
+    return "none"
+
+func _bow_reticle_state(origin: Vector3, direction: Vector3) -> String:
+    if int(player_inventories.get(own_id,{}).get("arrow",0)) <= 0:
+        return "no_ammo"
+    var world: Node3D = get_node("Eldoria_Forest")
+    var blocked_at: float = world.arrow_block_fraction(origin,origin+direction*12.0)*12.0
+    var target_at := INF
+    if wolf_alive:
+        target_at = minf(target_at,_ray_wolf_hit_distance(
+            origin,direction,wolf_position+Vector3.UP*0.65))
+    for wolf in pack_wolves.values():
+        if bool(wolf["alive"]):
+            target_at = minf(target_at,_ray_wolf_hit_distance(
+                origin,direction,wolf["position"]+Vector3.UP*0.65))
+    for animal in passive_creatures.values():
+        if not bool(animal["alive"]):
+            continue
+        var height: float = 0.8 if animal["species"] == "deer" else 0.35
+        var radius: float = 0.75 if animal["species"] == "deer" else 0.40
+        target_at = minf(target_at,_ray_wolf_hit_distance(
+            origin,direction,animal["position"]+Vector3.UP*height,radius))
+    if target_at < blocked_at:
+        return "target"
+    return "blocked" if blocked_at < 11.99 else "none"
 
 func _attack_feedback(id: int, message: String) -> void:
     if id == own_id:
@@ -2907,9 +2989,9 @@ func _try_gather() -> void:
     if own_id == 0 or not players.has(own_id) or int(player_health.get(own_id, MAX_HEALTH)) <= 0:
         return
     var world: Node3D = get_node("Eldoria_Forest")
-    var target: int = world.nearest_resource(players[own_id].position, 2.7, resource_remaining)
+    var target: int = _aimed_gather_resource()
     if target < 0:
-        _status("No resource in range. Approach a tree, rock or flower.")
+        _status("Подойдите к ресурсу на 2,7 м и повернитесь к нему.")
         return
     if multiplayer.is_server():
         _gather_on_server(own_id, target)
@@ -3036,14 +3118,48 @@ func _refresh_gather_hud() -> void:
     inventory_label.text = "Wood: %d | Stone: %d | Herbs: %d | Axe: %s" % [int(inv.get("wood",0)),int(inv.get("stone",0)),int(inv.get("herb",0)),"YES" if int(inv.get("axe",0))>0 else "NO"]
     if own_id == 0 or not players.has(own_id):
         resource_label.text = "Near: none"
+        _set_gather_target(-1)
         return
     var world: Node3D = get_node("Eldoria_Forest")
-    var resource_id: int = world.nearest_resource(players[own_id].position,2.7,resource_remaining)
+    var resource_id: int = _aimed_gather_resource()
+    _set_gather_target(resource_id)
     if resource_id < 0:
         resource_label.text = "Near: none"
     else:
         var entry: Dictionary = world.resource_by_id(resource_id)
-        resource_label.text = "Nearby: %s (%d left) — F / Gather" % [String(entry["kind"]),int(resource_remaining.get(resource_id,0))]
+        resource_label.text = "Цель: %s (%d) — F / СБОР" % [
+            String(entry["kind"]),int(resource_remaining.get(resource_id,0))]
+
+func _aimed_gather_resource() -> int:
+    if own_id <= 0 or not players.has(own_id):
+        return -1
+    var world: Node3D = get_node("Eldoria_Forest")
+    var facing := Vector3.FORWARD.rotated(Vector3.UP,input_driver.yaw)
+    return RESOURCE_TARGETING.choose(world.resources,players[own_id].position,
+        facing,resource_remaining)
+
+func _set_gather_target(resource_id: int) -> void:
+    selected_resource_id = resource_id
+    if resource_target_marker != null:
+        resource_target_marker.visible = resource_id > 0
+    if resource_id <= 0:
+        if live_ui != null:
+            live_ui.set_gather_target("",0)
+        return
+    var entry: Dictionary = get_node("Eldoria_Forest").resource_by_id(resource_id)
+    if entry.is_empty():
+        return
+    if resource_target_marker != null:
+        resource_target_marker.position = Vector3(entry["pos"].x,
+            entry["pos"].y+0.20,entry["pos"].z)
+        var label: Label3D = resource_target_marker.get_node("GatherLabel")
+        label.text = {"wood":"ДЕРЕВО","stone":"КАМЕНЬ","herb":"РАСТЕНИЕ"}.get(
+            str(entry["kind"]),"РЕСУРС")
+        # Large trees should display their selection overhead.
+        label.position.y = 2.6 if entry["kind"] == "wood" else 1.1
+    if live_ui != null:
+        live_ui.set_gather_target(str(entry["kind"]),
+            int(resource_remaining.get(resource_id,0)))
 
 func _try_jump() -> void:
     if own_id == 0 or not players.has(own_id) or int(player_health.get(own_id, MAX_HEALTH)) <= 0:
@@ -3155,6 +3271,16 @@ func _unhandled_key_input(event: InputEvent) -> void:
         _try_repair_camp()
 
 func _unhandled_input(event: InputEvent) -> void:
+    if event is InputEventMouseButton and event.pressed and not is_dedicated and (
+            live_ui == null or live_ui.active_panel.is_empty()):
+        if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+            input_driver.change_zoom(-1.3)
+            get_viewport().set_input_as_handled()
+            return
+        if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+            input_driver.change_zoom(1.3)
+            get_viewport().set_input_as_handled()
+            return
     if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
         if (live_ui == null or live_ui.active_panel.is_empty()) and not is_dedicated:
             _try_attack()

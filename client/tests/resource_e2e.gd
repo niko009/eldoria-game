@@ -35,6 +35,10 @@ func _run() -> void:
     if game.player_inventories.has(game.own_id) and int(game.player_inventories[game.own_id].get("herb",0)) != 0:
         _fail("unexpected inventory")
         return
+    # TASK-055: gather the explicitly highlighted resource, not whatever is
+    # closest behind the camera.
+    var look: Vector3 = world.resource_by_id(target)["pos"]-game.players[game.own_id].position
+    game.input_driver.yaw = atan2(-look.x,-look.z)
     for i in range(30):
         await process_frame
     game._try_gather()

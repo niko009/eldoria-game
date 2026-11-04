@@ -41,6 +41,8 @@ func _run() -> void:
         if int(game.player_inventories[game.own_id].get("herb",0)) != 0:
             _fail("test started with non-empty inventory")
             return
+        var look: Vector3 = world.resource_by_id(resource_id)["pos"]-game.players[game.own_id].position
+        game.input_driver.yaw = atan2(-look.x,-look.z)
         game._try_gather()
         for i in range(300):
             if int(game.player_inventories[game.own_id].get("herb",0)) >= 1:

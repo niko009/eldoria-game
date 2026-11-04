@@ -297,6 +297,12 @@ func melee_attack() -> void:
         var recoil := create_tween()
         combat_visual.rotation_degrees.x = 65
         recoil.tween_property(combat_visual,"rotation_degrees:x",90.0,0.18)
+    elif combat_item == "spear" and combat_visual != null:
+        # Quick visible forward thrust followed by recovery. No client-side
+        # movement or hit detection: damage remains server-authoritative.
+        var thrust := create_tween()
+        thrust.tween_property(combat_visual,"position:z",-0.38,0.11).set_trans(Tween.TRANS_QUAD)
+        thrust.tween_property(combat_visual,"position:z",0.0,0.23).set_trans(Tween.TRANS_SINE)
 
 func shield_block() -> void:
     if headless or combat_item != "shield" or combat_visual == null:

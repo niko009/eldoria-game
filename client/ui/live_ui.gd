@@ -36,7 +36,11 @@ var touch_scroll = TouchScroller.new()
 var combat_equipment := "unarmed"
 var bow_aim_hint: Label
 var combat_aim_help: Label
+var gather_target_hint: Label
+var gather_target_kind := ""
+var gather_target_count := 0
 var reticle_at := Vector2(-1,-1)
+var combat_target_status := "none"
 var saved_skills: Dictionary = {"archery":0,"spear":0,"defense":0}
 var hero_mana := 100
 
@@ -78,6 +82,12 @@ func _ready() -> void:
     combat_aim_help.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
     combat_aim_help.visible = false
     add_child(combat_aim_help)
+    gather_target_hint = Style.label("",14,Color("cbf2bb"))
+    gather_target_hint.name = "GatherTargetHint"
+    gather_target_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    gather_target_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    gather_target_hint.visible = false
+    add_child(gather_target_hint)
     hud.joystick.direction_changed.connect(func(vector: Vector2) -> void: joystick_moved.emit(vector))
 
     overlay = ColorRect.new()
@@ -181,6 +191,30 @@ func _refresh_bow_hint() -> void:
             combat_aim_help.text = "ПКМ / СВАЙП — ПРИЦЕЛ · %d СТРЕЛ" % state.amount("arrow") if state.amount("arrow") > 0 else "НЕТ СТРЕЛ · СОЗДАЙТЕ У КОСТРА"
         else:
             combat_aim_help.text = "КОПЬЁ · ЦЕЛЬ ВПЕРЕДИ · ДО 4,5 М"
+        _apply_combat_target_status()
+
+func set_combat_target_status(status: String) -> void:
+    if status not in ["none","target","blocked","no_ammo"] or combat_target_status == status:
+        return
+    combat_target_status = status
+    _apply_combat_target_status()
+
+func _apply_combat_target_status() -> void:
+    if bow_aim_hint == null or combat_aim_help == null:
+        return
+    var tone := Color("f1e3ba")
+    match combat_target_status:
+        "target":
+            tone = Color("a7f3a9")
+            combat_aim_help.text = "ЦЕЛЬ В ПРИЦЕЛЕ · ВЫСТРЕЛ" if combat_equipment == "bow" else "ЦЕЛЬ ПЕРЕД ВАМИ · УКОЛ"
+        "blocked":
+            tone = Color("f3bb79")
+            combat_aim_help.text = "ПРЕПЯТСТВИЕ НА ЛИНИИ ОГНЯ"
+        "no_ammo":
+            tone = Color("f4877c")
+            combat_aim_help.text = "НЕТ СТРЕЛ · СОЗДАЙТЕ У КОСТРА"
+    bow_aim_hint.add_theme_color_override("font_color",tone)
+    combat_aim_help.add_theme_color_override("font_color",tone)
 
 func set_combat_reticle(at: Vector2) -> void:
     if combat_equipment not in ["bow","spear"] or not active_panel.is_empty():
@@ -189,6 +223,18 @@ func set_combat_reticle(at: Vector2) -> void:
     # weapon's ray. Project the real aim line: the marker must not lie.
     reticle_at = Vector2(clampf(at.x,28,size.x-28),clampf(at.y,42,size.y-68))
     _position_combat_reticle()
+
+func set_gather_target(kind: String, count: int) -> void:
+    if gather_target_kind == kind and gather_target_count == count:
+        return
+    gather_target_kind = kind
+    gather_target_count = count
+    if gather_target_hint == null:
+        return
+    gather_target_hint.visible = kind != "" and active_panel.is_empty()
+    var title: String = {"wood":"ДЕРЕВО","stone":"КАМЕНЬ",
+        "herb":"РАСТЕНИЕ"}.get(kind,"")
+    gather_target_hint.text = "◎ %s  ×%d   ·   F / СБОР" % [title,count] if kind != "" else ""
 
 func _position_combat_reticle() -> void:
     if bow_aim_hint == null or reticle_at.x < 0:
@@ -297,6 +343,8 @@ func _open(kind: String) -> void:
         _close()
         return
     active_panel = kind
+    if gather_target_hint != null:
+        gather_target_hint.visible = false
     _refresh_bow_hint()
     touch_scroll.reset()
     # Opening an overlay must never leave a touch movement vector latched.
@@ -387,6 +435,8 @@ func _close() -> void:
     if active_panel.is_empty():
         return
     active_panel = ""
+    if gather_target_hint != null:
+        gather_target_hint.visible = gather_target_kind != ""
     _refresh_bow_hint()
     touch_scroll.reset()
     state.request_close.emit()
@@ -432,6 +482,10 @@ func _layout() -> void:
         combat_aim_help.size = Vector2(minf(size.x*0.54,330),25)
         combat_aim_help.position = Vector2((size.x-combat_aim_help.size.x)*0.5, size.y*0.5+33)
     _position_combat_reticle()
+    if gather_target_hint != null:
+        gather_target_hint.size = Vector2(minf(size.x*0.55,320),26)
+        gather_target_hint.position = Vector2((size.x-gather_target_hint.size.x)*0.5,
+            minf(size.y-90, size.y*0.5+78))
     var mobile := OS.has_feature("mobile") or OS.get_cmdline_user_args().has("--test-live-ui") or OS.get_cmdline_user_args().has("--test-mobile-ui")
     var top_margin := 49.0 if mobile else 16.0
     var bottom_margin := 30.0 if mobile else 16.0
