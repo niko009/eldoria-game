@@ -68,7 +68,7 @@ func _run() -> void:
         if recipe_id == "axe":
             requested[0] += 1)
     ui._craft("axe")
-    if requested[0] != 1 or ui.active_panel != "":
+    if requested[0] != 1 or ui.active_panel != "craft":
         push_error("Live crafting request did not dispatch to game exactly once")
         quit(8)
         return
