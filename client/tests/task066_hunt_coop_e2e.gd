@@ -6,11 +6,13 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var game: Node3D = GAME.instantiate()
+	game.selected_avatar = 1 # Deterministic Rogue baseline; no Knight resistance.
 	root.add_child(game)
 	await process_frame
 	game._host()
 	game.set_physics_process(false)
 	var id: int = game.own_id
+	game.player_choices[id] = 1 # Force Rogue; persisted profile can select Knight.
 	var world: Node3D = game.get_node("Eldoria_Forest")
 	var pos := Vector3(0,world.height_at(0,0)+1,0)
 	game.players[id].position = pos
