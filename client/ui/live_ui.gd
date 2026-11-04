@@ -305,6 +305,10 @@ func set_hunt_progress(progress: int) -> void:
     if hud != null:
         hud.set_hunt_progress(progress)
 
+func set_alpha_wolf_health(hp: int, alive: bool) -> void:
+    if hud != null:
+        hud.set_alpha_wolf_health(hp,alive)
+
 func set_practice_points(points: int) -> void:
     if hud != null:
         hud.set_practice_points(points)

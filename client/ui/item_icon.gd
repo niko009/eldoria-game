@@ -67,6 +67,11 @@ func _draw() -> void:
 			draw_circle(Vector2(23,26),16,Color("b75c55") if enabled else c)
 			draw_circle(Vector2(24,26),8,Color("e6a18c") if enabled else c)
 			draw_circle(Vector2(24,26),4,Color("f5d2b2") if enabled else c)
+		"grilled_meat":
+			draw_circle(Vector2(23,26),17,Color("764329") if enabled else c)
+			draw_circle(Vector2(23,26),12,Color("b87c43") if enabled else c)
+			for y in [19.0,25.0,31.0]:
+				draw_line(Vector2(15,y),Vector2(32,y-3),Color("57351e") if enabled else c,2,true)
 		"hide":
 			_shape([Vector2(11,9),Vector2(20,15),Vector2(29,13),Vector2(39,7),Vector2(43,21),Vector2(36,33),Vector2(38,43),Vector2(23,38),Vector2(9,43),Vector2(12,27)],Color("b28b60") if enabled else c)
 			draw_line(Vector2(18,19),Vector2(32,34),Color("d8b78a") if enabled else c,2)

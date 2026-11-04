@@ -22,6 +22,7 @@ const ITEMS := {
 	"hide": {"name":"Шкура","symbol":"▧"},
 	"bone": {"name":"Кость","symbol":"⌁"},
 	"leather_armor": {"name":"Кожаная броня","symbol":"▣"},
+	"grilled_meat": {"name":"Жареное мясо","symbol":"◉"},
 }
 # Hotbar is equipment-only. Unimplemented tools are shown as locked previews.
 # No inventory quantity badges belong in the hotbar.
@@ -48,6 +49,7 @@ const RECIPES := {
 	"shield": {"name":"Щит","description":"Снижает урон волков на 40%","cost":{"wood":4,"stone":1}},
 	"arrow": {"name":"Стрела","description":"Боеприпас для лука (1 штука)","cost":{"wood":1,"stone":1}},
 	"leather_armor": {"name":"Кожаная броня","description":"Пассивно уменьшает входящий урон на 15%","cost":{"hide":3,"bone":1}},
+	"grilled_meat": {"name":"Жареное мясо","description":"Восстанавливает 25 HP и даёт регенерацию здоровья на 30 секунд","cost":{"meat":1,"herb":1}},
 }
 
 var inventory: Dictionary = {"wood": 7, "stone": 3, "herb": 1, "axe": 0}

@@ -64,6 +64,10 @@ var passive_sync_timer := 0.0
 var practice_points: Dictionary = {}
 var shared_hunt_kills := 0
 const SHARED_HUNT_GOAL := 5
+const ALPHA_WOLF_ID := 16
+const ALPHA_WOLF_COOLDOWN_MS := 180000
+var alpha_available_at := 0
+var alpha_last_bite := 0
 var player_skills: Dictionary = {}
 var training_last_hit: Dictionary = {}
 const SKILL_KINDS := ["archery","spear","defense"]
@@ -87,6 +91,8 @@ const MAGE_SPELL_COST := [14.0, 22.0, 34.0]
 const MAGE_SPELL_DAMAGE := [18, 24, 34]
 var mage_spell_index := 0
 var mage_health_regen_accum := 0.0
+var food_regen_until: Dictionary = {}
+var food_regen_accum := 0.0
 var mage_chilled_until: Dictionary = {}
 
 func _try_equip_combat(item: String) -> void:
@@ -991,6 +997,8 @@ func _clear_session() -> void:
     footstep_variant.clear()
     player_health.clear()
     player_respawn_at.clear()
+    food_regen_until.clear()
+    food_regen_accum = 0.0
     last_attack_at.clear()
     wolf_alive = false
     pack_wolves.clear()
@@ -1005,6 +1013,8 @@ func _clear_session() -> void:
     equipped_combat.clear()
     passive_creatures.clear()
     practice_points.clear()
+    alpha_available_at = 0
+    alpha_last_bite = 0
     player_skills.clear()
     shield_taunt_until.clear()
     shield_taunt_ready_at.clear()
@@ -1128,6 +1138,9 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
     health_snapshot.rpc_id(id, MAX_HEALTH, MAX_HEALTH)
     practice_snapshot.rpc_id(id, int(practice_points[id]))
     hunt_progress_snapshot.rpc_id(id,shared_hunt_kills)
+    if passive_creatures.has(ALPHA_WOLF_ID):
+        var alpha: Dictionary = passive_creatures[ALPHA_WOLF_ID]
+        alpha_health_snapshot.rpc_id(id,int(alpha["hp"]),bool(alpha["alive"]))
     skill_snapshot.rpc_id(id,player_skills[id])
     mana_snapshot.rpc_id(id, int(hero_mana[id]))
     for existing_id in players:
@@ -1719,7 +1732,23 @@ func _combat_server_tick(delta: float) -> void:
                 health_snapshot(int(player_health[id]),MAX_HEALTH)
             elif multiplayer.get_peers().has(id):
                 health_snapshot.rpc_id(int(id),int(player_health[id]),MAX_HEALTH)
+    food_regen_accum += delta
+    if food_regen_accum >= 1.0:
+        food_regen_accum -= 1.0
+        for id in food_regen_until.keys():
+            if now >= int(food_regen_until[id]) or not players.has(id) or int(player_health.get(id,0)) <= 0:
+                food_regen_until.erase(id)
+                continue
+            if int(player_health[id]) >= MAX_HEALTH:
+                continue
+            player_health[id] = mini(MAX_HEALTH,int(player_health[id])+2)
+            health_snapshot_for.rpc(int(id),int(player_health[id]))
+            if id == own_id:
+                health_snapshot(int(player_health[id]),MAX_HEALTH)
+            elif multiplayer.get_peers().has(id):
+                health_snapshot.rpc_id(int(id),int(player_health[id]),MAX_HEALTH)
     _tick_passive_creatures(delta,now)
+    _tick_alpha_wolf(delta,now)
     _raid_server_tick(now)
     _tick_raid_pack(delta, now)
     for id in player_respawn_at.keys():
@@ -1854,7 +1883,7 @@ func _spawn_passive_creatures() -> void:
     if not is_dedicated:
         for creature_id in passive_creatures:
             var critter: Dictionary = passive_creatures[creature_id]
-            passive_snapshot(int(creature_id),critter["species"],critter["position"],int(critter["hp"]),true,Vector3.ZERO)
+            passive_snapshot(int(creature_id),critter["species"],critter["position"],int(critter["hp"]),bool(critter["alive"]),Vector3.ZERO)
 
 func _tick_passive_creatures(delta: float, now: int) -> void:
     if passive_creatures.is_empty():
@@ -1877,15 +1906,30 @@ func _tick_passive_creatures(delta: float, now: int) -> void:
 func passive_snapshot(creature_id: int, species: String, at: Vector3, hp: int, alive: bool, direction: Vector3) -> void:
     if is_dedicated or creature_id < 1 or creature_id > PASSIVE_SCRIPT.SPAWNS.size():
         return
-    if species not in ["rabbit","deer","rare_deer","dummy"] or not at.is_finite() or at.length() > 5000:
+    if species not in ["rabbit","deer","rare_deer","dummy","alpha_wolf"] or not at.is_finite() or at.length() > 5000:
         return
     if not passive_actors.has(creature_id):
-        var actor: Node3D = PASSIVE_ACTOR_SCRIPT.new()
-        actor.setup(species)
+        var actor: Node3D
+        if species == "alpha_wolf":
+            actor = WOLF_ACTOR_SCRIPT.new()
+            actor.max_health = 180
+            actor.scale = Vector3.ONE*1.65
+        else:
+            actor = PASSIVE_ACTOR_SCRIPT.new()
+            actor.setup(species)
         actor.name = "Passive_%d_%s" % [creature_id,species]
         add_child(actor)
+        if species == "alpha_wolf":
+            var title := Label3D.new()
+            title.name = "AlphaWolfTitle"
+            title.text = "ВОЖАК ВОЛКОВ · БОСС"
+            title.position.y = 1.8
+            title.font_size = 40
+            title.modulate = Color("ffd39b")
+            title.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+            actor.add_child(title)
         passive_actors[creature_id] = actor
-    passive_actors[creature_id].update_state(at,clampi(hp,0,95),alive,direction)
+    passive_actors[creature_id].update_state(at,clampi(hp,0,180 if species == "alpha_wolf" else 95),alive,direction)
 
 func _damage_passive_on_server(player_id: int, creature_id: int, damage: int, now: int) -> bool:
     if not multiplayer.is_server() or not players.has(player_id) or not passive_creatures.has(creature_id):
@@ -1906,7 +1950,7 @@ func _damage_passive_on_server(player_id: int, creature_id: int, damage: int, no
         _send_combat_impact(animal["position"] + Vector3.UP*1.05,0,"training")
         return true
     animal["hp"] = maxi(0,int(animal["hp"])-damage)
-    _send_combat_impact(animal["position"]+Vector3.UP*(0.8 if animal["species"] in ["deer","rare_deer"] else 0.45),damage,"wildlife")
+    _send_combat_impact(animal["position"]+Vector3.UP*(1.2 if animal["species"] == "alpha_wolf" else 0.8 if animal["species"] in ["deer","rare_deer"] else 0.45),damage,"wildlife")
     if weapon in ["bow","spear"]:
         _award_skill_xp(player_id,"archery" if weapon == "bow" else "spear",2)
     var points := PASSIVE_SCRIPT.HIT_XP
@@ -1915,14 +1959,22 @@ func _damage_passive_on_server(player_id: int, creature_id: int, damage: int, no
         animal["respawn_at"] = now + PASSIVE_SCRIPT.RESPAWN_MS
         animal["direction"] = Vector3.ZERO
         points += PASSIVE_SCRIPT.DEFEAT_XP
-        _award_hunt_loot(player_id,str(animal["species"]))
-        _record_team_hunt(player_id,animal["position"])
+        if animal["species"] == "alpha_wolf":
+            alpha_available_at = now + ALPHA_WOLF_COOLDOWN_MS
+            _award_alpha_rewards(animal["position"])
+        else:
+            _award_hunt_loot(player_id,str(animal["species"]))
+            _record_team_hunt(player_id,animal["position"])
     practice_points[player_id] = mini(1000000,int(practice_points.get(player_id,0))+points)
     if player_id == own_id:
         practice_snapshot(int(practice_points[player_id]))
     else:
         practice_snapshot.rpc_id(player_id,int(practice_points[player_id]))
     passive_snapshot.rpc(creature_id,animal["species"],animal["position"],int(animal["hp"]),bool(animal["alive"]),animal["direction"])
+    if animal["species"] == "alpha_wolf":
+        alpha_health_snapshot.rpc(int(animal["hp"]),bool(animal["alive"]))
+        if not is_dedicated:
+            alpha_health_snapshot(int(animal["hp"]),bool(animal["alive"]))
     if not is_dedicated:
         passive_snapshot(creature_id,animal["species"],animal["position"],int(animal["hp"]),bool(animal["alive"]),animal["direction"])
     return true
@@ -1972,6 +2024,98 @@ func _record_team_hunt(killer_id: int, at: Vector3) -> void:
         elif multiplayer.get_peers().has(id):
             inventory_snapshot.rpc_id(int(id),player_inventories[id])
         _attack_feedback(int(id),"ОБЩАЯ ОХОТА ВЫПОЛНЕНА! +2 шкуры и +1 кость")
+    _summon_alpha_wolf(killer_id,at)
+
+func _summon_alpha_wolf(killer_id: int, at: Vector3) -> void:
+    if not multiplayer.is_server() or not passive_creatures.has(ALPHA_WOLF_ID) or not players.has(killer_id):
+        return
+    var now := Time.get_ticks_msec()
+    var boss: Dictionary = passive_creatures[ALPHA_WOLF_ID]
+    if bool(boss["alive"]) or now < alpha_available_at:
+        return
+    var world: Node3D = get_node("Eldoria_Forest")
+    var center: Vector3 = players[killer_id].position
+    var spawn := center + Vector3(9,0,6)
+    for step in 12:
+        var angle := float(step)*TAU/12.0
+        var candidate := center+Vector3(cos(angle)*10.0,0,sin(angle)*10.0)
+        if not world.collides_at(Vector2(candidate.x,candidate.z),0.65):
+            spawn = candidate
+            break
+    spawn.y = world.height_at(spawn.x,spawn.z)+0.1
+    boss["position"] = spawn
+    boss["hp"] = boss["max_hp"]
+    boss["alive"] = true
+    boss["direction"] = Vector3.ZERO
+    alpha_last_bite = now
+    passive_snapshot.rpc(ALPHA_WOLF_ID,"alpha_wolf",spawn,int(boss["hp"]),true,Vector3.ZERO)
+    alpha_health_snapshot.rpc(int(boss["hp"]),true)
+    if not is_dedicated:
+        passive_snapshot(ALPHA_WOLF_ID,"alpha_wolf",spawn,int(boss["hp"]),true,Vector3.ZERO)
+        alpha_health_snapshot(int(boss["hp"]),true)
+    for id in players:
+        if int(player_health.get(id,0)) > 0:
+            _attack_feedback(int(id),"ИСПЫТАНИЕ: появился ВОЖАК ВОЛКОВ! 180 HP")
+
+func _tick_alpha_wolf(delta: float, now: int) -> void:
+    if not multiplayer.is_server() or not passive_creatures.has(ALPHA_WOLF_ID):
+        return
+    var boss: Dictionary = passive_creatures[ALPHA_WOLF_ID]
+    if not bool(boss["alive"]):
+        return
+    var position: Vector3 = boss["position"]
+    var target_id := _choose_wolf_target(position,now)
+    boss["direction"] = Vector3.ZERO
+    if target_id <= 0:
+        return
+    var destination: Vector3 = players[target_id].position
+    var heading := Vector3(destination.x-position.x,0,destination.z-position.z)
+    var distance := heading.length()
+    if distance > 2.0:
+        var world: Node3D = get_node("Eldoria_Forest")
+        boss["direction"] = heading.normalized()
+        var speed := 3.3 if int(boss["hp"]) > 60 else 4.5
+        var next: Vector3 = world.move_actor(position,boss["direction"]*minf(speed*delta,distance-2.0),0.6)
+        next.y = world.height_at(next.x,next.z)+0.1
+        boss["position"] = next
+    elif absf(destination.y-position.y) <= 3.0 and now-alpha_last_bite >= 1700:
+        alpha_last_bite = now
+        if _damage_player_on_server(target_id,18):
+            wolf_attack_visual.rpc(ALPHA_WOLF_ID)
+            if not is_dedicated:
+                wolf_attack_visual(ALPHA_WOLF_ID)
+
+@rpc("authority","call_remote","reliable")
+func alpha_health_snapshot(hp: int, alive: bool) -> void:
+    if live_ui != null:
+        live_ui.set_alpha_wolf_health(hp,alive)
+
+func _award_alpha_rewards(at: Vector3) -> void:
+    var changes: Dictionary = {}
+    for id in players:
+        if int(player_health.get(id,0)) <= 0 or players[id].position.distance_to(at) > 30.0:
+            continue
+        if not player_inventories.has(id):
+            continue
+        changes[id] = player_inventories[id].duplicate(true)
+        var inventory: Dictionary = player_inventories[id].duplicate(true)
+        for kind in {"hide":4,"bone":3,"grilled_meat":2}:
+            inventory[kind] = mini(20 if kind == "grilled_meat" else 9999,int(inventory.get(kind,0)) + int({"hide":4,"bone":3,"grilled_meat":2}[kind]))
+        player_inventories[id] = inventory
+        if player_identity_keys.has(id):
+            persistent_profiles[player_identity_keys[id]]["inventory"] = inventory.duplicate(true)
+    if not _save_world_state():
+        for id in changes:
+            player_inventories[id] = changes[id]
+            if player_identity_keys.has(id):
+                persistent_profiles[player_identity_keys[id]]["inventory"] = changes[id].duplicate(true)
+        return
+    for id in changes:
+        if id == own_id:
+            inventory_snapshot(player_inventories[id])
+        elif multiplayer.get_peers().has(id):
+            inventory_snapshot.rpc_id(int(id),player_inventories[id])
+        _attack_feedback(int(id),"ВОЖАК ПОБЕЖДЁН! +4 шкуры, +3 кости, +2 порции еды")
 
 func _award_hunt_loot(player_id: int, species: String) -> void:
     if not multiplayer.is_server() or not player_inventories.has(player_id):
@@ -2003,7 +2147,7 @@ func practice_snapshot(points: int) -> void:
 func _damage_player_on_server(id: int, damage: int) -> bool:
     if not multiplayer.is_server() or not players.has(id) or int(player_health.get(id, 0)) <= 0:
         return false
-    if (not wolf_alive and pack_wolves.is_empty()) or damage <= 0:
+    if (not wolf_alive and pack_wolves.is_empty() and not (passive_creatures.has(ALPHA_WOLF_ID) and bool(passive_creatures[ALPHA_WOLF_ID]["alive"]))) or damage <= 0:
         return false
     if int(player_choices.get(id,-1)) == HERO_CLASSES.KNIGHT:
         damage = maxi(1,ceili(float(damage)*HERO_CLASSES.KNIGHT_DAMAGE_TAKEN))
@@ -2221,8 +2365,8 @@ func _bow_reticle_state(origin: Vector3, direction: Vector3) -> String:
     for animal in passive_creatures.values():
         if not bool(animal["alive"]):
             continue
-        var height: float = 0.8 if animal["species"] in ["deer","rare_deer"] else 0.35
-        var radius: float = 0.75 if animal["species"] in ["deer","rare_deer"] else 0.40
+        var height: float = 1.2 if animal["species"] == "alpha_wolf" else 0.8 if animal["species"] in ["deer","rare_deer"] else 0.35
+        var radius: float = 0.95 if animal["species"] == "alpha_wolf" else 0.75 if animal["species"] in ["deer","rare_deer"] else 0.40
         target_at = minf(target_at,_ray_wolf_hit_distance(
             origin,direction,animal["position"]+Vector3.UP*height,radius))
     if target_at < blocked_at:
@@ -2337,9 +2481,9 @@ func _bow_attack_on_server(id: int, aim: Vector3, spell: int = -1) -> bool:
         var animal: Dictionary = passive_creatures[creature_id]
         if not bool(animal["alive"]):
             continue
-        var hit_center: Vector3 = animal["position"]+Vector3.UP*(0.8 if animal["species"] in ["deer","rare_deer"] else 0.35)
+        var hit_center: Vector3 = animal["position"]+Vector3.UP*(1.2 if animal["species"] == "alpha_wolf" else 0.8 if animal["species"] in ["deer","rare_deer"] else 0.35)
         var distance := _ray_wolf_hit_distance(origin,aim,hit_center,
-            0.75 if animal["species"] in ["deer","rare_deer"] else 0.40)
+            0.95 if animal["species"] == "alpha_wolf" else 0.75 if animal["species"] in ["deer","rare_deer"] else 0.40)
         if distance < nearest:
             nearest = distance
             struck = 100+int(creature_id)
@@ -2552,9 +2696,9 @@ func wolf_snapshot(at: Vector3, hp: int, alive: bool, direction: Vector3) -> voi
 
 @rpc("authority","call_remote","unreliable")
 func wolf_attack_visual(wolf_id: int) -> void:
-    if is_dedicated or wolf_id < 0 or wolf_id > 2:
+    if is_dedicated or wolf_id < 0 or (wolf_id > 2 and wolf_id != ALPHA_WOLF_ID):
         return
-    var actor: Node3D = wolf_actor if wolf_id == 0 else pack_actors.get(wolf_id)
+    var actor: Node3D = wolf_actor if wolf_id == 0 else passive_actors.get(ALPHA_WOLF_ID) if wolf_id == ALPHA_WOLF_ID else pack_actors.get(wolf_id)
     if actor != null and is_instance_valid(actor):
         actor.play_bite()
         if harvest_visuals != null:
@@ -2797,7 +2941,7 @@ func shield_taunt_visual(id: int, duration_ms: int) -> void:
 # The server owns resource quantities and player inventories.
 # This is an in-memory prototype; a permanent world will require persistence.
 func _empty_inventory() -> Dictionary:
-    return {"wood":0, "stone":0, "herb":0, "axe":0, "bandage":0, "repair_kit":0, "spear":0, "bow":0, "shield":0, "arrow":0, "meat":0, "hide":0, "bone":0, "leather_armor":0}
+    return {"wood":0, "stone":0, "herb":0, "axe":0, "bandage":0, "repair_kit":0, "spear":0, "bow":0, "shield":0, "arrow":0, "meat":0, "hide":0, "bone":0, "leather_armor":0,"grilled_meat":0}
 
 func _empty_skills() -> Dictionary:
     return {"archery":0,"spear":0,"defense":0}
@@ -2836,7 +2980,8 @@ const EXTRA_RECIPES := {
     "bow": {"wood":4, "herb":2},
     "shield": {"wood":4, "stone":1},
     "arrow": {"wood":1, "stone":1},
-    "leather_armor": {"hide":3, "bone":1}
+    "leather_armor": {"hide":3, "bone":1},
+    "grilled_meat": {"meat":1, "herb":1}
 }
 
 func _try_craft_recipe(recipe_id: String) -> void:
@@ -2884,7 +3029,7 @@ func _craft_consumable_on_server(id: int, recipe_id: String) -> bool:
 func _try_use_consumable(recipe_id: String) -> void:
     if own_id <= 0 or not EXTRA_RECIPES.has(recipe_id):
         return
-    if ["spear","bow","shield","arrow"].has(recipe_id):
+    if ["spear","bow","shield","arrow","leather_armor"].has(recipe_id):
         if recipe_id != "arrow":
             _try_equip_combat(recipe_id)
         return
@@ -2899,9 +3044,11 @@ func request_use_consumable(recipe_id: String) -> void:
         _use_consumable_on_server(multiplayer.get_remote_sender_id(),recipe_id)
 
 func _use_consumable_on_server(id: int, recipe_id: String) -> bool:
-    if not multiplayer.is_server() or not EXTRA_RECIPES.has(recipe_id) or not players.has(id) or int(player_health.get(id,0)) <= 0:
+    if not multiplayer.is_server() or recipe_id not in ["bandage","repair_kit","grilled_meat"] or not players.has(id) or int(player_health.get(id,0)) <= 0:
         return false
     if recipe_id == "bandage" and int(player_health[id]) >= MAX_HEALTH:
+        return false
+    if recipe_id == "grilled_meat" and int(player_health[id]) >= MAX_HEALTH and food_regen_until.get(id,0) > Time.get_ticks_msec():
         return false
     if recipe_id == "repair_kit" and (raid.phase != "night" or camp_target_id == 0 or camp_hp <= 0 or camp_hp >= CAMP_MAX_HP or not _near_campfire(id)):
         return false
@@ -2918,8 +3065,11 @@ func _use_consumable_on_server(id: int, recipe_id: String) -> bool:
         if player_identity_keys.has(id):
             persistent_profiles[player_identity_keys[id]]["inventory"] = before.duplicate(true)
         return false
-    if recipe_id == "bandage":
-        player_health[id] = mini(MAX_HEALTH,int(player_health[id])+40)
+    if recipe_id in ["bandage","grilled_meat"]:
+        player_health[id] = mini(MAX_HEALTH,int(player_health[id])+(25 if recipe_id == "grilled_meat" else 40))
+        if recipe_id == "grilled_meat":
+            food_regen_until[id] = Time.get_ticks_msec()+30000
+            _attack_feedback(id,"Сытность: восстановление здоровья 30 сек")
         health_snapshot_for.rpc(id,int(player_health[id]))
         if id == own_id:
             health_snapshot(int(player_health[id]),MAX_HEALTH)
@@ -3698,6 +3848,8 @@ func _live_action(kind: String) -> void:
             _try_equip_combat(kind)
         "bandage":
             _try_use_consumable("bandage")
+        "grilled_meat":
+            _try_use_consumable("grilled_meat")
         "repair_kit":
             _try_use_consumable("repair_kit")
         "repair":

@@ -15,7 +15,8 @@ const SPAWNS := [
 	{"species":"deer","x":24.0,"z":18.0,"hp":55},
 	{"species":"deer","x":-15.0,"z":25.0,"hp":55},
 	{"species":"deer","x":18.0,"z":-22.0,"hp":55},
-	{"species":"rare_deer","x":-26.0,"z":-21.0,"hp":95}
+	{"species":"rare_deer","x":-26.0,"z":-21.0,"hp":95},
+	{"species":"alpha_wolf","x":25.0,"z":-25.0,"hp":180}
 ]
 const RESPAWN_MS := 20000
 const HIT_XP := 2
@@ -38,7 +39,7 @@ static func construct(world: Node3D) -> Dictionary:
 					break
 		home.y = world.height_at(home.x,home.z)+0.1
 		result[index+1] = {"species":config["species"],"home":home,"position":home,
-			"hp":int(config["hp"]),"max_hp":int(config["hp"]),"alive":true,
+			"hp":int(config["hp"]),"max_hp":int(config["hp"]),"alive":config["species"] != "alpha_wolf",
 			"direction":Vector3.ZERO,"respawn_at":0}
 	return result
 
@@ -46,7 +47,7 @@ static func tick(mobs: Dictionary, players: Dictionary, health: Dictionary, worl
 	var changed := false
 	for mob_id in mobs:
 		var critter: Dictionary = mobs[mob_id]
-		if critter["species"] == "dummy":
+		if critter["species"] in ["dummy","alpha_wolf"]:
 			continue
 		if not critter["alive"]:
 			if now >= int(critter["respawn_at"]):
