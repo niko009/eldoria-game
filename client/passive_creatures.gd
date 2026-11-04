@@ -14,7 +14,8 @@ const SPAWNS := [
 	{"species":"deer","x":-22.0,"z":16.0,"hp":55},
 	{"species":"deer","x":24.0,"z":18.0,"hp":55},
 	{"species":"deer","x":-15.0,"z":25.0,"hp":55},
-	{"species":"deer","x":18.0,"z":-22.0,"hp":55}
+	{"species":"deer","x":18.0,"z":-22.0,"hp":55},
+	{"species":"rare_deer","x":-26.0,"z":-21.0,"hp":95}
 ]
 const RESPAWN_MS := 20000
 const HIT_XP := 2

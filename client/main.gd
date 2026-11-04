@@ -62,6 +62,8 @@ var passive_creatures: Dictionary = {}
 var passive_actors: Dictionary = {}
 var passive_sync_timer := 0.0
 var practice_points: Dictionary = {}
+var shared_hunt_kills := 0
+const SHARED_HUNT_GOAL := 5
 var player_skills: Dictionary = {}
 var training_last_hit: Dictionary = {}
 const SKILL_KINDS := ["archery","spear","defense"]
@@ -1125,6 +1127,7 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
     axe_equip_snapshot.rpc_id(id, false)
     health_snapshot.rpc_id(id, MAX_HEALTH, MAX_HEALTH)
     practice_snapshot.rpc_id(id, int(practice_points[id]))
+    hunt_progress_snapshot.rpc_id(id,shared_hunt_kills)
     skill_snapshot.rpc_id(id,player_skills[id])
     mana_snapshot.rpc_id(id, int(hero_mana[id]))
     for existing_id in players:
@@ -1874,7 +1877,7 @@ func _tick_passive_creatures(delta: float, now: int) -> void:
 func passive_snapshot(creature_id: int, species: String, at: Vector3, hp: int, alive: bool, direction: Vector3) -> void:
     if is_dedicated or creature_id < 1 or creature_id > PASSIVE_SCRIPT.SPAWNS.size():
         return
-    if species not in ["rabbit","deer","dummy"] or not at.is_finite() or at.length() > 5000:
+    if species not in ["rabbit","deer","rare_deer","dummy"] or not at.is_finite() or at.length() > 5000:
         return
     if not passive_actors.has(creature_id):
         var actor: Node3D = PASSIVE_ACTOR_SCRIPT.new()
@@ -1882,7 +1885,7 @@ func passive_snapshot(creature_id: int, species: String, at: Vector3, hp: int, a
         actor.name = "Passive_%d_%s" % [creature_id,species]
         add_child(actor)
         passive_actors[creature_id] = actor
-    passive_actors[creature_id].update_state(at,clampi(hp,0,55),alive,direction)
+    passive_actors[creature_id].update_state(at,clampi(hp,0,95),alive,direction)
 
 func _damage_passive_on_server(player_id: int, creature_id: int, damage: int, now: int) -> bool:
     if not multiplayer.is_server() or not players.has(player_id) or not passive_creatures.has(creature_id):
@@ -1903,7 +1906,7 @@ func _damage_passive_on_server(player_id: int, creature_id: int, damage: int, no
         _send_combat_impact(animal["position"] + Vector3.UP*1.05,0,"training")
         return true
     animal["hp"] = maxi(0,int(animal["hp"])-damage)
-    _send_combat_impact(animal["position"]+Vector3.UP*(0.8 if animal["species"] == "deer" else 0.45),damage,"wildlife")
+    _send_combat_impact(animal["position"]+Vector3.UP*(0.8 if animal["species"] in ["deer","rare_deer"] else 0.45),damage,"wildlife")
     if weapon in ["bow","spear"]:
         _award_skill_xp(player_id,"archery" if weapon == "bow" else "spear",2)
     var points := PASSIVE_SCRIPT.HIT_XP
@@ -1912,6 +1915,8 @@ func _damage_passive_on_server(player_id: int, creature_id: int, damage: int, no
         animal["respawn_at"] = now + PASSIVE_SCRIPT.RESPAWN_MS
         animal["direction"] = Vector3.ZERO
         points += PASSIVE_SCRIPT.DEFEAT_XP
+        _award_hunt_loot(player_id,str(animal["species"]))
+        _record_team_hunt(player_id,animal["position"])
     practice_points[player_id] = mini(1000000,int(practice_points.get(player_id,0))+points)
     if player_id == own_id:
         practice_snapshot(int(practice_points[player_id]))
@@ -1921,6 +1926,74 @@ func _damage_passive_on_server(player_id: int, creature_id: int, damage: int, no
     if not is_dedicated:
         passive_snapshot(creature_id,animal["species"],animal["position"],int(animal["hp"]),bool(animal["alive"]),animal["direction"])
     return true
+
+@rpc("authority","call_remote","reliable")
+func hunt_progress_snapshot(progress: int) -> void:
+    if live_ui != null:
+        live_ui.set_hunt_progress(progress)
+
+func _record_team_hunt(killer_id: int, at: Vector3) -> void:
+    # A small repeatable cooperative hunt: every party member contributes.
+    shared_hunt_kills += 1
+    hunt_progress_snapshot.rpc(shared_hunt_kills)
+    if not is_dedicated:
+        hunt_progress_snapshot(shared_hunt_kills)
+    if shared_hunt_kills < SHARED_HUNT_GOAL:
+        for id in players:
+            if int(player_health.get(id,0)) > 0:
+                _attack_feedback(int(id),"Общая охота: %d/%d животных" % [shared_hunt_kills,SHARED_HUNT_GOAL])
+        return
+    shared_hunt_kills = 0
+    hunt_progress_snapshot.rpc(0)
+    if not is_dedicated:
+        hunt_progress_snapshot(0)
+    var changes: Dictionary = {}
+    for id in players:
+        if int(player_health.get(id,0)) <= 0 or players[id].position.distance_to(at) > 30.0:
+            continue
+        if not player_inventories.has(id):
+            continue
+        changes[id] = player_inventories[id].duplicate(true)
+        var inv: Dictionary = player_inventories[id].duplicate(true)
+        inv["hide"] = mini(9999,int(inv.get("hide",0))+2)
+        inv["bone"] = mini(9999,int(inv.get("bone",0))+1)
+        player_inventories[id] = inv
+        if player_identity_keys.has(id):
+            persistent_profiles[player_identity_keys[id]]["inventory"] = inv.duplicate(true)
+    if not _save_world_state():
+        for id in changes:
+            player_inventories[id] = changes[id]
+            if player_identity_keys.has(id):
+                persistent_profiles[player_identity_keys[id]]["inventory"] = changes[id].duplicate(true)
+        return
+    for id in changes:
+        if id == own_id:
+            inventory_snapshot(player_inventories[id])
+        elif multiplayer.get_peers().has(id):
+            inventory_snapshot.rpc_id(int(id),player_inventories[id])
+        _attack_feedback(int(id),"ОБЩАЯ ОХОТА ВЫПОЛНЕНА! +2 шкуры и +1 кость")
+
+func _award_hunt_loot(player_id: int, species: String) -> void:
+    if not multiplayer.is_server() or not player_inventories.has(player_id):
+        return
+    var old_inventory: Dictionary = player_inventories[player_id].duplicate(true)
+    var inventory: Dictionary = old_inventory.duplicate(true)
+    var rewards: Dictionary = {"meat":3,"hide":3,"bone":3} if species == "rare_deer" else {"meat":2,"hide":1,"bone":1} if species == "deer" else {"meat":1,"hide":1}
+    for kind in rewards:
+        inventory[kind] = mini(9999,int(inventory.get(kind,0))+int(rewards[kind]))
+    player_inventories[player_id] = inventory
+    if player_identity_keys.has(player_id):
+        persistent_profiles[player_identity_keys[player_id]]["inventory"] = inventory.duplicate(true)
+    if not _save_world_state():
+        player_inventories[player_id] = old_inventory
+        if player_identity_keys.has(player_id):
+            persistent_profiles[player_identity_keys[player_id]]["inventory"] = old_inventory.duplicate(true)
+        return
+    if player_id == own_id:
+        inventory_snapshot(inventory)
+    elif multiplayer.get_peers().has(player_id):
+        inventory_snapshot.rpc_id(player_id,inventory)
+    _attack_feedback(player_id,"Добыча: "+("РЕДКИЙ ТРОФЕЙ! 3 мяса, 3 шкуры, 3 кости" if species == "rare_deer" else "2 мяса, шкура, кость" if species == "deer" else "мясо, шкура"))
 
 @rpc("authority","call_remote","reliable")
 func practice_snapshot(points: int) -> void:
@@ -1934,6 +2007,8 @@ func _damage_player_on_server(id: int, damage: int) -> bool:
         return false
     if int(player_choices.get(id,-1)) == HERO_CLASSES.KNIGHT:
         damage = maxi(1,ceili(float(damage)*HERO_CLASSES.KNIGHT_DAMAGE_TAKEN))
+    if int(player_inventories.get(id,{}).get("leather_armor",0)) > 0:
+        damage = maxi(1,ceili(float(damage)*0.85))
     if str(equipped_combat.get(id,"")) == "shield" and int(player_inventories.get(id,{}).get("shield",0)) > 0:
         damage = COMBAT_PROGRESSION.shield_damage_taken(damage,
             int(player_skills.get(id,{}).get("defense",0)))
@@ -2146,8 +2221,8 @@ func _bow_reticle_state(origin: Vector3, direction: Vector3) -> String:
     for animal in passive_creatures.values():
         if not bool(animal["alive"]):
             continue
-        var height: float = 0.8 if animal["species"] == "deer" else 0.35
-        var radius: float = 0.75 if animal["species"] == "deer" else 0.40
+        var height: float = 0.8 if animal["species"] in ["deer","rare_deer"] else 0.35
+        var radius: float = 0.75 if animal["species"] in ["deer","rare_deer"] else 0.40
         target_at = minf(target_at,_ray_wolf_hit_distance(
             origin,direction,animal["position"]+Vector3.UP*height,radius))
     if target_at < blocked_at:
@@ -2262,9 +2337,9 @@ func _bow_attack_on_server(id: int, aim: Vector3, spell: int = -1) -> bool:
         var animal: Dictionary = passive_creatures[creature_id]
         if not bool(animal["alive"]):
             continue
-        var hit_center: Vector3 = animal["position"]+Vector3.UP*(0.8 if animal["species"] == "deer" else 0.35)
+        var hit_center: Vector3 = animal["position"]+Vector3.UP*(0.8 if animal["species"] in ["deer","rare_deer"] else 0.35)
         var distance := _ray_wolf_hit_distance(origin,aim,hit_center,
-            0.75 if animal["species"] == "deer" else 0.40)
+            0.75 if animal["species"] in ["deer","rare_deer"] else 0.40)
         if distance < nearest:
             nearest = distance
             struck = 100+int(creature_id)
@@ -2722,7 +2797,7 @@ func shield_taunt_visual(id: int, duration_ms: int) -> void:
 # The server owns resource quantities and player inventories.
 # This is an in-memory prototype; a permanent world will require persistence.
 func _empty_inventory() -> Dictionary:
-    return {"wood":0, "stone":0, "herb":0, "axe":0, "bandage":0, "repair_kit":0, "spear":0, "bow":0, "shield":0, "arrow":0}
+    return {"wood":0, "stone":0, "herb":0, "axe":0, "bandage":0, "repair_kit":0, "spear":0, "bow":0, "shield":0, "arrow":0, "meat":0, "hide":0, "bone":0, "leather_armor":0}
 
 func _empty_skills() -> Dictionary:
     return {"archery":0,"spear":0,"defense":0}
@@ -2760,7 +2835,8 @@ const EXTRA_RECIPES := {
     "spear": {"wood":3, "stone":2},
     "bow": {"wood":4, "herb":2},
     "shield": {"wood":4, "stone":1},
-    "arrow": {"wood":1, "stone":1}
+    "arrow": {"wood":1, "stone":1},
+    "leather_armor": {"hide":3, "bone":1}
 }
 
 func _try_craft_recipe(recipe_id: String) -> void:
@@ -2785,7 +2861,7 @@ func _craft_consumable_on_server(id: int, recipe_id: String) -> bool:
     for material in cost:
         if int(before.get(material,0)) < int(cost[material]):
             return false
-    if int(before.get(recipe_id,0)) >= (40 if recipe_id == "arrow" else 1 if ["spear","bow","shield"].has(recipe_id) else 20):
+    if int(before.get(recipe_id,0)) >= (40 if recipe_id == "arrow" else 1 if ["spear","bow","shield","leather_armor"].has(recipe_id) else 20):
         return false
     var inv := before.duplicate(true)
     for material in cost:
@@ -3392,7 +3468,7 @@ func inventory_snapshot(inventory: Dictionary) -> void:
         return
     var validated := _empty_inventory()
     for kind in validated.keys():
-        validated[kind] = clampi(int(inventory.get(kind,0)),0,1 if ["axe","spear","bow","shield"].has(kind) else (40 if kind == "arrow" else 20 if EXTRA_RECIPES.has(kind) else 1000000))
+        validated[kind] = clampi(int(inventory.get(kind,0)),0,1 if ["axe","spear","bow","shield","leather_armor"].has(kind) else (40 if kind == "arrow" else 20 if EXTRA_RECIPES.has(kind) else 1000000))
     player_inventories[own_id] = validated
     if live_ui != null:
         live_ui.set_inventory(validated)

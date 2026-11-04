@@ -35,6 +35,7 @@ var warning_detail: Label
 var resources_panel: HBoxContainer
 var resource_counts: Dictionary = {}
 var practice_label: Label
+var hunt_progress := 0
 var mana_label: Label
 var last_practice_points := 0
 var last_skills := {"archery":0,"spear":0,"defense":0}
@@ -163,6 +164,10 @@ func set_mana(value: int, mage: bool) -> void:
 		mana_label.text = "Мана %d/100" % clampi(value,0,100)
 
 
+func set_hunt_progress(progress: int) -> void:
+	hunt_progress = clampi(progress,0,5)
+	_refresh_skills_label()
+
 func set_practice_points(points: int) -> void:
 	last_practice_points = points
 	_refresh_skills_label()
@@ -191,7 +196,7 @@ func _refresh_skills_label() -> void:
 		xp_bar.max_value = maxf(1.0,float(required-start))
 		xp_bar.value = float(xp-start)
 		xp_bar.tooltip_text = "XP %d / %d" % [xp,required]
-	practice_label.text = "Л%d К%d Щ%d" % [a,s,d]
+	practice_label.text = "Л%d К%d Щ%d · Охота %d/5" % [a,s,d,hunt_progress]
 	practice_label.tooltip_text = "Тренировка: %d · XP: лук %d, копьё %d, защита %d" % [
 		last_practice_points,int(last_skills.get("archery",0)),
 		int(last_skills.get("spear",0)),int(last_skills.get("defense",0))]

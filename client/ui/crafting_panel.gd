@@ -82,7 +82,7 @@ func refresh() -> void:
 		action.disabled = not ready or not state.near_campfire or state.loading
 		action.pressed.connect(func() -> void: craft_requested.emit(recipe_id))
 		card.add_child(action)
-		if recipe_id != "axe" and recipe_id != "arrow":
+		if recipe_id not in ["axe", "arrow", "leather_armor"]:
 			var use_button := Button.new()
 			use_button.text = ("Экипировать" if ["spear","bow","shield"].has(recipe_id) else "Использовать") + " · %d" % state.amount(recipe_id)
 			Style.button(use_button)

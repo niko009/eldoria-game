@@ -22,7 +22,7 @@ var health_track: MeshInstance3D
 var health_fill: MeshInstance3D
 
 func setup(kind: String) -> void:
-	species = kind if kind in ["rabbit", "deer", "dummy"] else "rabbit"
+	species = kind if kind in ["rabbit", "deer", "rare_deer", "dummy"] else "rabbit"
 
 func _ready() -> void:
 	body = Node3D.new()
@@ -62,10 +62,18 @@ func _ready() -> void:
 					deer_shins.append(deer_skeleton.find_bone(name))
 		body.add_child(animal_mesh)
 		_create_health_bar()
+		if species == "rare_deer":
+			var marker := Label3D.new()
+			marker.name = "RareWildlifeLabel"
+			marker.text = "★ РЕДКИЙ ОЛЕНЬ"
+			marker.position.y = 2.32
+			marker.font_size = 35
+			marker.modulate = Color("ffe28e")
+			add_child(marker)
 	last_position = position
 
 func _create_health_bar() -> void:
-	var label_height := 2.0 if species == "deer" else 0.9
+	var label_height := 2.0 if species in ["deer","rare_deer"] else 0.9
 	var back := BoxMesh.new()
 	back.size = Vector3(0.9,0.085,0.05)
 	health_track = MeshInstance3D.new()
@@ -119,7 +127,7 @@ func update_state(at: Vector3, hp: int, alive: bool, direction: Vector3) -> void
 		position = position.lerp(at,0.55)
 	active = true
 	visible = alive
-	life = clampf(float(hp)/(24.0 if species == "rabbit" else 100.0 if species == "dummy" else 55.0),0.0,1.0)
+	life = clampf(float(hp)/(24.0 if species == "rabbit" else 100.0 if species == "dummy" else 95.0 if species == "rare_deer" else 55.0),0.0,1.0)
 	if health_track != null:
 		health_track.visible = alive
 		health_fill.visible = health_track.visible

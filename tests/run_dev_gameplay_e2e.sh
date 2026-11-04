@@ -145,6 +145,9 @@ echo "[TASK-051] shield defender aggro, cooldown and team visibility"
 grep -q 'TASK051 SHIELD TAUNT PASS' "$ROOT/tests/logs/task051-shield-e2e.log"
 bash tests/run_task051_shield_network_e2e.sh
 echo "PASS: TASK-050..051 server-authoritative teamplay, XP benefits and Android skill UI."
+echo "[TASK-066] hunt loot, shared quest, leather armor and rare deer"
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task066_hunt_coop_e2e.gd -- --test-live-ui > "$ROOT/tests/logs/task066-hunt-coop.log" 2>&1
+grep -q 'TASK066 HUNT COOP PASS' "$ROOT/tests/logs/task066-hunt-coop.log"
 echo "[TASK-052] three hero classes, campfire switch and server-owned abilities"
 "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task065_mage_combat_e2e.gd -- --test-live-ui > "$ROOT/tests/logs/task065-mage-combat.log" 2>&1
 grep -q 'TASK065 MAGE COMBAT PASS' "$ROOT/tests/logs/task065-mage-combat.log"

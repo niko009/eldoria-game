@@ -10,8 +10,10 @@ var start_scroll := 0
 var cumulative_y := 0.0
 var scrolling := false
 var muted_buttons: Array[BaseButton] = []
+var restore_generation := 0
 
 func reset() -> void:
+    restore_generation += 1
     _restore_buttons()
     finger = -1
     start_scroll = 0
@@ -26,6 +28,7 @@ func handle(event: InputEvent, scroll: ScrollContainer, is_open: bool, viewport:
         var touch := event as InputEventScreenTouch
         if touch.pressed:
             if finger == -1 and scroll.get_global_rect().has_point(touch.position):
+                restore_generation += 1
                 _restore_buttons()
                 finger = touch.index
                 start_scroll = scroll.scroll_vertical
@@ -36,7 +39,11 @@ func handle(event: InputEvent, scroll: ScrollContainer, is_open: bool, viewport:
                 viewport.set_input_as_handled()
                 # Godot can also synthesize a mouse release from this touch.
                 # Defer unblocking Button signals until after that event.
-                viewport.get_tree().create_timer(0.10).timeout.connect(_restore_buttons)
+                restore_generation += 1
+                var generation := restore_generation
+                viewport.get_tree().create_timer(0.04).timeout.connect(func() -> void:
+                    if generation == restore_generation:
+                        _restore_buttons())
             else:
                 _restore_buttons()
             finger = -1

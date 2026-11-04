@@ -301,6 +301,10 @@ func set_camp_health(hp: int, maximum: int) -> void:
     if hud != null:
         hud.set_camp_health(hp, maximum)
 
+func set_hunt_progress(progress: int) -> void:
+    if hud != null:
+        hud.set_hunt_progress(progress)
+
 func set_practice_points(points: int) -> void:
     if hud != null:
         hud.set_practice_points(points)

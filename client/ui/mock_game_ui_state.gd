@@ -18,6 +18,10 @@ const ITEMS := {
 	"bow": {"name":"Лук","symbol":")"},
 	"shield": {"name":"Щит","symbol":"◈"},
 	"arrow": {"name":"Стрела","symbol":"→"},
+	"meat": {"name":"Мясо","symbol":"◒"},
+	"hide": {"name":"Шкура","symbol":"▧"},
+	"bone": {"name":"Кость","symbol":"⌁"},
+	"leather_armor": {"name":"Кожаная броня","symbol":"▣"},
 }
 # Hotbar is equipment-only. Unimplemented tools are shown as locked previews.
 # No inventory quantity badges belong in the hotbar.
@@ -43,6 +47,7 @@ const RECIPES := {
 	"bow": {"name":"Лук","description":"Прицельный выстрел до 12 м · расходует стрелы","cost":{"wood":4,"herb":2}},
 	"shield": {"name":"Щит","description":"Снижает урон волков на 40%","cost":{"wood":4,"stone":1}},
 	"arrow": {"name":"Стрела","description":"Боеприпас для лука (1 штука)","cost":{"wood":1,"stone":1}},
+	"leather_armor": {"name":"Кожаная броня","description":"Пассивно уменьшает входящий урон на 15%","cost":{"hide":3,"bone":1}},
 }
 
 var inventory: Dictionary = {"wood": 7, "stone": 3, "herb": 1, "axe": 0}
@@ -68,7 +73,7 @@ func can_afford(cost: Dictionary) -> bool:
 # "Ready" means all ingredients have been collected and the item stack is not
 # full. The actual craft button still requires a nearby campfire.
 func recipe_limit(recipe_id: String) -> int:
-	if ["axe", "spear", "bow", "shield"].has(recipe_id):
+	if ["axe", "spear", "bow", "shield", "leather_armor"].has(recipe_id):
 		return 1
 	if recipe_id == "arrow":
 		return 40
