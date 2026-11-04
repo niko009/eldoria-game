@@ -11,7 +11,12 @@ echo "[TASK-011] dedicated ENet"
 bash tests/run_dedicated_e2e.sh
 sleep 1
 echo "[TASK-011] local WebSocket"
-bash tests/run_websocket_e2e.sh
+for attempt in 1 2 3; do
+    if bash tests/run_websocket_e2e.sh; then break; fi
+    if [[ "$attempt" == 3 ]]; then echo "FAIL: tests/run_websocket_e2e.sh after 3 attempts" >&2; exit 1; fi
+    echo "RETRY: tests/run_websocket_e2e.sh attempt $((attempt+1)) after transient port/network startup failure" >&2
+    sleep 3
+done
 sleep 1
 bash tests/run_character_e2e.sh
 echo "[TASK-011] avatar + jump"
@@ -33,7 +38,12 @@ grep -q 'TASK039 CAMP RAID PASS' "$ROOT/tests/logs/task039-camp-raid.log"
 "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task039_raid_faults_e2e.gd -- --test-live-ui \
     > "$ROOT/tests/logs/task039-raid-faults.log" 2>&1
 grep -q 'TASK039 RAID FAULTS PASS' "$ROOT/tests/logs/task039-raid-faults.log"
-bash tests/run_raid_network_e2e.sh
+for attempt in 1 2 3; do
+    if bash tests/run_raid_network_e2e.sh; then break; fi
+    if [[ "$attempt" == 3 ]]; then echo "FAIL: tests/run_raid_network_e2e.sh after 3 attempts" >&2; exit 1; fi
+    echo "RETRY: tests/run_raid_network_e2e.sh attempt $((attempt+1)) after transient port/network startup failure" >&2
+    sleep 3
+done
 echo "[TASK-030] Android modal swipe and tap"
 "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/android_modal_scroll_e2e.gd -- --test-live-ui \
     > "$ROOT/tests/logs/android-modal-scroll.log" 2>&1
