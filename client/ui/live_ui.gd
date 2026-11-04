@@ -423,7 +423,8 @@ func _craft(recipe_id: String) -> void:
         return
     if state.loading:
         return
-    _close()
+    # Keep the workshop open for repeated crafting (especially arrows).
+    # Server snapshots update ingredient counts and button availability.
     craft_requested.emit(recipe_id)
 
 func _on_action(kind: String) -> void:

@@ -9,6 +9,7 @@ const State = preload("res://ui/mock_game_ui_state.gd")
 const ItemIcon = preload("res://ui/item_icon.gd")
 var state: MockGameUiState
 var craft_enabled := true
+var recipe_order: Array[String] = []
 
 func _ready() -> void:
 	add_theme_constant_override("separation", 8)
@@ -17,12 +18,16 @@ func _ready() -> void:
 	refresh()
 
 func refresh() -> void:
+	# Sorting after every inventory snapshot made the selected recipe jump
+	# elsewhere; preserve its position for the lifetime of this workshop.
+	if state != null and recipe_order.is_empty():
+		recipe_order = state.recipes_ready_first()
 	for child in get_children():
 		remove_child(child)
 		child.queue_free()
 	if state == null:
 		return
-	for recipe_id in state.recipes_ready_first():
+	for recipe_id in recipe_order:
 		var recipe: Dictionary = State.RECIPES[recipe_id]
 		var owned_full := state.amount(recipe_id) >= state.recipe_limit(recipe_id)
 		var ready := craft_enabled and state.recipe_materials_ready(recipe_id)
@@ -72,7 +77,7 @@ func refresh() -> void:
 				Color("a9f5b0") if owned >= required else Color("e89883")))
 			cost_row.add_child(ingredient)
 		var action := Button.new()
-		action.text = "Создать" if not owned_full else "Достигнут лимит"
+		action.text = ("Создать ещё ×1" if recipe_id == "arrow" else "Создать") if not owned_full else "Достигнут лимит"
 		Style.button(action)
 		action.disabled = not ready or not state.near_campfire or state.loading
 		action.pressed.connect(func() -> void: craft_requested.emit(recipe_id))

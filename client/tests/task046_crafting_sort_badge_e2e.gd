@@ -19,6 +19,7 @@ func _run() -> void:
 	workshop.state = state
 	root.add_child(workshop)
 	await process_frame
+	var opening_order: Array[String] = state.recipes_ready_first()
 	if not _verify(state, hud, workshop, 0, []):
 		return
 
@@ -76,10 +77,11 @@ func _verify(state: RefCounted, hud: Control, workshop: Control, expected_count:
 	var names: Array[String] = []
 	for node in workshop.get_children():
 		names.append(str(node.name).trim_prefix("RecipeCard_"))
-	for index in expected_first.size():
-		if names[index] != expected_first[index]:
-			_fail("UI recipe order mismatch: "+str(names))
-			return false
+	# During an open crafting session the original order must stay fixed,
+	# even when a recipe becomes unavailable after crafting.
+	if names != workshop.recipe_order:
+		_fail("UI reordered recipes after inventory change: "+str(names))
+		return false
 	return true
 
 func _fail(reason: String) -> void:

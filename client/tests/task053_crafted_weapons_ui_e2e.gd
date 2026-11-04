@@ -24,14 +24,28 @@ func _run() -> void:
 	game.inventory_snapshot(game.player_inventories[id])
 	ui.set_near_campfire(true)
 	for weapon in ["spear","bow","shield","arrow"]:
-		ui._open("craft")
+		if ui.active_panel != "craft":
+			ui._open("craft")
 		ui._craft(weapon)
 		if int(game.player_inventories[id].get(weapon,0)) != 1 or ui.state.amount(weapon) != 1:
 			_fail("crafting UI did not reflect server inventory: "+weapon)
 			return
+	# Repeated ammunition crafting must keep the workshop open and the
+	# arrow card at the same index after each inventory snapshot.
+	var arrow_card: Node = ui.current_panel.get_node("RecipeCard_arrow")
+	var arrow_index := arrow_card.get_index()
+	for expected in [2,3,4]:
+		ui._craft("arrow")
+		if ui.active_panel != "craft" or ui.state.amount("arrow") != expected:
+			_fail("repeat crafting arrows closed workshop or failed: "+str(expected))
+			return
+		if ui.current_panel.get_node("RecipeCard_arrow").get_index() != arrow_index:
+			_fail("arrow card jumps after crafting")
+			return
 	# The user's original failure path: the workshop's 'Equip' button sent
 	# an action that main.gd previously ignored entirely.
-	ui._open("craft")
+	if ui.active_panel != "craft":
+		ui._open("craft")
 	var equip_bow: Button = null
 	for btn in ui.current_panel.find_children("*","Button",true,false):
 		if btn.text.begins_with("Экипировать") and btn.get_parent().name == "Recipe_bow":
@@ -73,7 +87,7 @@ func _run() -> void:
 	game.input_driver.yaw = atan2(-aim.x,-aim.z)
 	game.input_driver.pitch = atan2(aim.y,Vector2(aim.x,aim.z).length())
 	game._try_attack()
-	if game.wolf_health != 40 or int(game.player_inventories[id]["arrow"]) != 0:
+	if game.wolf_health != 40 or int(game.player_inventories[id]["arrow"]) != 3:
 		_fail("bow did not shoot after hotbar/inventory equip")
 		return
 	ui.hud.hotbar.slot_buttons["spear"].pressed.emit()
