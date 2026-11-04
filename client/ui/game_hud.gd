@@ -456,7 +456,7 @@ func _layout() -> void:
 	var compact := size.y < 490
 	var margin := 7.0
 	var status_w := 226.0 if compact else 236.0
-	var status_h := 67.0
+	var status_h := 94.0
 	status_panel.position = Vector2(inset.x, inset.y)
 	status_panel.size = Vector2(status_w, status_h)
 	resources_panel.position = Vector2(inset.x, inset.y + status_h + margin)
