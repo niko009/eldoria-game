@@ -20,5 +20,7 @@
 
 ## Tests
 
+**4 November 2026: full `bash tests/run_dev_gameplay_e2e.sh` passed (exit 0).** Included real Xvfb/OpenGL TASK-062 audio with Dummy output, TASK-061 rigged wildlife, network co-op for two players, class abilities, crafting, Android UI, PostgreSQL and previous regressions. This verifies event/stream behavior; it is not an acoustic review or a physical Android FPS measurement.
+
 - `client/tests/task062_game_audio_e2e.gd`, real OpenGL: all 19 categories including legacy sounds, loaded streams, spatial range, cooldown, six-voice cap, instant mute, server-originated spear/bow/wolf/death event routing, footstep throttle.
 - `tests/run_dev_gameplay_e2e.sh`: new test in the Xvfb/OpenGL block, existing 2-client ENet and WebSocket, resource, crafting, skill and PostgreSQL persistence suite unchanged.
