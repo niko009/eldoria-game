@@ -28,6 +28,8 @@ var status_panel: PanelContainer
 var status_detail: Label
 var health_detail: Label
 var health_bar: ProgressBar
+var xp_bar: ProgressBar
+var xp_label: Label
 var avatar_name: Label
 var warning_detail: Label
 var resources_panel: HBoxContainer
@@ -109,6 +111,18 @@ func _create_status() -> void:
 	hp_row.add_child(health_bar)
 	health_detail = Style.label("—", 12, CREAM)
 	hp_row.add_child(health_detail)
+	var xp_row := HBoxContainer.new()
+	xp_row.name = "ExperienceRow"
+	stats.add_child(xp_row)
+	xp_label = Style.label("Навык · ур. 1",11,GOLD)
+	xp_row.add_child(xp_label)
+	xp_bar = ProgressBar.new()
+	xp_bar.name = "ExperienceGauge"
+	xp_bar.custom_minimum_size = Vector2(80,6)
+	xp_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	xp_bar.show_percentage = false
+	xp_bar.max_value = 1
+	xp_row.add_child(xp_bar)
 
 func _create_resources() -> void:
 	resources_panel = HBoxContainer.new()
@@ -163,6 +177,20 @@ func _refresh_skills_label() -> void:
 	var a := Progression.level_for_xp(int(last_skills.get("archery",0)))
 	var s := Progression.level_for_xp(int(last_skills.get("spear",0)))
 	var d := Progression.level_for_xp(int(last_skills.get("defense",0)))
+	var best_skill := "archery"
+	for skill in ["spear","defense"]:
+		if int(last_skills.get(skill,0)) > int(last_skills.get(best_skill,0)):
+			best_skill = skill
+	var xp := int(last_skills.get(best_skill,0))
+	var level := Progression.level_for_xp(xp)
+	var start := Progression.xp_required_for_level(level)
+	var required := Progression.xp_required_for_level(level+1)
+	if xp_label != null:
+		xp_label.text = "%s ур.%d" % [{"archery":"Лук","spear":"Копьё","defense":"Защита"}[best_skill],level]
+	if xp_bar != null:
+		xp_bar.max_value = maxf(1.0,float(required-start))
+		xp_bar.value = float(xp-start)
+		xp_bar.tooltip_text = "XP %d / %d" % [xp,required]
 	practice_label.text = "Л%d К%d Щ%d" % [a,s,d]
 	practice_label.tooltip_text = "Тренировка: %d · XP: лук %d, копьё %d, защита %d" % [
 		last_practice_points,int(last_skills.get("archery",0)),

@@ -6,7 +6,15 @@ const SPAWNS := [
 	{"species":"deer","x":-9.0,"z":10.0,"hp":55},
 	{"species":"deer","x":12.0,"z":10.0,"hp":55},
 	{"species":"dummy","x":-3.0,"z":-4.5,"hp":100},
-	{"species":"dummy","x":3.0,"z":-4.5,"hp":100}
+	{"species":"dummy","x":3.0,"z":-4.5,"hp":100},
+	{"species":"rabbit","x":-16.0,"z":-13.0,"hp":24},
+	{"species":"rabbit","x":16.0,"z":-12.0,"hp":24},
+	{"species":"rabbit","x":-20.0,"z":5.0,"hp":24},
+	{"species":"rabbit","x":22.0,"z":6.0,"hp":24},
+	{"species":"deer","x":-22.0,"z":16.0,"hp":55},
+	{"species":"deer","x":24.0,"z":18.0,"hp":55},
+	{"species":"deer","x":-15.0,"z":25.0,"hp":55},
+	{"species":"deer","x":18.0,"z":-22.0,"hp":55}
 ]
 const RESPAWN_MS := 20000
 const HIT_XP := 2
@@ -17,6 +25,16 @@ static func construct(world: Node3D) -> Dictionary:
 	for index in SPAWNS.size():
 		var config: Dictionary = SPAWNS[index]
 		var home := Vector3(float(config["x"]),0.0,float(config["z"]))
+		# New wildlife must not spawn inside procedural trees or rocks.
+		if world.collides_at(Vector2(home.x,home.z),0.32):
+			for attempt in 32:
+				var angle := float(attempt)*2.39996323
+				var radius := 1.5 + float(attempt/8)*1.7
+				var candidate := Vector2(home.x+cos(angle)*radius,home.z+sin(angle)*radius)
+				if not world.collides_at(candidate,0.32):
+					home.x = candidate.x
+					home.z = candidate.y
+					break
 		home.y = world.height_at(home.x,home.z)+0.1
 		result[index+1] = {"species":config["species"],"home":home,"position":home,
 			"hp":int(config["hp"]),"max_hp":int(config["hp"]),"alive":true,
@@ -59,9 +77,14 @@ static func tick(mobs: Dictionary, players: Dictionary, health: Dictionary, worl
 			direction = (critter["home"]-at).normalized()
 			speed = 1.6
 		else:
-			var phase := float(now)*0.00042 + float(mob_id)*2.1
+			# Short walks alternating with grazing, staggered between animals.
+			var cycle := fposmod(float(now)*0.001 + float(mob_id)*3.7,17.0)
+			if cycle >= 10.0:
+				critter["direction"] = Vector3.ZERO
+				continue
+			var phase: float = floorf(float(now)*0.001/17.0)*1.7 + float(mob_id)*2.1
 			direction = Vector3(sin(phase),0,cos(phase))
-			speed = 0.65
+			speed = 0.45 if critter["species"] == "deer" else 0.65
 		if direction.length_squared() < 0.001:
 			continue
 		var moved: Vector3 = world.move_actor(at,direction*speed*delta,0.32)
