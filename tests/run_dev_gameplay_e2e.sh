@@ -99,6 +99,9 @@ if command -v Xvfb >/dev/null 2>&1; then
     echo "[TASK-035] interaction animations and bounded resource reward markers"
     DISPLAY=":$display_number" timeout 95 "$GODOT_BIN" --path "$ROOT/client" --resolution 900x550 --rendering-method gl_compatibility --audio-driver Dummy --script res://tests/task035_interaction_e2e.gd -- --test > "$ROOT/tests/logs/task035-interaction-opengl.log" 2>&1
     grep -q "TASK035 INTERACTION OPENGL PASS" "$ROOT/tests/logs/task035-interaction-opengl.log"
+    echo "[TASK-056] real OpenGL: server-confirmed damage sparks, damage numbers and wolf animation"
+    DISPLAY=":$display_number" timeout 95 "$GODOT_BIN" --path "$ROOT/client" --resolution 800x600 --rendering-method gl_compatibility --audio-driver Dummy --script res://tests/task056_combat_vfx_e2e.gd -- --test > "$ROOT/tests/logs/task056-combat-opengl.log" 2>&1
+    grep -q "TASK056 COMBAT VFX OPENGL PASS" "$ROOT/tests/logs/task056-combat-opengl.log"
     DISPLAY=":$display_number" timeout 90 "$GODOT_BIN" --path "$ROOT/client" --resolution 720x360 --rendering-method gl_compatibility --audio-driver Dummy --script res://tests/task017_sound_mobile_e2e.gd -- --test-mobile-ui > "$ROOT/tests/logs/task017-mobile-opengl.log" 2>&1
     grep -q "TASK017 OPENGL PASS" "$ROOT/tests/logs/task017-mobile-opengl.log"
     kill "$xvfb" 2>/dev/null || true

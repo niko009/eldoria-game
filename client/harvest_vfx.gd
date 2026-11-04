@@ -4,6 +4,7 @@ const MAX_FALLING_TREES := 3
 const MAX_PICKUP_BURSTS := 5
 const MAX_RESOURCE_FEEDBACK := 5
 const MAX_BUILD_BURSTS := 4
+const MAX_COMBAT_BURSTS := 6
 const FALL_SECONDS := 1.25
 const MAX_SOUNDS := 6
 const WOOD_SFX := preload("res://assets/sfx/wood_chop.wav")
@@ -16,6 +17,8 @@ var _resource_feedback: Array[Node3D] = []
 var _particle_mesh: SphereMesh
 var _pickup_meshes: Dictionary = {}
 var _building_bursts: Array[Node3D] = []
+var _combat_bursts: Array[Node3D] = []
+var _combat_high_detail := true
 var _sounds: Array[AudioStreamPlayer3D] = []
 var sound_enabled := true
 
@@ -201,6 +204,67 @@ func play_build_effect(kind: String, spot: Vector3) -> bool:
 func building_burst_count() -> int:
     return _building_bursts.size()
 
+func set_combat_detail(high: bool) -> void:
+    _combat_high_detail = high
+
+func combat_burst_count() -> int:
+    return _combat_bursts.size()
+
+func play_combat_impact(kind: String, at: Vector3, damage: int) -> bool:
+    # Server-authoritative hit events only. Keep bursts bounded on Android.
+    if DisplayServer.get_name() == "headless" or not at.is_finite():
+        return false
+    if kind not in ["wolf", "wildlife", "training", "obstacle"] or damage < 0 or damage > 1000:
+        return false
+    if _combat_bursts.size() >= MAX_COMBAT_BURSTS:
+        return false
+    var root := Node3D.new()
+    root.name = "CombatImpact_%s" % kind
+    root.position = at
+    add_child(root)
+    _combat_bursts.append(root)
+    var shade := Color("f8da91") if kind == "obstacle" else (Color("a7ecdc") if kind == "training" else Color("ff9675"))
+    var spark := CPUParticles3D.new()
+    spark.name = "HitSparks"
+    spark.amount = 10 if _combat_high_detail else 4
+    spark.one_shot = true
+    spark.emitting = false
+    spark.lifetime = 0.42
+    spark.explosiveness = 1.0
+    spark.direction = Vector3.UP
+    spark.spread = 85.0
+    spark.initial_velocity_min = 0.5
+    spark.initial_velocity_max = 2.1
+    spark.gravity = Vector3(0.0, -3.4, 0.0)
+    spark.mesh = _particle_mesh
+    var material := StandardMaterial3D.new()
+    material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    material.albedo_color = shade
+    spark.material_override = material
+    root.add_child(spark)
+    spark.emitting = true
+    var label := Label3D.new()
+    label.name = "DamageNumber"
+    label.text = "-%d" % damage if damage > 0 else ("БЛОК" if kind == "obstacle" else "ТРЕНИРОВКА")
+    label.modulate = shade
+    label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+    label.outline_size = 5
+    label.font_size = 32 if damage > 0 else 24
+    label.pixel_size = 0.008
+    label.double_sided = true
+    label.position.y = 0.18
+    root.add_child(label)
+    var tween := create_tween().bind_node(root)
+    tween.set_parallel(true)
+    tween.tween_property(label,"position:y",0.75,0.68).set_trans(Tween.TRANS_CUBIC)
+    tween.tween_property(label,"modulate:a",0.0,0.68).set_delay(0.16)
+    tween.set_parallel(false)
+    tween.tween_callback(func() -> void:
+        _combat_bursts.erase(root)
+        if is_instance_valid(root):
+            root.queue_free())
+    return true
+
 func play_sound(kind: String, world_position: Vector3) -> bool:
     if DisplayServer.get_name() == "headless" or not sound_enabled or _sounds.size() >= MAX_SOUNDS:
         return false
@@ -237,6 +301,10 @@ func set_sound_enabled(enabled: bool) -> void:
         _sounds.clear()
 
 func clear_effects() -> void:
+    for impact in _combat_bursts:
+        if is_instance_valid(impact):
+            impact.queue_free()
+    _combat_bursts.clear()
     for marker in _resource_feedback:
         if is_instance_valid(marker):
             marker.queue_free()

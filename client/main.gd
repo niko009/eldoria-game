@@ -233,6 +233,7 @@ func _ready() -> void:
     harvest_visuals = HARVEST_VFX_SCRIPT.new()
     harvest_visuals.name = "HarvestVisuals"
     add_child(harvest_visuals)
+    harvest_visuals.set_combat_detail(graphics_quality == GRAPHICS_SCRIPT.HIGH)
     _load_sound_preference()
     telemetry = TELEMETRY_SCRIPT.new()
     telemetry.name = "PerformanceTelemetry"
@@ -561,6 +562,7 @@ func _ui() -> void:
         GRAPHICS_SCRIPT.apply(graphics_quality, sunlight, foliage)
         get_node("Eldoria_Forest").apply_detail_quality(graphics_quality == GRAPHICS_SCRIPT.HIGH)
         _apply_building_detail_quality()
+        harvest_visuals.set_combat_detail(graphics_quality == GRAPHICS_SCRIPT.HIGH)
         quality_button.text = "Graphics: High" if graphics_quality == GRAPHICS_SCRIPT.HIGH else "Graphics: Low"
     )
     # Real game UI. Keep the old developer controls in the scene for tests,
@@ -1795,8 +1797,10 @@ func _damage_passive_on_server(player_id: int, creature_id: int, damage: int, no
         training_last_hit[hit_key] = now
         if weapon in ["bow","spear"]:
             _award_skill_xp(player_id,"archery" if weapon == "bow" else "spear",3)
+        _send_combat_impact(animal["position"] + Vector3.UP*1.05,0,"training")
         return true
     animal["hp"] = maxi(0,int(animal["hp"])-damage)
+    _send_combat_impact(animal["position"]+Vector3.UP*(0.8 if animal["species"] == "deer" else 0.45),damage,"wildlife")
     if weapon in ["bow","spear"]:
         _award_skill_xp(player_id,"archery" if weapon == "bow" else "spear",2)
     var points := PASSIVE_SCRIPT.HIT_XP
@@ -1942,6 +1946,7 @@ func _attack_on_server(id: int, aim: Vector3 = Vector3.ZERO) -> bool:
     if chosen > 0:
         var enemy: Dictionary = pack_wolves[chosen]
         enemy["hp"] = maxi(0, int(enemy["hp"])-hit_damage)
+        _send_combat_impact(enemy["position"]+Vector3.UP*0.8,hit_damage,"wolf")
         if weapon == "spear":
             _award_skill_xp(id,"spear",2)
         combat_swing.rpc(id)
@@ -1960,6 +1965,7 @@ func _attack_on_server(id: int, aim: Vector3 = Vector3.ZERO) -> bool:
             else "Попадание! -%d HP" % hit_damage)
         return true
     wolf_health = maxi(0, wolf_health - hit_damage)
+    _send_combat_impact(wolf_position+Vector3.UP*0.8,hit_damage,"wolf")
     if weapon == "spear":
         _award_skill_xp(id,"spear",2)
     combat_swing.rpc(id)
@@ -2035,6 +2041,20 @@ func _attack_feedback(id: int, message: String) -> void:
     elif multiplayer.get_peers().has(id):
         attack_feedback.rpc_id(id,message)
 
+func _send_combat_impact(at: Vector3, damage: int, kind: String) -> void:
+    if not multiplayer.is_server() or not at.is_finite():
+        return
+    combat_impact.rpc(at,damage,kind)
+    if not is_dedicated:
+        combat_impact(at,damage,kind)
+
+@rpc("authority","call_remote","reliable")
+func combat_impact(at: Vector3, damage: int, kind: String) -> void:
+    if is_dedicated or not at.is_finite() or at.length() > 5000:
+        return
+    if harvest_visuals != null:
+        harvest_visuals.play_combat_impact(kind,at,damage)
+
 @rpc("authority","call_remote","reliable")
 func attack_feedback(message: String) -> void:
     if live_ui != null:
@@ -2109,6 +2129,8 @@ func _bow_attack_on_server(id: int, aim: Vector3) -> bool:
     if id == own_id:
         _play_attack(id)
     if struck == 0:
+        if nearest < 11.99:
+            _send_combat_impact(impact,0,"obstacle")
         _attack_feedback(id,"Стрела попала в препятствие" if nearest < 11.99 else "Промах — наведите прицел на цель")
         return true # A real shot can miss; ammunition was still consumed.
     if struck > 100:
@@ -2119,6 +2141,7 @@ func _bow_attack_on_server(id: int, aim: Vector3) -> bool:
     if struck > 0:
         var wolf: Dictionary = pack_wolves[struck]
         wolf["hp"] = maxi(0,int(wolf["hp"])-hit_damage)
+        _send_combat_impact(wolf["position"]+Vector3.UP*0.8,hit_damage,"wolf")
         _award_skill_xp(id,"archery",2)
         if wolf["hp"] == 0:
             wolf["alive"] = false
@@ -2131,6 +2154,7 @@ func _bow_attack_on_server(id: int, aim: Vector3) -> bool:
         pack_wolf_snapshot.rpc(struck,wolf["position"],int(wolf["hp"]),bool(wolf["alive"]),wolf["direction"])
     else:
         wolf_health = maxi(0,wolf_health-hit_damage)
+        _send_combat_impact(wolf_position+Vector3.UP*0.8,hit_damage,"wolf")
         _award_skill_xp(id,"archery",2)
         if wolf_health == 0:
             wolf_alive = false
@@ -3333,6 +3357,7 @@ func _live_action(kind: String) -> void:
             GRAPHICS_SCRIPT.apply(graphics_quality, sunlight, foliage)
             get_node("Eldoria_Forest").apply_detail_quality(graphics_quality == GRAPHICS_SCRIPT.HIGH)
             _apply_building_detail_quality()
+            harvest_visuals.set_combat_detail(graphics_quality == GRAPHICS_SCRIPT.HIGH)
             if live_ui != null:
                 live_ui.show_message("Graphics: %s" % ("Low" if graphics_quality == GRAPHICS_SCRIPT.LOW else "High"))
         "sound":
