@@ -146,6 +146,8 @@ grep -q 'TASK051 SHIELD TAUNT PASS' "$ROOT/tests/logs/task051-shield-e2e.log"
 bash tests/run_task051_shield_network_e2e.sh
 echo "PASS: TASK-050..051 server-authoritative teamplay, XP benefits and Android skill UI."
 echo "[TASK-066] hunt loot, shared quest, leather armor and rare deer"
+echo "[TASK-069] safe persistence retries, 409 reconciliation and hunting inventory"
+bash tests/run_task069_persistence_e2e.sh
 echo "[TASK-068] target lock, touch/cycle selection and server-authoritative focus fire"
 "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task068_target_lock_e2e.gd -- --test-live-ui > "$ROOT/tests/logs/task068-target-lock.log" 2>&1
 grep -q 'TASK068 TARGET LOCK PASS' "$ROOT/tests/logs/task068-target-lock.log"

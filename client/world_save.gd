@@ -4,7 +4,7 @@ extends RefCounted
 # resource counts. No plaintext player token, no client-side authority.
 const SCHEMA := 1
 const WORLD_SEED := 20261101
-const ITEM_KINDS := ["wood","stone","herb","axe","bandage","repair_kit","spear","bow","shield","arrow"]
+const ITEM_KINDS := ["wood","stone","herb","axe","bandage","repair_kit","spear","bow","shield","arrow","meat","hide","bone","leather_armor","grilled_meat"]
 var save_path := ""
 var last_error := ""
 var profiles: Dictionary = {}
@@ -98,10 +98,11 @@ func load_snapshot(world: Node3D) -> bool:
             last_error = "Invalid inventory"
             return false
         var sanitized := {"wood":0,"stone":0,"herb":0,"axe":0,"bandage":0,
-            "repair_kit":0,"spear":0,"bow":0,"shield":0,"arrow":0}
+            "repair_kit":0,"spear":0,"bow":0,"shield":0,"arrow":0,
+            "meat":0,"hide":0,"bone":0,"leather_armor":0,"grilled_meat":0}
         for kind in ITEM_KINDS:
             var v := int(original.get(kind,0))
-            var limit := 1 if kind in ["axe","spear","bow","shield"] else 40 if kind == "arrow" else 20 if kind in ["bandage","repair_kit"] else 1000000
+            var limit := 1 if kind in ["axe","spear","bow","shield","leather_armor"] else 40 if kind == "arrow" else 20 if kind in ["bandage","repair_kit","grilled_meat"] else 1000000
             if v < 0 or v > limit:
                 last_error = "Inventory out of range"
                 return false
