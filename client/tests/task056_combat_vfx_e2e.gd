@@ -43,13 +43,13 @@ func _run() -> void:
     if game._attack_on_server(id,Vector3.RIGHT) or vfx.combat_burst_count() != 1:
         _fail("refused duplicate hit emitted additional visual damage")
         return
-    if not game.wolf_actor.body.get_node("Body").mesh is SphereMesh or game.wolf_actor.legs.size() != 4:
-        _fail("wolf still consists of cubic primitive placeholders")
+    if game.wolf_actor.model == null or game.wolf_actor.skin_mesh == null or game.wolf_actor.animator == null:
+        _fail("rigged wolf model missing from combat scene")
         return
     game.wolf_actor.update_state(game.wolf_position,60,true,Vector3.FORWARD)
     await create_timer(0.1).timeout
-    if game.wolf_actor.stride <= 0.0:
-        _fail("wolf trot animation does not advance")
+    if game.wolf_actor.current_clip not in ["Walk", "Gallop"] or not game.wolf_actor.animator.is_playing():
+        _fail("rigged wolf locomotion animation does not advance")
         return
     vfx.set_combat_detail(false)
     for i in 5:

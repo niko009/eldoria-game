@@ -163,3 +163,8 @@ echo '[TASK-058] server-confirmed wolf bites and reaction animation'
     > "$ROOT/tests/logs/task058-wolf-reactions.log" 2>&1
 grep -q 'TASK058 WOLF REACTION PASS' "$ROOT/tests/logs/task058-wolf-reactions.log"
 echo 'PASS: TASK-057..058 character and wolf animations with authoritative network events.'
+echo '[TASK-061] real rigged 3D wolf, locomotion, attack, injury, death and respawn'
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task061_rigged_wolf_e2e.gd -- --test \
+    > "$ROOT/tests/logs/task061-rigged-wolf.log" 2>&1
+grep -q 'TASK061 RIGGED WOLF PASS' "$ROOT/tests/logs/task061-rigged-wolf.log"
+echo 'PASS: TASK-061 real Quaternius wolf glTF and skeletal animation states.'
