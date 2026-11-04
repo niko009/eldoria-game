@@ -93,6 +93,7 @@ func _create_sky() -> void:
     var sky := Sky.new()
     var sky_mat := ShaderMaterial.new()
     sky_mat.shader = preload("res://shaders/fantasy_sky.gdshader")
+    sky_mat.set_shader_parameter("night_mix",0.0)
     sky.sky_material = sky_mat
     e.background_mode = Environment.BG_SKY
     e.sky = sky

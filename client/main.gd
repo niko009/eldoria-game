@@ -16,6 +16,7 @@ const TELEMETRY_SCRIPT := preload("res://performance_telemetry.gd")
 const TELEMETRY_SINK_SCRIPT := preload("res://telemetry_sink.gd")
 const DISPLAY_SCRIPT := preload("res://display_settings.gd")
 const GRAPHICS_SCRIPT := preload("res://graphics_profile.gd")
+const AMBIENCE_SCRIPT := preload("res://environment_polish.gd")
 const OVERLAY_SCRIPT := preload("res://performance_overlay.gd")
 const FOREST_SCRIPT := preload("res://forest_world.gd")
 const ACTOR_SCRIPT := preload("res://animated_actor.gd")
@@ -211,6 +212,10 @@ var player_ui: CanvasLayer
 var live_ui: Control
 var legacy_ui_controls: Array[Control] = []
 var sunlight: DirectionalLight3D
+var ambience: Node3D
+var next_ambience_at_msec := 0
+var _lighting_night := false
+var _lighting_tween: Tween
 var foliage: Array[SphereMesh] = []
 var graphics_quality := 1
 var next_proximity_ui_at_msec := 0
@@ -244,6 +249,11 @@ func _ready() -> void:
     _reset_resources()
     GRAPHICS_SCRIPT.apply(graphics_quality, sunlight, foliage)
     get_node("Eldoria_Forest").apply_detail_quality(graphics_quality == GRAPHICS_SCRIPT.HIGH)
+    if not is_dedicated:
+        ambience = AMBIENCE_SCRIPT.new()
+        ambience.name = "WorldAtmosphere"
+        add_child(ambience)
+        ambience.set_high_detail(graphics_quality == GRAPHICS_SCRIPT.HIGH)
     if not is_dedicated:
         selected_avatar = AVATAR_PROFILE.read_choice()
     input_driver = INPUT_SCRIPT.new()
@@ -967,6 +977,8 @@ func _remove_actor(id: int) -> void:
 
 func _clear_session() -> void:
     own_id = 0
+    if ambience != null:
+        ambience.clear()
     next_footstep_at.clear()
     footstep_variant.clear()
     player_health.clear()
@@ -1301,6 +1313,9 @@ func _process(delta: float) -> void:
     # legacy label formatting. Craft/build requests still validate immediately
     # on the authoritative server, so this never changes gameplay rules.
     var ui_now := Time.get_ticks_msec()
+    if ambience != null and own_id > 0 and players.has(own_id) and ui_now >= next_ambience_at_msec:
+        next_ambience_at_msec = ui_now+450
+        ambience.update_campfires(building_nodes,players[own_id].position)
     if ui_now >= next_proximity_ui_at_msec:
         next_proximity_ui_at_msec = ui_now + 200
         if live_ui != null:
@@ -1550,19 +1565,29 @@ func _apply_raid_lighting(phase: String) -> void:
     if sunlight == null or is_dedicated:
         return
     var night := phase == "night"
-    var desired := 0.29 if night else 0.82
-    if absf(sunlight.light_energy - desired) < 0.01:
+    if night == _lighting_night:
         return
-    sunlight.light_energy = desired
-    sunlight.light_color = Color("a4b9e1") if night else Color("ffdda8")
+    _lighting_night = night
+    if ambience != null:
+        ambience.set_night(night)
+    if _lighting_tween != null and _lighting_tween.is_running():
+        _lighting_tween.kill()
     var forest: Node3D = get_node("Eldoria_Forest")
     if forest.environment_node != null:
         var environment: Environment = forest.environment_node.environment
-        environment.ambient_light_color = Color("849abf") if night else Color("a9bfd0")
-        environment.ambient_light_energy = 0.20 if night else 0.48
+        _lighting_tween = create_tween().set_parallel(true)
+        _lighting_tween.tween_property(sunlight,"light_energy",0.29 if night else 0.82,1.15)
+        _lighting_tween.tween_property(sunlight,"light_color",Color("9eafd6") if night else Color("ffdda8"),1.15)
+        _lighting_tween.tween_property(environment,"ambient_light_color",Color("6e84ac") if night else Color("a9bfd0"),1.15)
+        _lighting_tween.tween_property(environment,"ambient_light_energy",0.21 if night else 0.48,1.15)
+        _lighting_tween.tween_property(environment,"fog_density",0.0036 if night else 0.0016,1.15)
+        _lighting_tween.tween_property(environment,"fog_light_color",Color("61799f") if night else Color("afc6d5"),1.15)
         var sky_mat := environment.sky.sky_material as ShaderMaterial
         if sky_mat != null:
-            sky_mat.set_shader_parameter("night_mix", 1.0 if night else 0.0)
+            var stored_mix: Variant = sky_mat.get_shader_parameter("night_mix")
+            var previous: float = float(stored_mix) if stored_mix != null else 0.0
+            _lighting_tween.tween_method(func(mix: float) -> void:
+                sky_mat.set_shader_parameter("night_mix",mix),previous,1.0 if night else 0.0,1.15)
 
 func _reward_raid_survivors() -> void:
     # Reward only living connected players. Persist everyone's reward as one
@@ -3102,6 +3127,8 @@ func building_created(id: int, record: Dictionary) -> void:
     _play_build_sound(record)
 
 func _apply_building_detail_quality() -> void:
+    if ambience != null:
+        ambience.set_high_detail(graphics_quality == GRAPHICS_SCRIPT.HIGH)
     for node in building_nodes.values():
         if is_instance_valid(node):
             node.set_visual_detail(graphics_quality == GRAPHICS_SCRIPT.HIGH)

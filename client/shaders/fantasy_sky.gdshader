@@ -24,5 +24,11 @@ void sky() {
     // extra material passes on low-end Android renderers.
     vec3 night = mix(vec3(0.08, 0.14, 0.26), vec3(0.015, 0.045, 0.11), pow(height, 0.45));
     color = mix(color, night, night_mix);
+    // Sparse procedural stars use one hash per sky pixel and no textures,
+    // point lights, full-screen passes or volumetric shaders on Android.
+    vec2 star_tile = floor(direction.xz / max(height + 0.30, 0.30) * 98.0);
+    float star_hash = fract(sin(dot(star_tile, vec2(12.9898, 78.233))) * 43758.5453);
+    float star = step(0.996, star_hash) * smoothstep(0.14, 0.35, height);
+    color += vec3(0.52, 0.61, 0.83) * star * night_mix;
     COLOR = direction.y >= 0.0 ? color : vec3(0.32, 0.42, 0.39);
 }
