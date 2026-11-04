@@ -5,6 +5,7 @@ const MAX_PICKUP_BURSTS := 5
 const MAX_RESOURCE_FEEDBACK := 5
 const MAX_BUILD_BURSTS := 4
 const MAX_COMBAT_BURSTS := 6
+const MAX_ABILITY_BURSTS := 4
 const FALL_SECONDS := 1.25
 const MAX_SOUNDS := 6
 const WOOD_SFX := preload("res://assets/sfx/wood_chop.wav")
@@ -18,6 +19,7 @@ var _particle_mesh: SphereMesh
 var _pickup_meshes: Dictionary = {}
 var _building_bursts: Array[Node3D] = []
 var _combat_bursts: Array[Node3D] = []
+var _ability_bursts: Array[Node3D] = []
 var _combat_high_detail := true
 var _sounds: Array[AudioStreamPlayer3D] = []
 var sound_enabled := true
@@ -210,6 +212,66 @@ func set_combat_detail(high: bool) -> void:
 func combat_burst_count() -> int:
     return _combat_bursts.size()
 
+func ability_burst_count() -> int:
+    return _ability_bursts.size()
+
+func play_ability_effect(kind: String, at: Vector3) -> bool:
+    if DisplayServer.get_name() == "headless" or not at.is_finite():
+        return false
+    if kind not in ["heal","dash","taunt"] or _ability_bursts.size() >= MAX_ABILITY_BURSTS:
+        return false
+    var effect := Node3D.new()
+    effect.name = "Ability_%s" % kind
+    effect.position = at + Vector3.UP*0.07
+    add_child(effect)
+    _ability_bursts.append(effect)
+    var shade := Color("9df5df") if kind == "heal" else (
+        Color("e9c17a") if kind == "taunt" else Color("bbacf8"))
+    var ring := MeshInstance3D.new()
+    ring.name = "AbilityRing"
+    var mesh := TorusMesh.new()
+    mesh.inner_radius = 0.55
+    mesh.outer_radius = 0.67
+    mesh.ring_segments = 24 if _combat_high_detail else 12
+    mesh.rings = 4
+    ring.mesh = mesh
+    var material := StandardMaterial3D.new()
+    material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    material.albedo_color = Color(shade.r,shade.g,shade.b,0.83)
+    ring.material_override = material
+    ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    effect.add_child(ring)
+    var sparks := CPUParticles3D.new()
+    sparks.name = "AbilitySparks"
+    sparks.amount = 16 if _combat_high_detail else 5
+    sparks.one_shot = true
+    sparks.emitting = false
+    sparks.lifetime = 0.58
+    sparks.explosiveness = 1.0
+    sparks.initial_velocity_min = 0.6
+    sparks.initial_velocity_max = 1.7
+    sparks.spread = 60
+    sparks.direction = Vector3.UP
+    sparks.gravity = Vector3(0,-1.5,0)
+    sparks.mesh = _particle_mesh
+    var spark_material := StandardMaterial3D.new()
+    spark_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    spark_material.albedo_color = shade
+    sparks.material_override = spark_material
+    effect.add_child(sparks)
+    sparks.emitting = true
+    var tween := create_tween().bind_node(effect)
+    tween.set_parallel(true)
+    tween.tween_property(ring,"scale",Vector3(2.2,1.0,2.2),0.65).from(Vector3(0.35,1.0,0.35))
+    tween.tween_property(material,"albedo_color:a",0.0,0.65)
+    tween.set_parallel(false)
+    tween.tween_callback(func() -> void:
+        _ability_bursts.erase(effect)
+        if is_instance_valid(effect):
+            effect.queue_free())
+    return true
+
 func play_combat_impact(kind: String, at: Vector3, damage: int) -> bool:
     # Server-authoritative hit events only. Keep bursts bounded on Android.
     if DisplayServer.get_name() == "headless" or not at.is_finite():
@@ -301,6 +363,10 @@ func set_sound_enabled(enabled: bool) -> void:
         _sounds.clear()
 
 func clear_effects() -> void:
+    for ability in _ability_bursts:
+        if is_instance_valid(ability):
+            ability.queue_free()
+    _ability_bursts.clear()
     for impact in _combat_bursts:
         if is_instance_valid(impact):
             impact.queue_free()

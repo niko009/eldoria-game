@@ -1693,7 +1693,26 @@ func _combat_server_tick(delta: float) -> void:
     wolf_sync_timer += delta
     if wolf_sync_timer >= 0.15:
         wolf_sync_timer = 0.0
-        wolf_snapshot.rpc(wolf_position, wolf_health, wolf_alive, wolf_direction)
+        for remote_id in _ready_snapshot_peers():
+            wolf_snapshot.rpc_id(remote_id,wolf_position,wolf_health,wolf_alive,wolf_direction)
+
+# WebSocket clients can enter CLOSING before SceneMultiplayer emits
+# peer_disconnected. Sending high-frequency snapshots to those sockets
+# otherwise triggers repeated engine-level STATE_OPEN errors.
+func _ready_snapshot_peers() -> Array[int]:
+    var ids: Array[int] = []
+    if not multiplayer.is_server():
+        return ids
+    if multiplayer.multiplayer_peer is WebSocketMultiplayerPeer:
+        var sockets := multiplayer.multiplayer_peer as WebSocketMultiplayerPeer
+        for id in multiplayer.get_peers():
+            var socket := sockets.get_peer(id)
+            if socket != null and socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
+                ids.append(int(id))
+    else:
+        for id in multiplayer.get_peers():
+            ids.append(int(id))
+    return ids
 
 func _tick_raid_pack(delta: float, now: int) -> void:
     if pack_wolves.is_empty():
@@ -1746,10 +1765,11 @@ func _tick_raid_pack(delta: float, now: int) -> void:
     pack_sync_timer += delta
     if pack_sync_timer >= 0.15:
         pack_sync_timer = 0.0
-        for pack_id in pack_wolves:
-            var enemy: Dictionary = pack_wolves[pack_id]
-            if enemy["alive"]:
-                pack_wolf_snapshot.rpc(int(pack_id), enemy["position"], int(enemy["hp"]), true, enemy["direction"])
+        for remote_id in _ready_snapshot_peers():
+            for pack_id in pack_wolves:
+                var enemy: Dictionary = pack_wolves[pack_id]
+                if enemy["alive"]:
+                    pack_wolf_snapshot.rpc_id(remote_id,int(pack_id),enemy["position"],int(enemy["hp"]),true,enemy["direction"])
 
 func _spawn_passive_creatures() -> void:
     if not multiplayer.is_server():
@@ -1770,9 +1790,11 @@ func _tick_passive_creatures(delta: float, now: int) -> void:
     if not respawned and passive_sync_timer < 0.30:
         return
     passive_sync_timer = 0.0
+    var remote_ids := _ready_snapshot_peers()
     for creature_id in passive_creatures:
         var mob: Dictionary = passive_creatures[creature_id]
-        passive_snapshot.rpc(int(creature_id),mob["species"],mob["position"],int(mob["hp"]),bool(mob["alive"]),mob["direction"])
+        for remote_id in remote_ids:
+            passive_snapshot.rpc_id(remote_id,int(creature_id),mob["species"],mob["position"],int(mob["hp"]),bool(mob["alive"]),mob["direction"])
         if not is_dedicated:
             passive_snapshot(int(creature_id),mob["species"],mob["position"],int(mob["hp"]),bool(mob["alive"]),mob["direction"])
 
@@ -2349,17 +2371,22 @@ func _hero_ability_on_server(id: int, direction: Vector3, now: int = -1) -> bool
         elif multiplayer.get_peers().has(target_id):
             health_snapshot.rpc_id(target_id,int(player_health[target_id]),MAX_HEALTH)
         _send_mana_snapshot(id)
-        hero_ability_visual.rpc(id,"heal")
+        hero_ability_visual.rpc(id,"heal",target_id)
         if not is_dedicated:
-            hero_ability_visual(id,"heal")
+            hero_ability_visual(id,"heal",target_id)
         _send_hero_message(id,"Лечение: +%d HP" % mini(missing,HERO_CLASSES.MAGE_HEAL_HP))
         return true
     return false
 
 @rpc("authority","call_remote","reliable")
-func hero_ability_visual(id: int, kind: String) -> void:
+func hero_ability_visual(id: int, kind: String, target_id: int = 0) -> void:
     if not is_dedicated and kind in ["dash","heal"] and players.has(id):
         players[id].hero_ability_animation(kind)
+        if harvest_visuals != null:
+            var position: Vector3 = players[id].position
+            if kind == "heal" and players.has(target_id):
+                position = players[target_id].position
+            harvest_visuals.play_ability_effect(kind,position)
 
 func _send_mana_snapshot(id: int) -> void:
     if id == own_id:
@@ -2454,6 +2481,9 @@ func shield_taunt_visual(id: int, duration_ms: int) -> void:
     if is_dedicated or not players.has(id) or duration_ms <= 0 or duration_ms > SHIELD_TAUNT_DURATION_MS:
         return
     var actor: Node3D = players[id]
+    # Joining mid-taunt receives the ongoing marker, not a fake new cast burst.
+    if duration_ms >= SHIELD_TAUNT_DURATION_MS-150 and harvest_visuals != null:
+        harvest_visuals.play_ability_effect("taunt",actor.position)
     var marker: Label3D = actor.get_node_or_null("TauntIndicator")
     if marker == null:
         marker = Label3D.new()
