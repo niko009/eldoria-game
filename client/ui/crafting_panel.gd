@@ -41,7 +41,7 @@ func refresh() -> void:
 	var categories := HBoxContainer.new()
 	categories.name = "RecipeCategories"
 	add_child(categories)
-	for category in ["Все", "Оружие", "Броня", "Еда", "Расходники"]:
+	for category in ["Все", "Доступно", "Оружие", "Броня", "Еда", "Расходники"]:
 		var filter := Button.new()
 		filter.text = category
 		Style.button(filter, selected_category == category)
@@ -81,10 +81,17 @@ func refresh() -> void:
 		mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		content.add_child(mark)
 	if not _category_matches(selected_recipe):
+		selected_recipe = ""
 		for recipe_id in recipe_order:
 			if _category_matches(recipe_id):
 				selected_recipe = recipe_id
 				break
+	if selected_recipe.is_empty():
+		var empty := Style.label("Нет доступных рецептов. Соберите ресурсы или подойдите к костру.", 12, Style.MUTED)
+		empty.name = "EmptyRecipeCategory"
+		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		add_child(empty)
+		return
 	var shell := PanelContainer.new()
 	shell.name = "SelectedRecipe"
 	shell.add_theme_stylebox_override("panel", Style.panel(Color("202a30", 0.93), Color("58615c"), 12))
@@ -161,6 +168,7 @@ func refresh() -> void:
 
 func _category_matches(recipe_id: String) -> bool:
 	match selected_category:
+		"Доступно": return craft_enabled and state.near_campfire and state.recipe_materials_ready(recipe_id)
 		"Оружие": return recipe_id in ["axe", "spear", "bow", "arrow", "wooden_staff"]
 		"Броня": return recipe_id in ["shield", "leather_armor"]
 		"Еда": return recipe_id == "grilled_meat"
