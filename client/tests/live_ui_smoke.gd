@@ -29,6 +29,26 @@ func _run() -> void:
         push_error("Equipped staff should be visually marked")
         quit(36)
         return
+    ui.current_panel.get_node("InventoryCategories/Filter_Ресурсы").pressed.emit()
+    if ui.current_panel.get_node_or_null("ItemGrid/ItemSlot_wooden_staff") != null:
+        push_error("Resource filter shows equipped weapon")
+        quit(37)
+        return
+    ui.current_panel.get_node("InventoryCategories/Filter_Оружие").pressed.emit()
+    if ui.current_panel.get_node_or_null("ItemGrid/ItemSlot_wooden_staff") == null:
+        push_error("Weapon filter hides owned staff")
+        quit(38)
+        return
+    ui.current_panel.get_node("InventoryCategories/Filter_Расходники").pressed.emit()
+    if ui.current_panel.get_node_or_null("ItemGrid/ItemSlot_wooden_staff") != null:
+        push_error("Consumables filter shows staff")
+        quit(39)
+        return
+    ui.current_panel.get_node("InventoryCategories/Filter_Все").pressed.emit()
+    if ui.current_panel.get_node_or_null("ItemGrid/ItemSlot_wooden_staff") == null:
+        push_error("All-items filter does not restore owned staff")
+        quit(40)
+        return
     ui._close()
     ui.state.select_item("unarmed")
     ui.set_inventory({"wooden_staff":1})

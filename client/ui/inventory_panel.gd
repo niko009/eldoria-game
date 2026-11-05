@@ -12,6 +12,8 @@ var state: MockGameUiState
 var detail: Label
 var armor_equipped := false
 var shield_equipped := false
+var selected_category := "Все"
+const CATEGORIES := ["Все", "Оружие", "Ресурсы", "Расходники"]
 
 func set_shield_equipped(value: bool) -> void:
 	shield_equipped = value
@@ -68,6 +70,22 @@ func refresh() -> void:
 	Style.button(offhand,shield_equipped)
 	offhand.pressed.connect(func() -> void: shield_requested.emit(not shield_equipped))
 	equipment.add_child(offhand)
+	var filters := HBoxContainer.new()
+	filters.name = "InventoryCategories"
+	filters.add_theme_constant_override("separation", 4)
+	add_child(filters)
+	for category in CATEGORIES:
+		var filter := Button.new()
+		filter.name = "Filter_" + category
+		filter.text = category
+		filter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		filter.custom_minimum_size = Vector2(0, 36)
+		Style.button(filter, selected_category == category)
+		filter.add_theme_font_size_override("font_size", 12)
+		filter.pressed.connect(func() -> void:
+			selected_category = category
+			refresh())
+		filters.add_child(filter)
 	var grid := GridContainer.new()
 	grid.name = "ItemGrid"
 	grid.columns = 4
@@ -76,9 +94,13 @@ func refresh() -> void:
 	add_child(grid)
 	var any_item := false
 	for item_id in State.ITEMS:
+		if not _category_matches(item_id):
+			continue
 		var data: Dictionary = State.ITEMS[item_id]
 		var count: int = state.amount(item_id)
-		any_item = any_item or count > 0
+		if count <= 0:
+			continue
+		any_item = true
 		var slot := Button.new()
 		slot.name = "ItemSlot_%s" % item_id
 		slot.text = "" # The grid shows pictures and quantities, not item names.
@@ -103,7 +125,7 @@ func refresh() -> void:
 		slot.add_child(amount_label)
 		grid.add_child(slot)
 	if not any_item:
-		add_child(Style.label("Рюкзак пуст. Предметы появятся здесь.", 14, Style.MUTED))
+		add_child(Style.label("В этом разделе пока нет предметов.", 14, Style.MUTED))
 	detail = Style.label("Нажмите на оружие, чтобы экипировать. Броня и щит надеваются через слоты выше.", 13, Style.GOLD)
 	detail.name = "ItemDetail"
 	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -115,6 +137,13 @@ func _item_pressed(item_id: String, count: int, can_equip: bool) -> void:
 			" · Экипируется по нажатию" if can_equip else ""]
 	if can_equip:
 		item_selected.emit(item_id)
+
+func _category_matches(item_id: String) -> bool:
+	match selected_category:
+		"Оружие": return item_id in ["axe", "spear", "bow", "shield", "wooden_staff", "leather_armor", "arrow"]
+		"Ресурсы": return item_id in ["wood", "stone", "herb", "mana_herb", "meat", "hide", "bone"]
+		"Расходники": return item_id in ["bandage", "grilled_meat", "repair_kit", "mana_potion"]
+		_: return true
 
 func _item_help(item_id: String) -> String:
 	if State.RECIPES.has(item_id):
