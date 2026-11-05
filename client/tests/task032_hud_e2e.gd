@@ -36,10 +36,14 @@ func _run() -> void:
 		var left: Rect2 = hud.status_panel.get_global_rect()
 		var right: Rect2 = hud.top_actions.get_global_rect()
 		var resources: Rect2 = hud.resources_panel.get_global_rect()
+		var progress: Rect2 = hud.progress_panel.get_global_rect()
 		var hot: Rect2 = hud.hotbar.get_global_rect()
 		var stick: Rect2 = hud.joystick.get_global_rect()
 		if left.intersects(right) or left.intersects(resources) or right.intersects(resources):
 			_fail("top HUD overlaps for " + str(display))
+			return
+		if progress.intersects(resources) or progress.intersects(left) or progress.end.x > hud.size.x * 0.62:
+			_fail("resources and progression overlap or invade play area at " + str(display))
 			return
 		if hot.intersects(stick):
 			_fail("equipment overlaps joystick " + str(display))

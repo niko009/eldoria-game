@@ -34,6 +34,7 @@ var xp_label: Label
 var avatar_name: Label
 var warning_detail: Label
 var resources_panel: HBoxContainer
+var progress_panel: HBoxContainer
 var resource_counts: Dictionary = {}
 var practice_label: Label
 var hunt_progress := 0
@@ -157,14 +158,18 @@ func _create_resources() -> void:
 		content.add_child(quantity)
 		chip.tooltip_text = State.ITEMS[kind]["name"]
 		resource_counts[kind] = quantity
+	progress_panel = HBoxContainer.new()
+	progress_panel.name = "ProgressIndicators"
+	progress_panel.add_theme_constant_override("separation", 12)
+	add_child(progress_panel)
 	practice_label = Style.label("Тренировка: 0", 13, Color("c8edb5"))
 	practice_label.name = "PracticePoints"
 	practice_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	resources_panel.add_child(practice_label)
+	progress_panel.add_child(practice_label)
 	mana_label = Style.label("Мана 100/100",13,Color("a5c7f3"))
 	mana_label.name = "HeroMana"
 	mana_label.visible = false
-	resources_panel.add_child(mana_label)
+	progress_panel.add_child(mana_label)
 
 func set_mana(value: int, mage: bool) -> void:
 	_mana_needs_refill = value < 100
@@ -555,6 +560,8 @@ func _layout() -> void:
 	status_panel.size = Vector2(status_w, status_h)
 	resources_panel.position = Vector2(inset.x, inset.y + status_h + margin)
 	resources_panel.size = resources_panel.get_combined_minimum_size()
+	progress_panel.position = Vector2(inset.x + 3, resources_panel.position.y + resources_panel.size.y + 3)
+	progress_panel.size = progress_panel.get_combined_minimum_size()
 	top_actions.position = Vector2(size.x - inset.z - top_actions.get_combined_minimum_size().x, inset.y + 1)
 	top_actions.size = top_actions.get_combined_minimum_size()
 	var hot_size := hotbar.get_combined_minimum_size()
@@ -565,12 +572,13 @@ func _layout() -> void:
 	raid_banner.size = Vector2(minf(310.0, size.x * 0.48), 37)
 	raid_banner.position = Vector2((size.x - raid_banner.size.x) * 0.5, hotbar.position.y - 78)
 	heal_button.size = Vector2(172, 37)
-	heal_button.position = Vector2(inset.x, inset.y + status_h + resources_panel.size.y + 16)
+	var info_bottom := progress_panel.position.y + progress_panel.size.y
+	heal_button.position = Vector2(inset.x, info_bottom + 8)
 	repair_button.size = Vector2(216, 37)
 	repair_button.position = Vector2(inset.x, heal_button.position.y + (43 if heal_button.visible else 0))
 	if quick_consumables != null:
 		quick_consumables.size = quick_consumables.get_combined_minimum_size()
-		quick_consumables.position = Vector2(inset.x, minf(size.y - inset.w - 45, inset.y + status_h + resources_panel.size.y + 58))
+		quick_consumables.position = Vector2(inset.x, minf(size.y - inset.w - 45 - quick_consumables.size.y, info_bottom + (46 if heal_button.visible or repair_button.visible else 14)))
 	if zoom_controls != null:
 		zoom_controls.visible = show_touch_controls
 		zoom_controls.size = zoom_controls.get_combined_minimum_size()
@@ -597,7 +605,7 @@ func _layout() -> void:
 		button.position = positions[id] + (Vector2(-71, 0) if id == "target" and action_controls["spell"].visible else Vector2.ZERO)
 		button.size = button.custom_minimum_size
 	warning_detail.size = Vector2(minf(400, size.x * 0.55), 48)
-	warning_detail.position = Vector2(inset.x, inset.y + status_h + resources_panel.size.y + 15)
+	warning_detail.position = Vector2(inset.x, info_bottom + 8)
 
 func _safe_insets() -> Vector4:
 	var values := Vector4(15, 15, 15, 17)
