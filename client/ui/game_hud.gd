@@ -81,13 +81,13 @@ func _ready() -> void:
 func _create_status() -> void:
 	status_panel = PanelContainer.new()
 	status_panel.name = "PlayerStatus"
-	status_panel.add_theme_stylebox_override("panel", _card(Color("142329", 0.84), Color("d6bd89", 0.39), 17, 11))
+	status_panel.add_theme_stylebox_override("panel", _card(Color("142329", 0.84), Color("d6bd89", 0.39), 13, 6))
 	add_child(status_panel)
 	var body := HBoxContainer.new()
 	body.add_theme_constant_override("separation", 9)
 	status_panel.add_child(body)
 	var crest := PanelContainer.new()
-	crest.custom_minimum_size = Vector2(42, 42)
+	crest.custom_minimum_size = Vector2(34, 34)
 	crest.add_theme_stylebox_override("panel", _card(Color("9c8358", 0.30), Color("e5bd77", 0.30), 13, 4))
 	body.add_child(crest)
 	var symbol := Style.label("✦", 23, GOLD)
@@ -420,9 +420,12 @@ func _create_quick_consumables() -> void:
 	for kind in ["bandage", "grilled_meat", "repair_kit", "mana_potion"]:
 		var button := Button.new()
 		button.name = "Quick_%s" % kind
-		button.custom_minimum_size = Vector2(83, 34)
+		button.custom_minimum_size = Vector2(70, 36)
 		button.focus_mode = Control.FOCUS_NONE
 		Style.button(button)
+		button.add_theme_stylebox_override("normal", _card(Color("202a30", 0.91), Color("5f655f"), 10, 5))
+		button.add_theme_stylebox_override("disabled", _card(Color("20282b", 0.70), Color("454b4b"), 10, 5))
+		button.add_theme_font_size_override("font_size", 12)
 		button.pressed.connect(func() -> void: action_requested.emit(kind))
 		quick_consumables.add_child(button)
 		quick_buttons[kind] = button
@@ -465,7 +468,7 @@ func _refresh_quick_consumables() -> void:
 			reason = "Ремонт: ночью у повреждённого лагеря возле костра"
 		elif state.loading:
 			reason = "Ожидание сервера"
-		button.text = {"bandage":"✚", "grilled_meat":"Еда", "repair_kit":"Ремонт", "mana_potion":"Мана"}[kind] + " ×%d" % count
+		button.text = {"bandage":"✚", "grilled_meat":"Еда", "repair_kit":"Рем.", "mana_potion":"MP"}[kind] + " ×%d" % count
 		button.disabled = not reason.is_empty()
 		button.tooltip_text = reason if not reason.is_empty() else {"bandage":"Восстановить 40 HP", "grilled_meat":"Еда: +25 HP и регенерация", "repair_kit":"Восстановить 60 HP лагеря", "mana_potion":"Восстановить 35 MP"}[kind]
 	quick_consumables.visible = quick_buttons.values().any(func(button: Button) -> bool: return button.visible)
@@ -554,8 +557,8 @@ func _layout() -> void:
 	var inset := _safe_insets()
 	var compact := size.y < 490
 	var margin := 7.0
-	var status_w := 226.0 if compact else 236.0
-	var status_h := 94.0
+	var status_w := 210.0 if compact else 220.0
+	var status_h := maxf(72.0, status_panel.get_combined_minimum_size().y)
 	status_panel.position = Vector2(inset.x, inset.y)
 	status_panel.size = Vector2(status_w, status_h)
 	resources_panel.position = Vector2(inset.x, inset.y + status_h + margin)
