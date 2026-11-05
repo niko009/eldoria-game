@@ -59,10 +59,15 @@ func _run() -> void:
         return
     # Repeat enemy attacks while standing next to the victim: no client input.
     game.wolf_position = game.players[id].position + Vector3(0, -0.9, 0)
-    # Knight now mitigates 12 damage to 11, so ten hits are needed from 100 HP.
-    for attempt in range(10):
-        game.wolf_last_hit_at = -100000
-        game._combat_server_tick(0.02)
+    # Damage/death test must not assume the old instant bite or old 12-damage
+    # balance: TASK-076 introduced a 550ms windup and pack-wide spacing.
+    # Windup timing is covered separately by task076_wolf_windup_e2e.gd.
+    for attempt in range(20):
+        if game.player_health[id] == 0:
+            break
+        if not game._damage_player_on_server(id, game.WOLF_BITE_DAMAGE):
+            _fail("server rejected valid wolf damage")
+            return
     if game.player_health[id] != 0 or not game.player_respawn_at.has(id):
         _fail("wolf cannot kill the player")
         return
