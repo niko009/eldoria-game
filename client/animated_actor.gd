@@ -13,6 +13,7 @@ const EFFECTS := preload("res://visual_fx/effect_pool.gd")
 signal visual_action(event: StringName)
 var visual_dead := false
 var _locomotion := "Idle"
+var _footsteps := preload("res://visual_fx/creature_motion.gd").new()
 const ACTION_CLIPS := ["Cheer","PickUp","1H_Melee_Attack_Chop",
     "2H_Ranged_Shoot","2H_Melee_Attack_Stab","Block_Hit",
     "Unarmed_Melee_Attack_Punch_A","Spellcast_Shoot","Dodge_Forward","Hit_A",
@@ -329,6 +330,7 @@ func gather(kind: String = "herb") -> void:
     emote_until_msec = Time.get_ticks_msec() + int(clip.length*1000.0)
     current_clip = ""
     set_clip(chosen)
+    EFFECTS.shared(self).burst("harvest", global_position + global_basis.z * 0.5)
 
 func face_interaction(target: Vector3) -> void:
     # Turn toward the *validated* resource spot without modifying the
@@ -422,9 +424,10 @@ func _play_action_clip(clip: String, duration: float) -> void:
     animator.play(clip,0.08,animation.length/maxf(0.10,duration))
     visual_action.emit(StringName(clip))
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
     if headless or visual_dead:
         return
+    _footsteps.step(self, delta, not airborne and _locomotion != "Idle" and Time.get_ticks_msec() - last_motion_msec < 300, global_position - Vector3.UP)
     if airborne and current_clip == "Jump_Start" and animator.current_animation_position > 0.19:
         set_clip("Jump_Idle")
     if airborne or Time.get_ticks_msec() < landing_until_msec:

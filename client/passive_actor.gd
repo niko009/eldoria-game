@@ -2,6 +2,8 @@ extends Node3D
 ## Visual-only passive animal. Server owns health, movement and respawn.
 const RABBIT_MODEL: PackedScene = preload("res://assets/wildlife/Rabbit.glb")
 const DEER_MODEL: PackedScene = preload("res://assets/wildlife/Deer.glb")
+var presentation := preload("res://visual_fx/creature_motion.gd").new()
+var was_alive := false
 
 var species := "rabbit"
 var body: Node3D
@@ -120,6 +122,7 @@ func _box(label: String, point: Vector3, size: Vector3, mat: Material) -> void:
 	body.add_child(mesh)
 
 func update_state(at: Vector3, hp: int, alive: bool, direction: Vector3) -> void:
+	var previous_life := life
 	var travelled := position.distance_to(at)
 	if not active or position.distance_to(at) > 7.0:
 		position = at
@@ -128,6 +131,15 @@ func update_state(at: Vector3, hp: int, alive: bool, direction: Vector3) -> void
 	active = true
 	visible = alive
 	life = clampf(float(hp)/(24.0 if species == "rabbit" else 100.0 if species == "dummy" else 95.0 if species == "rare_deer" else 55.0),0.0,1.0)
+	if species != "dummy":
+		if alive and not was_alive:
+			presentation.reset(body)
+			presentation.clear_corpses()
+		elif alive and life < previous_life:
+			presentation.hit(self, body)
+		elif not alive and was_alive:
+			presentation.death(self, body)
+	was_alive = alive
 	if health_track != null:
 		health_track.visible = alive
 		health_fill.visible = health_track.visible
@@ -142,6 +154,7 @@ func update_state(at: Vector3, hp: int, alive: bool, direction: Vector3) -> void
 	last_position = at
 
 func _process(delta: float) -> void:
+	presentation.step(self, delta, was_alive and speed_visual > 0.1, global_position)
 	if body != null and visible:
 		if species == "dummy":
 			return
@@ -155,7 +168,9 @@ func _process(delta: float) -> void:
 		else:
 			_update_deer_gait(delta)
 			body.position.y = 0.0
-			body.rotation.z = 0.0
+
+func _exit_tree() -> void:
+	presentation.clear_corpses()
 
 func _update_deer_gait(delta: float) -> void:
 	if deer_skeleton == null or deer_legs.size() != 4 or deer_shins.size() != 4:

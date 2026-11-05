@@ -25,6 +25,8 @@ var _wanted_locomotion := "Idle"
 var _action_until_msec := 0
 var _death_generation := 0
 var _flash_tween: Tween
+var _target_yaw := 0.0
+var presentation := preload("res://visual_fx/creature_motion.gd").new()
 
 func _ready() -> void:
     # Wait for the first authoritative snapshot before showing this actor.
@@ -85,16 +87,18 @@ func update_state(point: Vector3, hp: int, alive: bool, direction: Vector3 = Vec
     initialized = true
     visual_hp = health
     if alive and direction.length_squared() > 0.01:
-        rotation.y = atan2(-direction.x, -direction.z)
+        _target_yaw = atan2(-direction.x, -direction.z)
     moving = alive and direction.length_squared() > 0.01
     # Network positions are already interpolated by the world tick. The GLB
     # locomotion is in-place and does not alter the player's world collision.
     _wanted_locomotion = "Gallop" if moving and distance > 0.34 else ("Walk" if moving else "Idle")
     _update_health()
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
     if down or animator == null:
         return
+    rotation.y = lerp_angle(rotation.y, _target_yaw, 1.0 - exp(-10.0 * delta))
+    presentation.step(self, delta, moving, global_position)
     if Time.get_ticks_msec() < _action_until_msec:
         return
     if current_clip != _wanted_locomotion:
@@ -110,6 +114,7 @@ func play_hit_reaction() -> void:
     if down or animator == null:
         return
     hurt_count += 1
+    preload("res://visual_fx/effect_pool.gd").shared(self).burst("hit", global_position + Vector3.UP * 0.65)
     _play_action("Idle_HitReact_Left" if hurt_count % 2 else "Idle_HitReact_Right", 0.48)
     if skin_mesh != null:
         _reset_hit_overlay()
