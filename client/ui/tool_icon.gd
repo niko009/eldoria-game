@@ -42,6 +42,9 @@ func _draw() -> void:
 			_bow(steel, edge, wood)
 		"spear":
 			_spear(steel, edge, wood)
+		"wooden_staff":
+			_stroke(Vector2(13,43),Vector2(32,9),wood,5)
+			draw_circle(Vector2(33,9),7,Color("83ccf2") if available else dark)
 		"shield":
 			_shield(steel, edge, wood)
 

@@ -2422,8 +2422,8 @@ func _try_attack() -> void:
         return
     var aim := _bow_aim_direction()
     if int(player_choices.get(own_id,-1)) == HERO_CLASSES.MAGE and (
-            (str(equipped_combat.get(own_id,"unarmed")) == "unarmed") if multiplayer.is_server() else
-            (live_ui != null and live_ui.combat_equipment == "unarmed")):
+            (str(equipped_combat.get(own_id,"unarmed")) in ["unarmed","staff","wooden_staff"]) if multiplayer.is_server() else
+            (live_ui != null and live_ui.combat_equipment in ["unarmed","staff","wooden_staff"])):
         if multiplayer.is_server():
             _mage_attack_on_server(own_id,aim,mage_spell_index,selected_target_id)
         else:

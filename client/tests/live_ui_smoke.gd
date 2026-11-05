@@ -15,6 +15,21 @@ func _run() -> void:
         quit(1)
         return
     var ui = game.live_ui
+    ui.set_inventory({"wooden_staff":1})
+    ui.set_avatar(2)
+    var selection: Array[String] = []
+    ui.combat_equip_requested.connect(func(item: String) -> void: selection.append(item))
+    ui.state.select_item("wooden_staff")
+    if selection.is_empty() or selection.back() != "wooden_staff" or ui.state.selected_item != "wooden_staff":
+        push_error("Staff icon does not request equipping a crafted staff")
+        quit(33)
+        return
+    if ui.hud.hotbar.slot_buttons["wooden_staff"].disabled:
+        push_error("Owned staff must be available in hotbar")
+        quit(34)
+        return
+    ui.state.select_item("unarmed")
+    ui.set_inventory({})
     ui.set_combat_equipment("bow")
     if ui.hud.action_controls["attack"].get_node("Caption").text != "ВЫСТРЕЛ":
         push_error("Bow attack caption was overwritten")
@@ -115,7 +130,7 @@ func _run() -> void:
         return
     ui._close()
     ui.set_inventory({"wood":6,"stone":5,"herb":3})
-    if EldoriaHotbar.SLOTS != ["unarmed", "spear", "shield", "axe", "bow", "hammer"]:
+    if EldoriaHotbar.SLOTS != ["unarmed", "spear", "shield", "axe", "bow", "wooden_staff", "hammer"]:
         push_error("Tool-only hotbar layout or axe slot 4 incorrect")
         quit(14)
         return
