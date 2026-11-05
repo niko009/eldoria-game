@@ -116,7 +116,7 @@ func refresh() -> void:
 		detail.add_child(Style.label("Для изготовления нужен костёр рядом", 12, Color("e89883")))
 	var action := Button.new()
 	action.name = "CraftSelected"
-	action.text = "Лимит предметов" if owned_full else "Создать ×1"
+	action.text = "Лимит предметов" if owned_full else "Создать: %s" % str(recipe["name"])
 	Style.button(action)
 	action.disabled = not ready or not state.near_campfire or state.loading
 	action.pressed.connect(func() -> void: craft_requested.emit(selected_recipe))

@@ -35,12 +35,21 @@ func refresh() -> void:
 		child.queue_free()
 	if state == null:
 		return
-	var header := Style.label("РЮКЗАК  ·  Нажмите на иконку", 13, Style.MUTED)
+	var header := Style.label("РЮКЗАК  ·  Оружие — нажать, чтобы взять · Еда — на игровом экране", 12, Style.MUTED)
 	add_child(header)
 	var equipment := HBoxContainer.new()
 	equipment.name = "EquipmentSlots"
 	equipment.add_theme_constant_override("separation", 6)
 	add_child(equipment)
+	var hand := Button.new()
+	hand.name = "MainHandSlot"
+	hand.text = "В руках: %s" % str(State.TOOLS.get(state.selected_item,{"name":"Кулаки"})["name"])
+	hand.tooltip_text = "Нажмите, чтобы убрать оружие в рюкзак и выбрать кулаки"
+	hand.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hand.disabled = state.selected_item == "unarmed"
+	Style.button(hand, state.selected_item != "unarmed")
+	hand.pressed.connect(func() -> void: item_selected.emit("unarmed"))
+	equipment.add_child(hand)
 	var chest := Button.new()
 	chest.name = "ChestSlot"
 	chest.text = "Броня: надета" if armor_equipped else "Броня: —"
@@ -85,7 +94,7 @@ func refresh() -> void:
 		icon.position = Vector2(32,4)
 		icon.size = Vector2(48,48)
 		slot.add_child(icon)
-		var amount_label := Style.label("×%d" % count,15,Style.TEXT if count > 0 else Style.MUTED)
+		var amount_label := Style.label("НАДЕТО" if can_equip and state.selected_item == item_id else "×%d" % count,12 if can_equip and state.selected_item == item_id else 15,Style.GOLD if can_equip and state.selected_item == item_id else Style.TEXT if count > 0 else Style.MUTED)
 		amount_label.name = "Quantity"
 		amount_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		amount_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -95,7 +104,7 @@ func refresh() -> void:
 		grid.add_child(slot)
 	if not any_item:
 		add_child(Style.label("Рюкзак пуст. Предметы появятся здесь.", 14, Style.MUTED))
-	detail = Style.label("В руках: %s" % State.TOOLS.get(state.selected_item,{"name":state.selected_item})["name"], 14, Style.GOLD)
+	detail = Style.label("Нажмите на оружие, чтобы экипировать. Броня и щит надеваются через слоты выше.", 13, Style.GOLD)
 	detail.name = "ItemDetail"
 	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	add_child(detail)

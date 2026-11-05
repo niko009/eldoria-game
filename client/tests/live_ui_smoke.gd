@@ -17,6 +17,22 @@ func _run() -> void:
     var ui = game.live_ui
     ui.set_inventory({"wooden_staff":1})
     ui.set_avatar(2)
+    ui.state.select_item("wooden_staff")
+    ui._open("inventory")
+    var main_hand: Button = ui.current_panel.get_node("EquipmentSlots/MainHandSlot")
+    if not main_hand.text.contains("Посох") or main_hand.disabled:
+        push_error("Inventory must show equipped staff and allow unequip")
+        quit(35)
+        return
+    var staff_slot: Button = ui.current_panel.get_node("ItemGrid/ItemSlot_wooden_staff")
+    if staff_slot.get_node("Quantity").text != "НАДЕТО":
+        push_error("Equipped staff should be visually marked")
+        quit(36)
+        return
+    ui._close()
+    ui.state.select_item("unarmed")
+    ui.set_inventory({"wooden_staff":1})
+    ui.set_avatar(2)
     var selection: Array[String] = []
     ui.combat_equip_requested.connect(func(item: String) -> void: selection.append(item))
     ui.state.select_item("wooden_staff")
