@@ -590,7 +590,8 @@ func _layout() -> void:
 	joystick.position = Vector2(inset.x + 6, size.y - inset.w - joystick.size.y + 5)
 	action_buttons.position = Vector2.ZERO
 	action_buttons.size = size
-	# Floating 2-by-2 diamond cluster, away from equipment bar and center.
+	# Three compact rows: movement/combat at thumb level, class actions above.
+	# Keep the main attack at the outer edge for simultaneous joystick + attack.
 	var right := size.x - inset.z - 76
 	var lower := size.y - inset.w - 102
 	var positions := {
@@ -598,14 +599,14 @@ func _layout() -> void:
 		"gather": Vector2(right - 72, lower + 2),
 		"jump": Vector2(right + 6, lower - 88),
 		"sprint": Vector2(right - 68, lower - 79),
-		"ability": Vector2(right - 144, lower - 154),
-		"spell": Vector2(right - 145, lower - 226),
-		"target": Vector2(right - 145, lower - 226),
+		"ability": Vector2(right - 140, lower - 79),
+		"spell": Vector2(right - 140, lower - 150),
+		"target": Vector2(right - 140, lower - 150),
 	}
 	for id in positions:
 		var button: Button = action_controls[id]
 		# Mage spell and target cycling share a row but never overlap.
-		button.position = positions[id] + (Vector2(-71, 0) if id == "target" and action_controls["spell"].visible else Vector2.ZERO)
+		button.position = positions[id] + (Vector2(-70, 0) if id == "target" and action_controls["spell"].visible else Vector2.ZERO)
 		button.size = button.custom_minimum_size
 	warning_detail.size = Vector2(minf(400, size.x * 0.55), 48)
 	warning_detail.position = Vector2(inset.x, info_bottom + 8)

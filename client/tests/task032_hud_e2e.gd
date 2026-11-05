@@ -27,6 +27,16 @@ func _run() -> void:
 			await process_frame
 		hud._layout()
 		hud.set_hero_class(2)
+		for first in hud.action_controls:
+			var first_button: Button = hud.action_controls[first]
+			if not first_button.visible:
+				continue
+			for second in hud.action_controls:
+				if first == second or not hud.action_controls[second].visible:
+					continue
+				if first_button.get_global_rect().intersects(hud.action_controls[second].get_global_rect().grow(-2)):
+					_fail("mage action overlap: %s/%s at %s" % [first, second, display])
+					return
 		var mage_spell: Rect2 = hud.action_controls["spell"].get_global_rect()
 		var mage_target: Rect2 = hud.action_controls["target"].get_global_rect()
 		if mage_spell.intersects(mage_target):
