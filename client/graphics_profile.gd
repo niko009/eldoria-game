@@ -8,6 +8,7 @@ static func default_quality(dedicated: bool) -> int:
     return LOW if dedicated or OS.get_name() == "Android" else HIGH
 
 static func apply(quality: int, sun: DirectionalLight3D, leaves: Array[SphereMesh]) -> void:
+    preload("res://visual_fx/effect_pool.gd").high_detail = quality == HIGH
     sun.shadow_enabled = quality == HIGH
     for mesh in leaves:
         mesh.radial_segments = 12 if quality == LOW else 24

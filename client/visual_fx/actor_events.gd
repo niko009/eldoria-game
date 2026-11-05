@@ -21,7 +21,10 @@ static func dispatch(actor: Node3D, event: StringName, data: Dictionary = {}) ->
             actor.visual_dead = true
             actor._play_action_clip("Death_A", 1.1)
         &"cast": actor.hero_ability_animation(str(data.get("kind", "spell")))
-        &"bow_draw": actor._play_action_clip("2H_Ranged_Aiming", 0.35)
+        &"bow_draw":
+            actor._play_action_clip("2H_Ranged_Aiming", 0.35)
+            if actor.combat_visual != null and actor.combat_visual.has_node("BowMotion"):
+                actor.combat_visual.get_node("BowMotion").draw()
         &"equip": actor._play_action_clip("Interact", 0.3)
         &"harvest": actor.gather(str(data.get("kind", "wood")))
     return true

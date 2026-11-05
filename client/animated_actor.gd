@@ -8,6 +8,8 @@ const ROGUE := preload("res://assets/characters/Rogue_Hooded.glb")
 const MAGE := preload("res://assets/characters/Mage.glb")
 const AXE_VISUAL := preload("res://stone_axe_visual.gd")
 const VISUAL_EVENTS := preload("res://visual_fx/actor_events.gd")
+const BOW_MOTION := preload("res://visual_fx/bow_motion.gd")
+const EFFECTS := preload("res://visual_fx/effect_pool.gd")
 signal visual_action(event: StringName)
 var visual_dead := false
 var _locomotion := "Idle"
@@ -108,8 +110,11 @@ func _attach_equipment() -> void:
     _set_combat_visual()
 
 func set_combat_equipped(item: String) -> void:
+    var changed := combat_item != item
     combat_item = item
     _set_combat_visual()
+    if changed and not visual_dead and not airborne:
+        _play_action_clip("Interact", 0.3)
 
 var offhand_item := "unarmed"
 var offhand_visual: Node3D
@@ -222,6 +227,11 @@ func _set_combat_visual() -> void:
     else:
         return
     combat_visual.rotation_degrees.x = 90
+    if combat_item == "bow":
+        var bow_motion := BOW_MOTION.new()
+        bow_motion.name = "BowMotion"
+        combat_visual.add_child(bow_motion)
+        bow_motion.setup(self, combat_visual.get_node("BowString"))
     if axe_visual != null:
         axe_visual.visible = axe_equipped and combat_item == "unarmed"
 
@@ -355,6 +365,7 @@ func melee_attack() -> void:
         _:
             _play_action_clip("Unarmed_Melee_Attack_Punch_A",0.56)
     if combat_item == "bow" and combat_visual != null:
+        combat_visual.get_node("BowMotion").shoot()
         var recoil := create_tween()
         combat_visual.rotation_degrees.x = 65
         recoil.tween_property(combat_visual,"rotation_degrees:x",90.0,0.18)
@@ -387,6 +398,10 @@ func hero_ability_animation(kind: String) -> void:
             _play_action_clip("Dodge_Forward",0.38)
         "heal", "spell":
             _play_action_clip("Spellcast_Shoot",0.68)
+        "taunt":
+            _play_action_clip("Block_Hit",0.46)
+    if kind in ["dash", "heal", "spell", "taunt"]:
+        EFFECTS.shared(self).burst(kind, global_position, global_basis.z)
 
 func hit_reaction() -> void:
     if headless or animator == null or airborne:
