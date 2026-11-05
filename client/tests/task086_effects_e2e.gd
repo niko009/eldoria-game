@@ -8,6 +8,7 @@ func _initialize() -> void:
 func _run() -> void:
     var actor = ACTOR.new()
     actor.configure(886, false, 2)
+    actor.preview_projectiles = true
     root.add_child(actor)
     actor.set_combat_equipped("staff")
     actor.set_offhand_equipped("shield")
@@ -15,6 +16,14 @@ func _run() -> void:
         fail("staff and shield share a hand"); return
     if not actor.combat_visual.has_node("StaffCrystal") or actor.offhand_visual.get_child_count() == 0:
         fail("mage staff + shield missing"); return
+    actor.set_combat_equipped("unarmed")
+    actor.set_axe_equipped(true)
+    if actor.combat_visual != null or not actor.axe_visual.visible:
+        fail("fallback Mage staff overlaps equipped axe"); return
+    actor.set_axe_equipped(false)
+    if actor.combat_visual == null:
+        fail("Mage fallback staff not restored"); return
+    actor.set_offhand_equipped("unarmed")
     actor.set_combat_equipped("bow")
     var bow = actor.combat_visual.get_node("BowMotion")
     actor.play_visual_event(&"bow_draw")
@@ -28,6 +37,17 @@ func _run() -> void:
     await create_timer(0.19).timeout
     if pool.particles.is_empty() or not pool.particles[0].arrow:
         fail("confirmed bow attack has no visual projectile"); return
+    actor.preview_projectiles = false
+    pool.clear()
+    actor.melee_attack()
+    await create_timer(0.2).timeout
+    if not pool.particles.is_empty():
+        fail("live bow duplicates server-directed arrow"); return
+    if FX.shared(actor) != pool:
+        fail("effect pool is not shared"); return
+    pool.burst("spell", Vector3(NAN, 0, 0))
+    if not pool.particles.is_empty():
+        fail("non-finite effect accepted"); return
     actor.set_combat_equipped("spear")
     await create_timer(0.1).timeout
     for high in [true, false]:

@@ -1,0 +1,16 @@
+{
+  "baseline": false,
+  "fps_cap": 120,
+  "frames": 750,
+  "mean_fps": 120.004665781405,
+  "p95_ms": 8.356,
+  "peak_draw_calls": 56,
+  "peak_particles": 24,
+  "platform": "Windows",
+  "profile": "low",
+  "renderer": "Intel(R) UHD Graphics 730",
+  "resolution": "1280x720",
+  "seconds": 6.24975700000002,
+  "static_memory_bytes": 49367310,
+  "vsync": false
+}

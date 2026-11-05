@@ -9,6 +9,12 @@ var draw_amount := 0.0:
 var cycle: Tween
 var actor: Node3D
 
+func _process(_delta: float) -> void:
+    if is_instance_valid(actor):
+        # KayKit's ranged clip was authored for a crossbow. Keep the bow limb
+        # vertical at its left-hand socket, with the nock drawn toward the hero.
+        get_parent().global_basis = Basis(actor.global_basis.z, actor.global_basis.y, -actor.global_basis.x)
+
 func setup(owner_actor: Node3D, original: MeshInstance3D) -> void:
     actor = owner_actor
     original.visible = false
@@ -46,6 +52,6 @@ func shoot() -> void:
     cycle.tween_property(self, "draw_amount", 0.0, 0.08)
 
 func _release() -> void:
-    if not is_instance_valid(actor) or actor.visual_dead or not actor.is_visible_in_tree():
+    if not is_instance_valid(actor) or not actor.preview_projectiles or actor.visual_dead or not actor.is_visible_in_tree():
         return
     FX.shared(self).burst("arrow", global_position, actor.global_basis.z)

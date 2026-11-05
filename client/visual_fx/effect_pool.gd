@@ -19,6 +19,9 @@ static func shared(context: Node) -> Node3D:
     return pool
 
 func _ready() -> void:
+    if OS.get_cmdline_user_args().has("--dedicated-server"):
+        set_process(false)
+        return
     batch = MultiMeshInstance3D.new()
     batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
     var mesh := SphereMesh.new()
@@ -42,6 +45,8 @@ func limit() -> int:
     return HIGH_LIMIT if high_detail else LOW_LIMIT
 
 func burst(kind: String, at: Vector3, forward: Vector3 = Vector3.FORWARD) -> void:
+    if OS.get_cmdline_user_args().has("--dedicated-server") or not at.is_finite() or not forward.is_finite():
+        return
     var count := 12 if high_detail else 4
     var color := Color("e8b66f")
     var duration := 0.55
@@ -93,6 +98,13 @@ func burst(kind: String, at: Vector3, forward: Vector3 = Vector3.FORWARD) -> voi
         emitted += 1
 
 func _process(delta: float) -> void:
+    var corpse_count := 0
+    for child in get_children():
+        if child == batch or child.is_queued_for_deletion():
+            continue
+        corpse_count += 1
+        if corpse_count > (4 if high_detail else 2):
+            child.queue_free()
     while particles.size() > limit():
         particles.pop_back()
     for i in range(particles.size() - 1, -1, -1):

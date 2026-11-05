@@ -41,6 +41,21 @@ func _run() -> void:
     if pool.emitted <= before:
         fail("moving wolf missing ground dust"); return
     wolf.free()
+    var animal = PASSIVE.new()
+    animal.setup("deer")
+    root.add_child(animal)
+    FX.high_detail = true
+    for i in 20:
+        animal.presentation.death(animal, animal.body)
+    if pool.get_child_count() > 5:
+        fail("global High corpse cap exceeded"); return
+    FX.high_detail = false
+    pool._process(0.01)
+    await process_frame
+    await process_frame
+    if pool.get_child_count() > 3:
+        fail("Low switch did not trim corpses"); return
+    animal.free()
     print("TASK086 CREATURES PASS: hit/death/respawn, duplicate snapshots, smooth turning and ground dust")
     quit(0)
 

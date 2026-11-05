@@ -12,6 +12,7 @@ const BOW_MOTION := preload("res://visual_fx/bow_motion.gd")
 const EFFECTS := preload("res://visual_fx/effect_pool.gd")
 signal visual_action(event: StringName)
 var visual_dead := false
+var preview_projectiles := false # Live shots already have server-directed ArrowTracer.
 var _locomotion := "Idle"
 var _footsteps := preload("res://visual_fx/creature_motion.gd").new()
 const ACTION_CLIPS := ["Cheer","PickUp","1H_Melee_Attack_Chop",
@@ -153,9 +154,12 @@ func _set_combat_visual() -> void:
         combat_visual = null
     if axe_visual != null:
         axe_visual.visible = axe_equipped and combat_item == "unarmed"
+    if combat_item == "unarmed" and axe_equipped and avatar_choice == 2:
+        return # The fallback Mage staff must not overlap an equipped axe.
     if headless or visual == null or (combat_item in ["unarmed", "staff", "wooden_staff"] and avatar_choice != 2):
         return
-    var hand := visual.get_node_or_null("Rig/Skeleton3D/handslot_r") as BoneAttachment3D
+    var socket := "handslot_l" if combat_item == "bow" else "handslot_r"
+    var hand := visual.get_node_or_null("Rig/Skeleton3D/" + socket) as BoneAttachment3D
     if hand == null:
         return
     combat_visual = Node3D.new()
@@ -258,9 +262,12 @@ func _equipment_segment(name: String, a: Vector3, b: Vector3, width: float, colo
 func set_axe_equipped(value: bool) -> void:
     # This is visual state only. The server still authorizes inventory and
     # wood yield. Never infer equipment from locally selected hotbar slots.
+    var changed := axe_equipped != value
     axe_equipped = value
     if axe_visual != null:
         axe_visual.visible = value and combat_item == "unarmed"
+    if changed and avatar_choice == 2 and combat_item == "unarmed":
+        _set_combat_visual()
 
 func _hide_unused_accessories(node: Node) -> void:
     for child in node.get_children():
@@ -274,7 +281,7 @@ func _hide_unused_accessories(node: Node) -> void:
         _hide_unused_accessories(child)
 
 func set_clip(clip: String) -> void:
-    if animator == null or current_clip == clip or not animator.has_animation(clip):
+    if visual_dead or animator == null or current_clip == clip or not animator.has_animation(clip):
         return
     current_clip = clip
     animation_changes += 1
@@ -305,7 +312,7 @@ func set_motion(velocity: Vector3, sprinting: bool = false) -> void:
     set_clip("Running_A" if sprinting or flat.length() > 5.5 else "Walking_A")
 
 func start_jump() -> void:
-    if headless or animator == null:
+    if headless or animator == null or visual_dead:
         return
     airborne = true
     landing_until_msec = 0
@@ -343,7 +350,7 @@ func face_interaction(target: Vector3) -> void:
         rotation.y = atan2(direction.x, direction.z)
 
 func celebrate() -> void:
-    if headless or animator == null:
+    if headless or animator == null or visual_dead:
         return
     var clip := animator.get_animation("Cheer")
     if clip == null:
@@ -379,7 +386,7 @@ func melee_attack() -> void:
         thrust.tween_property(combat_visual,"position:z",0.0,0.23).set_trans(Tween.TRANS_SINE)
 
 func shield_block() -> void:
-    if headless or combat_item != "shield" or combat_visual == null:
+    if headless or visual_dead or combat_item != "shield" or combat_visual == null:
         return
     if combat_visual.has_meta("blocking"):
         return
@@ -393,7 +400,7 @@ func shield_block() -> void:
             combat_visual.remove_meta("blocking"))
 
 func hero_ability_animation(kind: String) -> void:
-    if headless or animator == null or airborne:
+    if headless or animator == null or airborne or visual_dead:
         return
     match kind:
         "dash":
@@ -406,7 +413,7 @@ func hero_ability_animation(kind: String) -> void:
         EFFECTS.shared(self).burst(kind, global_position, global_basis.z)
 
 func hit_reaction() -> void:
-    if headless or animator == null or airborne:
+    if headless or animator == null or airborne or visual_dead:
         return
     if combat_item == "shield":
         shield_block()
@@ -415,6 +422,8 @@ func hit_reaction() -> void:
 
 func _play_action_clip(clip: String, duration: float) -> void:
     if headless or animator == null or not animator.has_animation(clip):
+        return
+    if visual_dead and clip != "Death_A":
         return
     var animation: Animation = animator.get_animation(clip)
     # Do not let movement packets or Idle truncate a successful attack.
@@ -425,7 +434,10 @@ func _play_action_clip(clip: String, duration: float) -> void:
     visual_action.emit(StringName(clip))
 
 func _process(delta: float) -> void:
-    if headless or visual_dead:
+    if headless:
+        return
+    VISUAL_EVENTS.sync_health(self)
+    if visual_dead:
         return
     _footsteps.step(self, delta, not airborne and _locomotion != "Idle" and Time.get_ticks_msec() - last_motion_msec < 300, global_position - Vector3.UP)
     if airborne and current_clip == "Jump_Start" and animator.current_animation_position > 0.19:

@@ -3,6 +3,18 @@ extends RefCounted
 const EVENTS := [&"idle", &"walk", &"run", &"sprint", &"attack", &"melee",
     &"hit", &"death", &"cast", &"bow_draw", &"bow_release", &"equip", &"harvest"]
 
+static func sync_health(actor: Node3D) -> void:
+    # Read the existing replicated snapshot only. No new RPC or health mutation.
+    var world := actor.get_parent()
+    if world == null or not world.has_method("health_snapshot_for"):
+        return
+    var health: Dictionary = world.get("player_health")
+    if not health.has(actor.player_id):
+        return
+    var dead := int(health[actor.player_id]) <= 0
+    if dead != actor.visual_dead:
+        dispatch(actor, &"death" if dead else &"idle")
+
 static func dispatch(actor: Node3D, event: StringName, data: Dictionary = {}) -> bool:
     if event not in EVENTS or actor.headless or actor.animator == null:
         return false
@@ -10,6 +22,9 @@ static func dispatch(actor: Node3D, event: StringName, data: Dictionary = {}) ->
         return false
     match event:
         &"idle":
+            if actor.visual_dead:
+                actor.airborne = false
+                actor.landing_until_msec = 0
             actor.visual_dead = false
             actor.emote_until_msec = 0
             actor.set_motion(Vector3.ZERO)
