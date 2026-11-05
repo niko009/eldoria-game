@@ -7,13 +7,19 @@ const KNIGHT := preload("res://assets/characters/Knight.glb")
 const ROGUE := preload("res://assets/characters/Rogue_Hooded.glb")
 const MAGE := preload("res://assets/characters/Mage.glb")
 const AXE_VISUAL := preload("res://stone_axe_visual.gd")
+const VISUAL_EVENTS := preload("res://visual_fx/actor_events.gd")
+signal visual_action(event: StringName)
+var visual_dead := false
+var _locomotion := "Idle"
 const ACTION_CLIPS := ["Cheer","PickUp","1H_Melee_Attack_Chop",
     "2H_Ranged_Shoot","2H_Melee_Attack_Stab","Block_Hit",
-    "Unarmed_Melee_Attack_Punch_A","Spellcast_Shoot","Dodge_Forward","Hit_A"]
+    "Unarmed_Melee_Attack_Punch_A","Spellcast_Shoot","Dodge_Forward","Hit_A",
+    "Death_A","2H_Ranged_Aiming","Interact"]
 const CLIPS := ["Idle", "Walking_A", "Running_A", "Cheer",
     "Jump_Start", "Jump_Idle", "Jump_Land", "PickUp", "1H_Melee_Attack_Chop",
     "2H_Ranged_Shoot","2H_Melee_Attack_Stab","Block_Hit",
-    "Unarmed_Melee_Attack_Punch_A","Spellcast_Shoot","Dodge_Forward","Hit_A"]
+    "Unarmed_Melee_Attack_Punch_A","Spellcast_Shoot","Dodge_Forward","Hit_A",
+    "Death_A","2H_Ranged_Aiming","Interact"]
 
 var player_id := 0
 var avatar_choice := -1
@@ -263,12 +269,16 @@ func set_clip(clip: String) -> void:
     animation_changes += 1
     animator.play(clip, 0.14)
 
+func play_visual_event(event: StringName, data: Dictionary = {}) -> bool:
+    return VISUAL_EVENTS.dispatch(self, event, data)
+
 func set_motion(velocity: Vector3, sprinting: bool = false) -> void:
     # Call every physics frame for own avatar, or whenever the remote
     # position packet arrives. Remote idle comes from timeout below.
-    if headless:
+    if headless or visual_dead:
         return
     var flat := Vector3(velocity.x, 0.0, velocity.z)
+    _locomotion = "Idle" if flat.length_squared() < 0.02 else ("Running_A" if sprinting or flat.length() > 5.5 else "Walking_A")
     if flat.length_squared() < 0.02:
         if Time.get_ticks_msec() >= emote_until_msec:
             set_clip("Idle")
@@ -298,7 +308,7 @@ func finish_jump() -> void:
     set_clip("Jump_Land")
 
 func gather(kind: String = "herb") -> void:
-    if headless or animator == null or airborne:
+    if headless or animator == null or airborne or visual_dead:
         return
     # A character without an equipped axe should not swing an invisible tool.
     # The selected clip is visual-only; the server authorizes yield separately.
@@ -331,7 +341,7 @@ func celebrate() -> void:
     set_clip("Cheer")
 
 func melee_attack() -> void:
-    if headless or animator == null or airborne:
+    if headless or animator == null or airborne or visual_dead:
         return
     # These are real KayKit clips present in all three imported skeletons.
     # Fit their visual duration to the 650-ms server attack cooldown.
@@ -395,15 +405,16 @@ func _play_action_clip(clip: String, duration: float) -> void:
     current_clip = clip
     animation_changes += 1
     animator.play(clip,0.08,animation.length/maxf(0.10,duration))
+    visual_action.emit(StringName(clip))
 
 func _process(_delta: float) -> void:
-    if headless:
+    if headless or visual_dead:
         return
     if airborne and current_clip == "Jump_Start" and animator.current_animation_position > 0.19:
         set_clip("Jump_Idle")
     if airborne or Time.get_ticks_msec() < landing_until_msec:
         return
     if Time.get_ticks_msec() > emote_until_msec and current_clip in ACTION_CLIPS:
-        set_clip("Idle")
+        set_clip(_locomotion if Time.get_ticks_msec() - last_motion_msec <= 300 else "Idle")
     elif Time.get_ticks_msec() > emote_until_msec and last_motion_msec > 0 and Time.get_ticks_msec() - last_motion_msec > 300:
         set_clip("Idle")
