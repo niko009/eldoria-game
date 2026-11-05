@@ -145,7 +145,19 @@ echo "[TASK-051] shield defender aggro, cooldown and team visibility"
 grep -q 'TASK051 SHIELD TAUNT PASS' "$ROOT/tests/logs/task051-shield-e2e.log"
 bash tests/run_task051_shield_network_e2e.sh
 echo "PASS: TASK-050..051 server-authoritative teamplay, XP benefits and Android skill UI."
+echo "[TASK-066] hunt loot, shared quest, leather armor and rare deer"
+echo "[TASK-069] safe persistence retries, 409 reconciliation and hunting inventory"
+bash tests/run_task069_persistence_e2e.sh
+echo "[TASK-068] target lock, touch/cycle selection and server-authoritative focus fire"
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task068_target_lock_e2e.gd -- --test-live-ui > "$ROOT/tests/logs/task068-target-lock.log" 2>&1
+grep -q 'TASK068 TARGET LOCK PASS' "$ROOT/tests/logs/task068-target-lock.log"
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task067_food_alpha_e2e.gd -- --test-live-ui > "$ROOT/tests/logs/task067-food-alpha.log" 2>&1
+grep -q 'TASK067 FOOD ALPHA PASS' "$ROOT/tests/logs/task067-food-alpha.log"
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task066_hunt_coop_e2e.gd -- --test-live-ui > "$ROOT/tests/logs/task066-hunt-coop.log" 2>&1
+grep -q 'TASK066 HUNT COOP PASS' "$ROOT/tests/logs/task066-hunt-coop.log"
 echo "[TASK-052] three hero classes, campfire switch and server-owned abilities"
+"$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task065_mage_combat_e2e.gd -- --test-live-ui > "$ROOT/tests/logs/task065-mage-combat.log" 2>&1
+grep -q 'TASK065 MAGE COMBAT PASS' "$ROOT/tests/logs/task065-mage-combat.log"
 "$GODOT_BIN" --headless --path "$ROOT/client" --script res://tests/task052_hero_classes_e2e.gd \
     > "$ROOT/tests/logs/task052-hero-classes.log" 2>&1
 grep -q 'TASK052 HERO CLASSES PASS' "$ROOT/tests/logs/task052-hero-classes.log"
@@ -184,3 +196,7 @@ echo '[TASK-061] real rigged 3D wolf, locomotion, attack, injury, death and resp
     > "$ROOT/tests/logs/task061-rigged-wolf.log" 2>&1
 grep -q 'TASK061 RIGGED WOLF PASS' "$ROOT/tests/logs/task061-rigged-wolf.log"
 echo 'PASS: TASK-061 real Quaternius wolf glTF and skeletal animation states.'
+bash tests/run_task072_076_regression.sh
+bash tests/run_task079_full_loop_e2e.sh
+bash tests/run_task080_coop_validation.sh
+bash tests/run_task081_two_profiles.sh

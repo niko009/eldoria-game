@@ -13,7 +13,7 @@ func _run() -> void:
 		return
 	ui.size = Vector2(800,360)
 	ui._layout()
-	ui.set_skills({"archery":25,"spear":100,"defense":400})
+	ui.set_skills({"archery":25,"spear":100,"defense":400,"magic":25})
 	ui.hud.top_controls["skills"].pressed.emit()
 	await process_frame
 	await process_frame
@@ -21,7 +21,7 @@ func _run() -> void:
 		_fail("skills tab did not open or show updated XP")
 		return
 	var panel: VBoxContainer = ui.current_panel
-	for key in ["archery","spear","defense"]:
+	for key in ["archery","spear","defense","magic"]:
 		var row: PanelContainer = panel.get_node("Skill_"+key)
 		var gauge: ProgressBar = row.get_node("Details/XpProgress")
 		if row == null or gauge == null or gauge.max_value < 1:
@@ -32,6 +32,9 @@ func _run() -> void:
 		return
 	if not panel.get_node("Skill_defense/Details/Bonus").text.contains("60%"):
 		_fail("shield effect label missing")
+		return
+	if not panel.get_node("Skill_magic/Details/Level").text.contains("УРОВЕНЬ 2"):
+		_fail("magic XP level missing")
 		return
 	ui.set_skills({"archery":400,"spear":100,"defense":400})
 	await process_frame
@@ -46,7 +49,7 @@ func _run() -> void:
 	if ui.active_panel != "" or not ui.hud.top_controls.has("skills"):
 		_fail("skills menu cannot close or access from HUD")
 		return
-	print("TASK050 SKILLS UI PASS Android-size menu, 3 gauges, live updates, bonus display")
+	print("TASK050 SKILLS UI PASS Android-size menu, 4 gauges including magic, live updates")
 	quit(0)
 func _fail(message: String) -> void:
 	printerr("TASK050 SKILLS UI FAIL: "+message)

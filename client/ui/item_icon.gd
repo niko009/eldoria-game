@@ -32,6 +32,17 @@ func _draw() -> void:
 	var center := size*0.5
 	draw_set_transform(center-Vector2(24,24))
 	match item_id:
+		"mana_herb":
+			draw_line(Vector2(23,43),Vector2(24,15),green,3,true)
+			draw_circle(Vector2(24,14),10,Color("648deb") if enabled else c)
+			draw_circle(Vector2(24,14),4,Color("b5e2ff") if enabled else c)
+		"mana_potion":
+			draw_rect(Rect2(16,17,17,26),Color("467db5") if enabled else c,true)
+			draw_rect(Rect2(19,11,11,7),Color("d9dbda") if enabled else c,true)
+			draw_circle(Vector2(24,27),6,Color("8bd8ff") if enabled else c)
+		"wooden_staff":
+			draw_line(Vector2(15,43),Vector2(32,9),Color("a17b55") if enabled else c,5,true)
+			draw_circle(Vector2(33,9),7,Color("83ccf2") if enabled else c)
 		"wood":
 			for shift in [0.0,10.0,20.0]:
 				var x: float = 7.0+shift
@@ -63,6 +74,25 @@ func _draw() -> void:
 			_shape([Vector2(30,8),Vector2(44,3),Vector2(40,17)],iron)
 			_shape([Vector2(10,36),Vector2(8,26),Vector2(18,31)],green)
 			_shape([Vector2(11,35),Vector2(20,38),Vector2(15,28)],green)
+		"meat":
+			draw_circle(Vector2(23,26),16,Color("b75c55") if enabled else c)
+			draw_circle(Vector2(24,26),8,Color("e6a18c") if enabled else c)
+			draw_circle(Vector2(24,26),4,Color("f5d2b2") if enabled else c)
+		"grilled_meat":
+			draw_circle(Vector2(23,26),17,Color("764329") if enabled else c)
+			draw_circle(Vector2(23,26),12,Color("b87c43") if enabled else c)
+			for y in [19.0,25.0,31.0]:
+				draw_line(Vector2(15,y),Vector2(32,y-3),Color("57351e") if enabled else c,2,true)
+		"hide":
+			_shape([Vector2(11,9),Vector2(20,15),Vector2(29,13),Vector2(39,7),Vector2(43,21),Vector2(36,33),Vector2(38,43),Vector2(23,38),Vector2(9,43),Vector2(12,27)],Color("b28b60") if enabled else c)
+			draw_line(Vector2(18,19),Vector2(32,34),Color("d8b78a") if enabled else c,2)
+		"bone":
+			draw_line(Vector2(11,36),Vector2(36,12),Color("e3dac4") if enabled else c,9,true)
+			draw_circle(Vector2(10,36),6,Color("eee6d1") if enabled else c)
+			draw_circle(Vector2(37,11),6,Color("eee6d1") if enabled else c)
+		"leather_armor":
+			_shape([Vector2(13,6),Vector2(22,11),Vector2(28,11),Vector2(37,6),Vector2(44,17),Vector2(37,24),Vector2(35,43),Vector2(13,43),Vector2(11,24),Vector2(4,17)],Color("9d7550") if enabled else c)
+			_shape([Vector2(22,13),Vector2(28,13),Vector2(32,28),Vector2(24,35),Vector2(16,28)],Color("d0ac79") if enabled else c)
 		_:
 			draw_circle(Vector2(24,24),14,c)
 

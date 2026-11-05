@@ -50,6 +50,16 @@ ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS arrow integer NOT NULL DEFA
 ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS archery_xp integer NOT NULL DEFAULT 0 CHECK (archery_xp BETWEEN 0 AND 1000000);
 ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS spear_xp integer NOT NULL DEFAULT 0 CHECK (spear_xp BETWEEN 0 AND 1000000);
 ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS defense_xp integer NOT NULL DEFAULT 0 CHECK (defense_xp BETWEEN 0 AND 1000000);
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS magic_xp integer NOT NULL DEFAULT 0 CHECK (magic_xp BETWEEN 0 AND 1000000);
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS equipment jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS wooden_staff integer NOT NULL DEFAULT 0 CHECK (wooden_staff BETWEEN 0 AND 1);
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS mana_potion integer NOT NULL DEFAULT 0 CHECK (mana_potion BETWEEN 0 AND 20);
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS mana_herb integer NOT NULL DEFAULT 0 CHECK (mana_herb BETWEEN 0 AND 1000000);
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS meat integer NOT NULL DEFAULT 0 CHECK (meat BETWEEN 0 AND 1000000);
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS hide integer NOT NULL DEFAULT 0 CHECK (hide BETWEEN 0 AND 1000000);
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS bone integer NOT NULL DEFAULT 0 CHECK (bone BETWEEN 0 AND 1000000);
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS leather_armor integer NOT NULL DEFAULT 0 CHECK (leather_armor BETWEEN 0 AND 1);
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS grilled_meat integer NOT NULL DEFAULT 0 CHECK (grilled_meat BETWEEN 0 AND 20);
 CREATE TABLE IF NOT EXISTS eldoria_buildings (
     world_seed integer NOT NULL REFERENCES eldoria_worlds(world_seed) ON DELETE CASCADE,
     building_id integer NOT NULL CHECK (building_id BETWEEN 1 AND 100000),
@@ -160,15 +170,17 @@ app.MapGet("/v1/world/{seed:int}", async (int seed, CancellationToken ct) =>
     }
     var profiles = new Dictionary<string, ProfileDto>();
     await using (var read = new NpgsqlCommand(
-        "SELECT identity_hash,avatar,wood,stone,herb,axe,bandage,repair_kit,spear,bow,shield,arrow,archery_xp,spear_xp,defense_xp FROM eldoria_players WHERE world_seed=@seed", conn, snapshotTx))
+        "SELECT identity_hash,avatar,wood,stone,herb,axe,bandage,repair_kit,spear,bow,shield,arrow,archery_xp,spear_xp,defense_xp,meat,hide,bone,leather_armor,grilled_meat,magic_xp,equipment::text,wooden_staff,mana_potion,mana_herb FROM eldoria_players WHERE world_seed=@seed", conn, snapshotTx))
     {
         read.Parameters.AddWithValue("seed", seed);
         await using var reader = await read.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
             profiles[reader.GetString(0)] = new ProfileDto(reader.GetInt16(1),
                 new InventoryDto(reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4), reader.GetInt32(5),
-                    reader.GetInt32(6), reader.GetInt32(7), reader.GetInt32(8), reader.GetInt32(9), reader.GetInt32(10), reader.GetInt32(11)),
-                new SkillDto(reader.GetInt32(12),reader.GetInt32(13),reader.GetInt32(14)));
+                    reader.GetInt32(6), reader.GetInt32(7), reader.GetInt32(8), reader.GetInt32(9), reader.GetInt32(10), reader.GetInt32(11),
+                    reader.GetInt32(15),reader.GetInt32(16),reader.GetInt32(17),reader.GetInt32(18),reader.GetInt32(19),reader.GetInt32(22),reader.GetInt32(23),reader.GetInt32(24)),
+                new SkillDto(reader.GetInt32(12),reader.GetInt32(13),reader.GetInt32(14),reader.GetInt32(20)),
+                JsonSerializer.Deserialize<EquipmentDto>(reader.GetString(21)));
     }
     var buildings = new Dictionary<string, BuildingDto>();
     await using (var read = new NpgsqlCommand(
@@ -207,9 +219,28 @@ app.MapPut("/v1/world/{seed:int}", async (int seed, SnapshotDto? snapshot, Cance
             || kv.Value.inventory.bow is < 0 or > 1
             || kv.Value.inventory.shield is < 0 or > 1
             || kv.Value.inventory.arrow is < 0 or > 40
+            || kv.Value.inventory.meat is < 0 or > 1000000
+            || kv.Value.inventory.hide is < 0 or > 1000000
+            || kv.Value.inventory.bone is < 0 or > 1000000
+            || kv.Value.inventory.leather_armor is < 0 or > 1
+            || kv.Value.inventory.wooden_staff is < 0 or > 1
+            || kv.Value.inventory.mana_potion is < 0 or > 20
+            || kv.Value.inventory.mana_herb is < 0 or > 1000000
+            || kv.Value.inventory.grilled_meat is < 0 or > 20
+            || kv.Value.equipment is not null && (!new[] {"unarmed", "staff", "wooden_staff", "bow", "spear"}.Contains(kv.Value.equipment.main_hand)
+                || !new[] {"unarmed", "shield"}.Contains(kv.Value.equipment.off_hand)
+                || !new[] {"unarmed", "leather_armor"}.Contains(kv.Value.equipment.chest)
+                || (kv.Value.equipment.main_hand is "bow" or "spear" && kv.Value.equipment.off_hand == "shield")
+                || kv.Value.equipment.main_hand is "staff" or "wooden_staff" && kv.Value.avatar != 2
+                || kv.Value.equipment.main_hand == "wooden_staff" && kv.Value.inventory.wooden_staff == 0
+                || kv.Value.equipment.main_hand == "bow" && kv.Value.inventory.bow == 0
+                || kv.Value.equipment.main_hand == "spear" && kv.Value.inventory.spear == 0
+                || kv.Value.equipment.off_hand == "shield" && kv.Value.inventory.shield == 0
+                || kv.Value.equipment.chest == "leather_armor" && kv.Value.inventory.leather_armor == 0)
             || kv.Value.skills is not null && (kv.Value.skills.archery is < 0 or > 1000000
                 || kv.Value.skills.spear is < 0 or > 1000000
-                || kv.Value.skills.defense is < 0 or > 1000000)))
+                || kv.Value.skills.defense is < 0 or > 1000000
+                || kv.Value.skills.magic is < 0 or > 1000000)))
         return Results.BadRequest(new { error = "invalid_world_snapshot" });
 
     await using var conn = await source.OpenConnectionAsync(ct);
@@ -254,8 +285,8 @@ app.MapPut("/v1/world/{seed:int}", async (int seed, SnapshotDto? snapshot, Cance
         }
     }
     await using (var insert = new NpgsqlCommand(
-        "INSERT INTO eldoria_players(world_seed,identity_hash,avatar,wood,stone,herb,axe,bandage,repair_kit,spear,bow,shield,arrow,archery_xp,spear_xp,defense_xp) " +
-        "VALUES (@seed,@hash,@avatar,@wood,@stone,@herb,@axe,@bandage,@repair_kit,@spear,@bow,@shield,@arrow,@archery_xp,@spear_xp,@defense_xp)", conn, tx))
+        "INSERT INTO eldoria_players(world_seed,identity_hash,avatar,wood,stone,herb,axe,bandage,repair_kit,spear,bow,shield,arrow,archery_xp,spear_xp,defense_xp,meat,hide,bone,leather_armor,grilled_meat,magic_xp,equipment,wooden_staff,mana_potion,mana_herb) " +
+        "VALUES (@seed,@hash,@avatar,@wood,@stone,@herb,@axe,@bandage,@repair_kit,@spear,@bow,@shield,@arrow,@archery_xp,@spear_xp,@defense_xp,@meat,@hide,@bone,@leather_armor,@grilled_meat,@magic_xp,@equipment,@wooden_staff,@mana_potion,@mana_herb)", conn, tx))
     {
         insert.Parameters.AddWithValue("seed", seed);
         insert.Parameters.Add("hash", NpgsqlTypes.NpgsqlDbType.Varchar);
@@ -264,8 +295,9 @@ app.MapPut("/v1/world/{seed:int}", async (int seed, SnapshotDto? snapshot, Cance
         insert.Parameters.Add("stone", NpgsqlTypes.NpgsqlDbType.Integer);
         insert.Parameters.Add("herb", NpgsqlTypes.NpgsqlDbType.Integer);
         insert.Parameters.Add("axe", NpgsqlTypes.NpgsqlDbType.Integer);
-        foreach (var item in new [] {"bandage","repair_kit","spear","bow","shield","arrow","archery_xp","spear_xp","defense_xp"})
+        foreach (var item in new [] {"bandage","repair_kit","spear","bow","shield","arrow","archery_xp","spear_xp","defense_xp","magic_xp","meat","hide","bone","leather_armor","grilled_meat","wooden_staff","mana_potion","mana_herb"})
             insert.Parameters.Add(item, NpgsqlTypes.NpgsqlDbType.Integer);
+        insert.Parameters.Add("equipment", NpgsqlTypes.NpgsqlDbType.Jsonb);
         foreach (var pair in snapshot.profiles)
         {
             insert.Parameters["hash"].Value = pair.Key;
@@ -283,6 +315,16 @@ app.MapPut("/v1/world/{seed:int}", async (int seed, SnapshotDto? snapshot, Cance
             insert.Parameters["archery_xp"].Value = pair.Value.skills?.archery ?? 0;
             insert.Parameters["spear_xp"].Value = pair.Value.skills?.spear ?? 0;
             insert.Parameters["defense_xp"].Value = pair.Value.skills?.defense ?? 0;
+            insert.Parameters["magic_xp"].Value = pair.Value.skills?.magic ?? 0;
+            insert.Parameters["equipment"].Value = JsonSerializer.Serialize(pair.Value.equipment ?? new EquipmentDto());
+            insert.Parameters["meat"].Value = pair.Value.inventory.meat;
+            insert.Parameters["hide"].Value = pair.Value.inventory.hide;
+            insert.Parameters["bone"].Value = pair.Value.inventory.bone;
+            insert.Parameters["leather_armor"].Value = pair.Value.inventory.leather_armor;
+            insert.Parameters["grilled_meat"].Value = pair.Value.inventory.grilled_meat;
+            insert.Parameters["wooden_staff"].Value = pair.Value.inventory.wooden_staff;
+            insert.Parameters["mana_potion"].Value = pair.Value.inventory.mana_potion;
+            insert.Parameters["mana_herb"].Value = pair.Value.inventory.mana_herb;
             await insert.ExecuteNonQueryAsync(ct);
         }
     }
@@ -403,9 +445,11 @@ sealed class TelemetryRetentionWorker(NpgsqlDataSource source) : BackgroundServi
 }
 
 record InventoryDto(int wood, int stone, int herb, int axe = 0, int bandage = 0,
-    int repair_kit = 0, int spear = 0, int bow = 0, int shield = 0, int arrow = 0);
-record SkillDto(int archery = 0, int spear = 0, int defense = 0);
-record ProfileDto(int avatar, InventoryDto inventory, SkillDto? skills = null);
+    int repair_kit = 0, int spear = 0, int bow = 0, int shield = 0, int arrow = 0,
+    int meat = 0, int hide = 0, int bone = 0, int leather_armor = 0, int grilled_meat = 0, int wooden_staff = 0, int mana_potion = 0, int mana_herb = 0);
+record SkillDto(int archery = 0, int spear = 0, int defense = 0, int magic = 0);
+record EquipmentDto(string main_hand = "unarmed", string off_hand = "unarmed", string chest = "unarmed");
+record ProfileDto(int avatar, InventoryDto inventory, SkillDto? skills = null, EquipmentDto? equipment = null);
 record BuildingDto(string kind, double x, double z);
 record SnapshotDto(int schema, int world_seed, long revision,
     Dictionary<string, int> depleted, Dictionary<string, ProfileDto> profiles,

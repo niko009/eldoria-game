@@ -12,9 +12,17 @@ var life := 1.0
 var active := false
 var stride_clock := 0.0
 var speed_visual := 0.0
+var target_yaw := 0.0
+var deer_skeleton: Skeleton3D
+var deer_legs: Array[int] = []
+var deer_shins: Array[int] = []
+var deer_gait := 0.0
+var deer_motion := 0.0
+var health_track: MeshInstance3D
+var health_fill: MeshInstance3D
 
 func setup(kind: String) -> void:
-	species = kind if kind in ["rabbit", "deer", "dummy"] else "rabbit"
+	species = kind if kind in ["rabbit", "deer", "rare_deer", "dummy"] else "rabbit"
 
 func _ready() -> void:
 	body = Node3D.new()
@@ -45,8 +53,49 @@ func _ready() -> void:
 			animal_anim = animal_mesh.get_node_or_null("AnimationPlayer")
 			if animal_anim != null and animal_anim.has_animation("Idle"):
 				animal_anim.play("Idle")
+			var skeletons := animal_mesh.find_children("*","Skeleton3D",true,false)
+			if not skeletons.is_empty():
+				deer_skeleton = skeletons[0] as Skeleton3D
+				for name in ["Front leg.L","Front leg.R","Back leg.L","Back leg.R"]:
+					deer_legs.append(deer_skeleton.find_bone(name))
+				for name in ["Front shin.L","Front shin.R","Back shin.L","Back shin.R"]:
+					deer_shins.append(deer_skeleton.find_bone(name))
 		body.add_child(animal_mesh)
+		_create_health_bar()
+		if species == "rare_deer":
+			var marker := Label3D.new()
+			marker.name = "RareWildlifeLabel"
+			marker.text = "★ РЕДКИЙ ОЛЕНЬ"
+			marker.position.y = 2.32
+			marker.font_size = 35
+			marker.modulate = Color("ffe28e")
+			add_child(marker)
 	last_position = position
+
+func _create_health_bar() -> void:
+	var label_height := 2.0 if species in ["deer","rare_deer"] else 0.9
+	var back := BoxMesh.new()
+	back.size = Vector3(0.9,0.085,0.05)
+	health_track = MeshInstance3D.new()
+	health_track.name = "HealthTrack"
+	health_track.mesh = back
+	health_track.position.y = label_height
+	var dark := StandardMaterial3D.new()
+	dark.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	dark.albedo_color = Color("291b20")
+	health_track.material_override = dark
+	add_child(health_track)
+	health_fill = MeshInstance3D.new()
+	health_fill.name = "HealthFill"
+	var bar := BoxMesh.new()
+	bar.size = Vector3(0.86,0.065,0.06)
+	health_fill.mesh = bar
+	health_fill.position = Vector3(0,label_height,0.01)
+	var green := StandardMaterial3D.new()
+	green.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	green.albedo_color = Color("9bd37c")
+	health_fill.material_override = green
+	add_child(health_fill)
 
 func _sphere(label: String, point: Vector3, scale_by: Vector3, mat: Material) -> void:
 	var mesh := MeshInstance3D.new()
@@ -78,25 +127,58 @@ func update_state(at: Vector3, hp: int, alive: bool, direction: Vector3) -> void
 		position = position.lerp(at,0.55)
 	active = true
 	visible = alive
-	life = clampf(float(hp)/(24.0 if species == "rabbit" else 100.0 if species == "dummy" else 55.0),0.0,1.0)
+	life = clampf(float(hp)/(24.0 if species == "rabbit" else 100.0 if species == "dummy" else 95.0 if species == "rare_deer" else 55.0),0.0,1.0)
+	if health_track != null:
+		health_track.visible = alive
+		health_fill.visible = health_track.visible
+		health_fill.scale.x = maxf(0.001,life)
+		health_fill.position.x = -(1.0-life)*0.43
 	if direction.length_squared() > 0.01:
-		rotation.y = atan2(-direction.x,-direction.z)
+		target_yaw = atan2(-direction.x,-direction.z)
 	# Server sends velocity direction only while walking/fleeing. Keep animation
 	# decoupled from network frame cadence and don't animate dead creatures.
 	if species != "dummy":
-		speed_visual = minf(1.0,travelled * 5.0) if direction.length_squared() > 0.01 else 0.0
+		speed_visual = minf(4.5,travelled / 0.30) if direction.length_squared() > 0.01 else 0.0
 	last_position = at
 
 func _process(delta: float) -> void:
 	if body != null and visible:
 		if species == "dummy":
 			return
+		rotation.y = lerp_angle(rotation.y,target_yaw,minf(1.0,delta*5.0))
 		stride_clock += delta * lerpf(2.2,10.0,speed_visual)
 		if species == "rabbit":
 			# Short hops with a planted phase, not a flying/hovering ball.
 			var hop := pow(maxf(0.0,sin(stride_clock)),2.0)
-			body.position.y = hop * 0.22 * speed_visual
-			body.rotation.x = -0.09 * speed_visual * cos(stride_clock)
+			body.position.y = hop * 0.22 * clampf(speed_visual,0.0,1.0)
+			body.rotation.x = -0.09 * clampf(speed_visual,0.0,1.0) * cos(stride_clock)
 		else:
-			body.position.y = sin(stride_clock*1.65) * 0.028 * speed_visual
-			body.rotation.z = sin(stride_clock) * 0.026 * speed_visual
+			_update_deer_gait(delta)
+			body.position.y = 0.0
+			body.rotation.z = 0.0
+
+func _update_deer_gait(delta: float) -> void:
+	if deer_skeleton == null or deer_legs.size() != 4 or deer_shins.size() != 4:
+		return
+	var target_motion := clampf(speed_visual / 1.4,0.0,1.0)
+	deer_motion = move_toward(deer_motion,target_motion,delta*3.0)
+	if deer_motion < 0.025:
+		if animal_anim != null and not animal_anim.is_playing():
+			animal_anim.play("Idle",0.25)
+		return
+	if animal_anim != null and animal_anim.is_playing():
+		animal_anim.stop()
+	var running := clampf((speed_visual-1.5)/2.5,0.0,1.0)
+	deer_gait += delta*lerpf(5.0,11.0,running)
+	var swing := lerpf(0.27,0.48,running)*deer_motion
+	for i in 4:
+		var leg := deer_legs[i]
+		var shin := deer_shins[i]
+		if leg < 0 or shin < 0:
+			continue
+		# Opposite legs alternate in walk; running shifts toward bounding gait.
+		var phase := deer_gait + (PI if i == 1 or i == 2 else 0.0)
+		phase = lerpf(phase,deer_gait+(PI if i >= 2 else 0.0),running)
+		var step := sin(phase)
+		deer_skeleton.set_bone_pose_rotation(leg,Quaternion(Vector3.RIGHT,step*swing))
+		deer_skeleton.set_bone_pose_rotation(shin,Quaternion(Vector3.RIGHT,maxf(0.0,-step)*swing*0.85))

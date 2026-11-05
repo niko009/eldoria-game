@@ -13,6 +13,7 @@ var animator: AnimationPlayer
 var skin_mesh: MeshInstance3D
 var health_bar: MeshInstance3D
 var visual_hp := 60
+var max_health := 60
 var down := false
 var moving := false
 var stride := 0.0
@@ -64,7 +65,7 @@ func _ready() -> void:
 func update_state(point: Vector3, hp: int, alive: bool, direction: Vector3 = Vector3.ZERO) -> void:
     var distance := position.distance_to(point)
     position = point
-    var health := clampi(hp, 0, 60)
+    var health := clampi(hp, 0, max_health)
     if alive and (down or not initialized):
         _death_generation += 1
         down = false
@@ -159,4 +160,4 @@ func _play_clip(name: String, fade: float = 0.08, speed: float = 1.0) -> void:
 func _update_health() -> void:
     if health_bar != null:
         health_bar.visible = not down
-        health_bar.scale.x = maxf(0.01, float(visual_hp) / 60.0)
+        health_bar.scale.x = maxf(0.01, float(visual_hp) / float(max_health))

@@ -9,78 +9,123 @@ const State = preload("res://ui/mock_game_ui_state.gd")
 const ItemIcon = preload("res://ui/item_icon.gd")
 var state: MockGameUiState
 var craft_enabled := true
+var recipe_order: Array[String] = []
+var selected_recipe := ""
+var selected_category := "Все"
+var tile_grid: GridContainer
+var detail: VBoxContainer
 
 func _ready() -> void:
-	add_theme_constant_override("separation", 8)
+	add_theme_constant_override("separation", 5)
 	if state != null:
 		state.changed.connect(refresh)
 	refresh()
 
+func _choose(recipe_id: String) -> void:
+	selected_recipe = recipe_id
+	refresh()
+
 func refresh() -> void:
+	if state != null and recipe_order.is_empty():
+		recipe_order = state.recipes_ready_first()
+	if selected_recipe.is_empty() and not recipe_order.is_empty():
+		selected_recipe = recipe_order[0]
 	for child in get_children():
 		remove_child(child)
 		child.queue_free()
 	if state == null:
 		return
-	for recipe_id in state.recipes_ready_first():
+	var heading := Style.label("ВЫБЕРИТЕ ПРЕДМЕТ", 12, Style.GOLD)
+	add_child(heading)
+	var categories := HBoxContainer.new()
+	categories.name = "RecipeCategories"
+	add_child(categories)
+	for category in ["Все", "Оружие", "Броня", "Еда", "Расходники"]:
+		var filter := Button.new()
+		filter.text = category
+		Style.button(filter, selected_category == category)
+		filter.pressed.connect(func() -> void:
+			selected_category = category
+			refresh())
+		categories.add_child(filter)
+	tile_grid = GridContainer.new()
+	tile_grid.name = "RecipeGrid"
+	tile_grid.columns = 5
+	tile_grid.add_theme_constant_override("h_separation", 6)
+	tile_grid.add_theme_constant_override("v_separation", 5)
+	add_child(tile_grid)
+	for recipe_id in recipe_order:
+		if not _category_matches(recipe_id):
+			continue
 		var recipe: Dictionary = State.RECIPES[recipe_id]
-		var owned_full := state.amount(recipe_id) >= state.recipe_limit(recipe_id)
 		var ready := craft_enabled and state.recipe_materials_ready(recipe_id)
-		var card := VBoxContainer.new()
-		card.name = "Recipe_%s" % recipe_id
-		card.add_theme_constant_override("separation", 5)
-		var card_shell := PanelContainer.new()
-		card_shell.name = "RecipeCard_%s" % recipe_id
-		card_shell.add_theme_stylebox_override("panel", Style.panel(Color("224638", 0.94) if ready else Color("202a30", 0.75), Color("93df99") if ready else Color("58615c"), 14))
-		card_shell.add_child(card)
-		add_child(card_shell)
-		card.tooltip_text = "%s\n%s" % [recipe["name"],recipe["description"]]
-		# Visually lead with the crafted-item artwork, not prose recipes.
-		var title := Style.label("● ГОТОВО" if ready else "○ НУЖНЫ РЕСУРСЫ",11,
-			Color("a9f5b0") if ready else Style.MUTED)
-		title.name = "RecipeStatus"
-		card.add_child(title)
-		var item_row := HBoxContainer.new()
-		item_row.add_theme_constant_override("separation",9)
-		card.add_child(item_row)
-		var item_icon: Control = ItemIcon.new()
-		item_icon.name = "ResultIcon"
-		item_icon.custom_minimum_size = Vector2(52,52)
-		item_icon.setup(recipe_id,not owned_full,ready)
-		item_row.add_child(item_icon)
-		var item_title := VBoxContainer.new()
-		item_title.add_theme_constant_override("separation",2)
-		item_row.add_child(item_title)
-		item_title.add_child(Style.label(str(recipe["name"]),16,Style.GOLD))
-		item_title.add_child(Style.label("В наличии ×%d" % state.amount(recipe_id),12,Style.MUTED))
-		var cost_row := HBoxContainer.new()
-		cost_row.name = "IngredientIcons"
-		cost_row.add_theme_constant_override("separation",10)
-		card.add_child(cost_row)
-		for material in recipe["cost"]:
-			var required: int = recipe["cost"][material]
-			var owned: int = state.amount(material)
-			var ingredient := HBoxContainer.new()
-			ingredient.name = "Cost_%s" % material
-			ingredient.tooltip_text = "%s: %d из %d" % [State.ITEMS[material]["name"],owned,required]
-			ingredient.add_theme_constant_override("separation",1)
-			var ingredient_icon: Control = ItemIcon.new()
-			ingredient_icon.setup(material,owned >= required)
-			ingredient_icon.custom_minimum_size = Vector2(35,35)
-			ingredient.add_child(ingredient_icon)
-			ingredient.add_child(Style.label("%d/%d" % [owned,required],14,
-				Color("a9f5b0") if owned >= required else Color("e89883")))
-			cost_row.add_child(ingredient)
-		var action := Button.new()
-		action.text = "Создать" if not owned_full else "Достигнут лимит"
-		Style.button(action)
-		action.disabled = not ready or not state.near_campfire or state.loading
-		action.pressed.connect(func() -> void: craft_requested.emit(recipe_id))
-		card.add_child(action)
-		if recipe_id != "axe" and recipe_id != "arrow":
-			var use_button := Button.new()
-			use_button.text = ("Экипировать" if ["spear","bow","shield"].has(recipe_id) else "Использовать") + " · %d" % state.amount(recipe_id)
-			Style.button(use_button)
-			use_button.disabled = state.amount(recipe_id) <= 0 or state.loading
-			use_button.pressed.connect(func() -> void: use_requested.emit(recipe_id))
-			card.add_child(use_button)
+		var tile := Button.new()
+		tile.name = "RecipeCard_%s" % recipe_id
+		tile.custom_minimum_size = Vector2(70, 64)
+		tile.tooltip_text = str(recipe["name"])
+		Style.button(tile, selected_recipe == recipe_id)
+		tile.pressed.connect(_choose.bind(recipe_id))
+		tile_grid.add_child(tile)
+		var content := VBoxContainer.new()
+		content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		tile.add_child(content)
+		var icon: Control = ItemIcon.new()
+		icon.custom_minimum_size = Vector2(37, 37)
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		icon.setup(recipe_id, state.amount(recipe_id) < state.recipe_limit(recipe_id), ready)
+		content.add_child(icon)
+		var mark := Style.label("●" if ready else "○", 11, Color("a9f5b0") if ready else Color("e89883"))
+		mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		content.add_child(mark)
+	if not _category_matches(selected_recipe):
+		for recipe_id in recipe_order:
+			if _category_matches(recipe_id):
+				selected_recipe = recipe_id
+				break
+	var shell := PanelContainer.new()
+	shell.name = "SelectedRecipe"
+	shell.add_theme_stylebox_override("panel", Style.panel(Color("202a30", 0.93), Color("58615c"), 12))
+	add_child(shell)
+	detail = VBoxContainer.new()
+	detail.name = "RecipeDetails"
+	detail.add_theme_constant_override("separation", 5)
+	shell.add_child(detail)
+	var recipe: Dictionary = State.RECIPES[selected_recipe]
+	var owned_full := state.amount(selected_recipe) >= state.recipe_limit(selected_recipe)
+	var ready := craft_enabled and state.recipe_materials_ready(selected_recipe)
+	var title := Style.label(str(recipe["name"]) + "  ×%d" % state.amount(selected_recipe), 16, Style.GOLD)
+	detail.add_child(title)
+	detail.add_child(Style.label(str(recipe["description"]), 12, Style.MUTED))
+	var costs := HBoxContainer.new()
+	costs.name = "IngredientIcons"
+	detail.add_child(costs)
+	for material in recipe["cost"]:
+		var required: int = recipe["cost"][material]
+		var owned: int = state.amount(material)
+		var ingredient := HBoxContainer.new()
+		ingredient.name = "Cost_%s" % material
+		ingredient.tooltip_text = "%s: %d из %d" % [State.ITEMS[material]["name"],owned,required]
+		costs.add_child(ingredient)
+		var icon: Control = ItemIcon.new()
+		icon.setup(material, owned >= required)
+		icon.custom_minimum_size = Vector2(28, 28)
+		ingredient.add_child(icon)
+		ingredient.add_child(Style.label("%d/%d" % [owned,required], 12, Color("a9f5b0") if owned >= required else Color("e89883")))
+	if not state.near_campfire:
+		detail.add_child(Style.label("Для изготовления нужен костёр рядом", 12, Color("e89883")))
+	var action := Button.new()
+	action.name = "CraftSelected"
+	action.text = "Лимит предметов" if owned_full else "Создать ×1"
+	Style.button(action)
+	action.disabled = not ready or not state.near_campfire or state.loading
+	action.pressed.connect(func() -> void: craft_requested.emit(selected_recipe))
+	detail.add_child(action)
+
+func _category_matches(recipe_id: String) -> bool:
+	match selected_category:
+		"Оружие": return recipe_id in ["axe", "spear", "bow", "arrow", "wooden_staff"]
+		"Броня": return recipe_id in ["shield", "leather_armor"]
+		"Еда": return recipe_id == "grilled_meat"
+		"Расходники": return recipe_id in ["bandage", "repair_kit", "mana_potion"]
+		_: return true

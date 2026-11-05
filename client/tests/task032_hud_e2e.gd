@@ -26,6 +26,13 @@ func _run() -> void:
 		for frame in range(3):
 			await process_frame
 		hud._layout()
+		hud.set_hero_class(2)
+		var mage_spell: Rect2 = hud.action_controls["spell"].get_global_rect()
+		var mage_target: Rect2 = hud.action_controls["target"].get_global_rect()
+		if mage_spell.intersects(mage_target):
+			_fail("mage target overlaps spell selector at " + str(display))
+			return
+		hud.set_hero_class(0)
 		var left: Rect2 = hud.status_panel.get_global_rect()
 		var right: Rect2 = hud.top_actions.get_global_rect()
 		var resources: Rect2 = hud.resources_panel.get_global_rect()
@@ -39,7 +46,18 @@ func _run() -> void:
 			return
 		for id in hud.action_controls:
 			var button: Button = hud.action_controls[id]
+			if not button.visible:
+				continue
 			var r: Rect2 = button.get_global_rect()
+			for other_id in hud.action_controls:
+				if other_id == id or not hud.action_controls[other_id].visible:
+					continue
+				if r.intersects(hud.action_controls[other_id].get_global_rect().grow(-2)):
+					_fail("action %s overlaps %s at %s" % [id,other_id,display])
+					return
+			if hud.zoom_controls.visible and r.intersects(hud.zoom_controls.get_global_rect()):
+				_fail("action %s overlaps camera zoom at %s" % [id,display])
+				return
 			if r.intersects(hot):
 				_fail("action %s collides with hotbar at %s" % [id, display])
 				return
@@ -56,8 +74,8 @@ func _run() -> void:
 		if hud.resource_counts["wood"].text != "14" or hud.health_detail.text != "73/100":
 			_fail("state not reflected in compact HUD")
 			return
-		if hud.action_controls.size() != 5:
-			_fail("compact cluster should have five independent touch actions including hero ability")
+		if hud.action_controls.size() != 7:
+			_fail("compact cluster should have target selection, spell and five regular actions")
 			return
 		print("TASK032 LAYOUT PASS ", display, " logical_viewport=", hud.size)
 
@@ -78,9 +96,15 @@ func _run() -> void:
 	hud._touch_action("jump")
 	hud._touch_action("sprint")
 	hud._touch_action("ability")
-	if calls != ["attack", "gather", "jump", "sprint", "ability"]:
+	hud._touch_action("target")
+	if calls != ["attack", "gather", "jump", "sprint", "ability", "target"]:
 		_fail("mobile action bindings changed " + str(calls))
 		return
+	hud.set_hero_class(2)
+	if hud.action_controls["target"].get_global_rect().intersects(hud.action_controls["spell"].get_global_rect()):
+		_fail("mage target button overlaps spell selector")
+		return
+	hud.set_hero_class(0)
 	ui._open("settings")
 	await process_frame
 	if not ui.overlay.visible or ui.active_panel != "settings":

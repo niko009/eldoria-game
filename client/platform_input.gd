@@ -63,14 +63,15 @@ func _input(event: InputEvent) -> void:
 func process_mobile_touch(event: InputEvent, viewport_size: Vector2) -> void:
     # Separate from OS detection so two-finger zoom can be tested headlessly.
     if event is InputEventScreenTouch:
-        # Pinch is reserved for the upper-right world view, away from the
-        # left joystick and the lower-right combat buttons.
-        if event.pressed and event.position.x > viewport_size.x*0.50 and event.position.y < viewport_size.y*0.72:
+        # Allow zoom in the world area instead of a narrow upper-right corner.
+        # Keep the joystick and HUD action strip excluded.
+        if event.pressed and event.position.y > viewport_size.y*0.16 and event.position.y < viewport_size.y*0.79 and not (event.position.x < viewport_size.x*0.24 and event.position.y > viewport_size.y*0.52) and not (event.position.x > viewport_size.x*0.73 and event.position.y > viewport_size.y*0.48):
             _camera_touches[event.index] = event.position
         else:
             _camera_touches.erase(event.index)
         if _camera_touches.size() == 2:
             _pinch_distance = _touch_gap()
+            _look_touch_id = -1
         else:
             _pinch_distance = 0.0
         if not event.pressed and event.index == _look_touch_id:

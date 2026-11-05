@@ -32,10 +32,16 @@ func _run() -> void:
     game.wolf_snapshot.rpc(game.wolf_position, game.wolf_health, true, Vector3.ZERO)
     for frame in range(560):
         await process_frame
-        if game.wolf_health == 40:
+        if game.wolf_health == 42:
             break
-    if game.wolf_health != 40:
+    if game.wolf_health != 42:
         _fail("authoritative wolf hit not accepted")
+        return
+    if int(game.player_skills.get(first,{}).get("magic",0)) < 2:
+        _fail("mage did not receive server-authoritative magic XP")
+        return
+    if int(game.player_skills.get(second,{}).get("magic",0)) != 0:
+        _fail("observer received another player's magic XP")
         return
     if not game._damage_player_on_server(second, 12):
         _fail("server health reduction failed")

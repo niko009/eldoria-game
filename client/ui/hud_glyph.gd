@@ -50,6 +50,13 @@ func _draw() -> void:
 			_poly([Vector2(10,38), Vector2(14,42), Vector2(29,27), Vector2(25,23)], muted)
 			_poly([Vector2(25,25), Vector2(19,19), Vector2(36,6), Vector2(42,5), Vector2(40,12), Vector2(30,29)], pale)
 			_line(Vector2(19,27), Vector2(29,37), accent, 4)
+		"target":
+			draw_arc(Vector2(24,24),13,0,TAU,32,accent,3,true)
+			_line(Vector2(24,4),Vector2(24,15),pale,3)
+			_line(Vector2(24,33),Vector2(24,44),pale,3)
+			_line(Vector2(4,24),Vector2(15,24),pale,3)
+			_line(Vector2(33,24),Vector2(44,24),pale,3)
+			draw_circle(Vector2(24,24),3,accent)
 		"ability":
 			_poly([Vector2(25,5),Vector2(12,25),Vector2(22,25),Vector2(16,42),
 				Vector2(38,19),Vector2(27,19)],accent)

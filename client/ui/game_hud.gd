@@ -8,6 +8,7 @@ signal item_selected(item_id: String)
 signal action_requested(action_id: String)
 signal open_settings
 signal open_skills
+signal zoom_requested(step: float)
 
 const Style = preload("res://ui/ui_style.gd")
 const State = preload("res://ui/mock_game_ui_state.gd")
@@ -28,12 +29,17 @@ var status_panel: PanelContainer
 var status_detail: Label
 var health_detail: Label
 var health_bar: ProgressBar
+var xp_bar: ProgressBar
+var xp_label: Label
 var avatar_name: Label
 var warning_detail: Label
 var resources_panel: HBoxContainer
 var resource_counts: Dictionary = {}
 var practice_label: Label
+var hunt_progress := 0
+var alpha_wolf_hp := 0
 var mana_label: Label
+var _mana_needs_refill := false
 var last_practice_points := 0
 var last_skills := {"archery":0,"spear":0,"defense":0}
 var hotbar: EldoriaHotbar
@@ -46,6 +52,9 @@ var combat_mode := "unarmed"
 var raid_banner: Label
 var heal_button: Button
 var repair_button: Button
+var quick_consumables: HBoxContainer
+var quick_buttons: Dictionary = {}
+var zoom_controls: HBoxContainer
 var camp_health := -1
 var action_controls: Dictionary = {}
 var top_controls: Dictionary = {}
@@ -62,6 +71,8 @@ func _ready() -> void:
 	_create_touch()
 	_create_warning()
 	_create_raid_ui()
+	_create_quick_consumables()
+	_create_zoom_controls()
 	if state != null:
 		state.changed.connect(refresh)
 	refresh()
@@ -109,6 +120,18 @@ func _create_status() -> void:
 	hp_row.add_child(health_bar)
 	health_detail = Style.label("—", 12, CREAM)
 	hp_row.add_child(health_detail)
+	var xp_row := HBoxContainer.new()
+	xp_row.name = "ExperienceRow"
+	stats.add_child(xp_row)
+	xp_label = Style.label("Навык · ур. 1",11,GOLD)
+	xp_row.add_child(xp_label)
+	xp_bar = ProgressBar.new()
+	xp_bar.name = "ExperienceGauge"
+	xp_bar.custom_minimum_size = Vector2(80,6)
+	xp_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	xp_bar.show_percentage = false
+	xp_bar.max_value = 1
+	xp_row.add_child(xp_bar)
 
 func _create_resources() -> void:
 	resources_panel = HBoxContainer.new()
@@ -144,10 +167,20 @@ func _create_resources() -> void:
 	resources_panel.add_child(mana_label)
 
 func set_mana(value: int, mage: bool) -> void:
+	_mana_needs_refill = value < 100
 	if mana_label != null:
 		mana_label.visible = mage
 		mana_label.text = "Мана %d/100" % clampi(value,0,100)
+	_refresh_quick_consumables()
 
+
+func set_hunt_progress(progress: int) -> void:
+	hunt_progress = clampi(progress,0,5)
+	_refresh_skills_label()
+
+func set_alpha_wolf_health(hp: int, alive: bool) -> void:
+	alpha_wolf_hp = clampi(hp,0,180) if alive else 0
+	_refresh_skills_label()
 
 func set_practice_points(points: int) -> void:
 	last_practice_points = points
@@ -163,7 +196,21 @@ func _refresh_skills_label() -> void:
 	var a := Progression.level_for_xp(int(last_skills.get("archery",0)))
 	var s := Progression.level_for_xp(int(last_skills.get("spear",0)))
 	var d := Progression.level_for_xp(int(last_skills.get("defense",0)))
-	practice_label.text = "Л%d К%d Щ%d" % [a,s,d]
+	var best_skill := "archery"
+	for skill in ["spear","defense"]:
+		if int(last_skills.get(skill,0)) > int(last_skills.get(best_skill,0)):
+			best_skill = skill
+	var xp := int(last_skills.get(best_skill,0))
+	var level := Progression.level_for_xp(xp)
+	var start := Progression.xp_required_for_level(level)
+	var required := Progression.xp_required_for_level(level+1)
+	if xp_label != null:
+		xp_label.text = "%s ур.%d" % [{"archery":"Лук","spear":"Копьё","defense":"Защита"}[best_skill],level]
+	if xp_bar != null:
+		xp_bar.max_value = maxf(1.0,float(required-start))
+		xp_bar.value = float(xp-start)
+		xp_bar.tooltip_text = "XP %d / %d" % [xp,required]
+	practice_label.text = "ВОЖАК %d/180 HP" % alpha_wolf_hp if alpha_wolf_hp > 0 else "Л%d К%d Щ%d · Охота %d/5" % [a,s,d,hunt_progress]
 	practice_label.tooltip_text = "Тренировка: %d · XP: лук %d, копьё %d, защита %d" % [
 		last_practice_points,int(last_skills.get("archery",0)),
 		int(last_skills.get("spear",0)),int(last_skills.get("defense",0))]
@@ -243,7 +290,7 @@ func _create_touch() -> void:
 	action_buttons.name = "ActionCluster"
 	action_buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	touch_layer.add_child(action_buttons)
-	for entry in [["attack", "УДАР", 76], ["gather", "СБОР", 63], ["jump", "ПРЫЖОК", 63], ["sprint", "БЕГ", 63], ["ability", "ЗОВ", 63]]:
+	for entry in [["attack", "УДАР", 76], ["gather", "СБОР", 63], ["jump", "ПРЫЖОК", 63], ["sprint", "БЕГ", 63], ["ability", "ЗОВ", 63], ["spell", "ОГОНЬ", 62], ["target", "ЦЕЛЬ", 62]]:
 		var id: String = entry[0]
 		var diameter: int = entry[2]
 		var button := Button.new()
@@ -251,7 +298,7 @@ func _create_touch() -> void:
 		button.custom_minimum_size = Vector2(diameter, diameter)
 		button.size = button.custom_minimum_size
 		button.focus_mode = Control.FOCUS_NONE
-		button.tooltip_text = entry[1]
+		button.tooltip_text = "Выбрать следующего врага; нажмите на моба для точного выбора" if id == "target" else entry[1]
 		button.text = ""
 		button.add_theme_stylebox_override("normal", _card(Color("1b2b2d", 0.80) if id != "attack" else Color("9c7653", 0.91), Color("e5bd77", 0.57), diameter / 2, 0))
 		button.add_theme_stylebox_override("pressed", _card(Color("af8c61", 0.96), GOLD, diameter / 2, 0))
@@ -271,30 +318,38 @@ func _create_touch() -> void:
 		caption.size = Vector2(diameter, 16)
 		button.add_child(caption)
 		action_controls[id] = button
+		if id == "spell":
+			button.visible = false
+
+func set_spell(index: int) -> void:
+	if action_controls.has("spell"):
+		action_controls["spell"].get_node("Caption").text = ["ОГОНЬ","ЛЁД","ГРОМ"][clampi(index,0,2)]
 
 func set_shield_mode(equipped: bool) -> void:
 	if not action_controls.has("attack"):
 		return
-	var button: Button = action_controls["attack"]
-	button.get_node("Caption").text = "ЗОВ" if equipped and state.selected_avatar == "knight" else "УДАР"
-	button.tooltip_text = "Привлечь волков (5 с, перезарядка 15 с)" if equipped and state.selected_avatar == "knight" else "Атаковать"
+	# Shield is an offhand item; it must not overwrite the main attack label.
+	_update_attack_caption()
 
-func set_combat_mode(item: String) -> void:
-	combat_mode = item
+func _update_attack_caption() -> void:
 	if not action_controls.has("attack"):
 		return
 	var button: Button = action_controls["attack"]
-	match item:
+	var caption: Label = button.get_node("Caption")
+	match combat_mode:
 		"bow":
-			button.get_node("Caption").text = "ВЫСТРЕЛ"
-			button.tooltip_text = "Лук · наведите прицел · нажмите для выстрела · 1 стрела за выстрел"
+			caption.text = "ВЫСТРЕЛ"
+			button.tooltip_text = "Лук · наведите прицел · 1 стрела за выстрел"
 		"spear":
-			button.get_node("Caption").text = "УКОЛ"
-			button.tooltip_text = "Копьё · смотрите на врага перед собой · до 4,5 м"
-		"shield":
-			set_shield_mode(true)
+			caption.text = "УКОЛ"
+			button.tooltip_text = "Копьё · цель впереди · до 4,5 м"
 		_:
-			set_shield_mode(false)
+			caption.text = "МАГИЯ" if state.selected_avatar == "mage" else "УДАР"
+			button.tooltip_text = "Заклинание выбранной стихии" if state.selected_avatar == "mage" else "Атаковать"
+
+func set_combat_mode(item: String) -> void:
+	combat_mode = item
+	_update_attack_caption()
 
 func set_hero_class(choice: int) -> void:
 	if not action_controls.has("ability"):
@@ -305,7 +360,10 @@ func set_hero_class(choice: int) -> void:
 	ability.tooltip_text = ["Рыцарь: привлечь волков со щитом (Q)",
 		"Разбойник: рывок без прохождения сквозь препятствия (Q)",
 		"Маг: вылечить союзника за 40 маны (Q)"][clampi(choice,0,2)]
-	set_shield_mode(false)
+	if action_controls.has("spell"):
+		action_controls["spell"].visible = choice == 2
+	_update_attack_caption()
+	_layout()
 
 func _create_warning() -> void:
 	warning_detail = Style.label("", 14, Color("ffe0af"))
@@ -348,6 +406,65 @@ func set_camp_health(hp: int, maximum: int) -> void:
 	camp_health = clampi(hp, 0, maximum)
 	repair_button.tooltip_text = "Лагерь %d/%d HP · ремонт +30" % [camp_health, maximum]
 	_update_repair_visibility()
+
+func _create_quick_consumables() -> void:
+	quick_consumables = HBoxContainer.new()
+	quick_consumables.name = "QuickConsumables"
+	quick_consumables.add_theme_constant_override("separation", 5)
+	add_child(quick_consumables)
+	for kind in ["bandage", "grilled_meat", "repair_kit", "mana_potion"]:
+		var button := Button.new()
+		button.name = "Quick_%s" % kind
+		button.custom_minimum_size = Vector2(83, 34)
+		button.focus_mode = Control.FOCUS_NONE
+		Style.button(button)
+		button.pressed.connect(func() -> void: action_requested.emit(kind))
+		quick_consumables.add_child(button)
+		quick_buttons[kind] = button
+
+func _create_zoom_controls() -> void:
+	zoom_controls = HBoxContainer.new()
+	zoom_controls.name = "CameraZoomControls"
+	add_child(zoom_controls)
+	for entry in [["+", -1.3], ["−", 1.3]]:
+		var button := Button.new()
+		button.text = entry[0]
+		button.custom_minimum_size = Vector2(38, 38)
+		button.tooltip_text = "Приблизить" if entry[1] < 0 else "Отдалить"
+		Style.button(button)
+		button.pressed.connect(zoom_requested.emit.bind(float(entry[1])))
+		zoom_controls.add_child(button)
+
+func _refresh_quick_consumables() -> void:
+	if state == null or quick_buttons.is_empty():
+		return
+	var alive := state.health_known and state.health > 0
+	var hurt := alive and state.health < state.max_health
+	for kind in quick_buttons:
+		var button: Button = quick_buttons[kind]
+		var count := state.amount(kind)
+		var repair_context := camp_health > 0 and camp_health < 120 and state.near_campfire and raid_banner.visible and raid_banner.text.contains("НОЧНАЯ")
+		# Keep combat actions readable: show only consumables the player owns.
+		# Repair is a contextual camp action, not a permanent combat button.
+		button.visible = count > 0 and (kind != "mana_potion" or state.selected_avatar == "mage") and (kind != "repair_kit" or repair_context)
+		var reason := ""
+		if count <= 0:
+			reason = "Нет предмета"
+		elif not alive:
+			reason = "Ожидание персонажа"
+		elif kind == "bandage" and not hurt:
+			reason = "HP полное"
+		elif kind == "mana_potion" and (not mana_label.visible or not _mana_needs_refill):
+			reason = "Только для мага при неполной мане"
+		elif kind == "repair_kit" and not repair_context:
+			reason = "Ремонт: ночью у повреждённого лагеря возле костра"
+		elif state.loading:
+			reason = "Ожидание сервера"
+		button.text = {"bandage":"✚", "grilled_meat":"Еда", "repair_kit":"Ремонт", "mana_potion":"Мана"}[kind] + " ×%d" % count
+		button.disabled = not reason.is_empty()
+		button.tooltip_text = reason if not reason.is_empty() else {"bandage":"Восстановить 40 HP", "grilled_meat":"Еда: +25 HP и регенерация", "repair_kit":"Восстановить 60 HP лагеря", "mana_potion":"Восстановить 35 MP"}[kind]
+	quick_consumables.visible = quick_buttons.values().any(func(button: Button) -> bool: return button.visible)
+	_layout()
 
 func _update_repair_visibility() -> void:
 	if repair_button == null or state == null:
@@ -409,6 +526,10 @@ func refresh() -> void:
 			selected_tool_hint.text = "ЛУК  ·  %d СТРЕЛ  ·  12 М  ·  ВЫСТРЕЛ" % state.amount("arrow")
 		"spear":
 			selected_tool_hint.text = "КОПЬЁ  ·  ДО 4,5 М  ·  J / ЛКМ / УКОЛ"
+		"wooden_staff":
+			selected_tool_hint.text = "ПОСОХ  ·  +3 УРОНА МАГИЕЙ"
+		"staff":
+			selected_tool_hint.text = "МАГИЧЕСКИЙ ПОСОХ"
 		"shield":
 			selected_tool_hint.text = "ЩИТ  ·  ЗАЩИТА  ·  Q — УМЕНИЕ"
 		"axe":
@@ -418,6 +539,7 @@ func refresh() -> void:
 	selected_tool_hint.visible = not selected_tool_hint.text.is_empty()
 	heal_button.visible = state.health_known and state.health > 0 and state.health < 100 and state.near_campfire and state.amount("herb") >= 2
 	_update_repair_visibility()
+	_refresh_quick_consumables()
 	touch_layer.visible = show_touch_controls
 	_layout()
 
@@ -428,7 +550,7 @@ func _layout() -> void:
 	var compact := size.y < 490
 	var margin := 7.0
 	var status_w := 226.0 if compact else 236.0
-	var status_h := 67.0
+	var status_h := 94.0
 	status_panel.position = Vector2(inset.x, inset.y)
 	status_panel.size = Vector2(status_w, status_h)
 	resources_panel.position = Vector2(inset.x, inset.y + status_h + margin)
@@ -446,6 +568,13 @@ func _layout() -> void:
 	heal_button.position = Vector2(inset.x, inset.y + status_h + resources_panel.size.y + 16)
 	repair_button.size = Vector2(216, 37)
 	repair_button.position = Vector2(inset.x, heal_button.position.y + (43 if heal_button.visible else 0))
+	if quick_consumables != null:
+		quick_consumables.size = quick_consumables.get_combined_minimum_size()
+		quick_consumables.position = Vector2(inset.x, minf(size.y - inset.w - 45, inset.y + status_h + resources_panel.size.y + 58))
+	if zoom_controls != null:
+		zoom_controls.visible = show_touch_controls
+		zoom_controls.size = zoom_controls.get_combined_minimum_size()
+		zoom_controls.position = Vector2(size.x - inset.z - zoom_controls.size.x, inset.y + 62)
 	joystick.size = Vector2(116, 116)
 	joystick.position = Vector2(inset.x + 6, size.y - inset.w - joystick.size.y + 5)
 	action_buttons.position = Vector2.ZERO
@@ -459,10 +588,13 @@ func _layout() -> void:
 		"jump": Vector2(right + 6, lower - 88),
 		"sprint": Vector2(right - 68, lower - 79),
 		"ability": Vector2(right - 144, lower - 154),
+		"spell": Vector2(right - 145, lower - 226),
+		"target": Vector2(right - 145, lower - 226),
 	}
 	for id in positions:
 		var button: Button = action_controls[id]
-		button.position = positions[id]
+		# Mage spell and target cycling share a row but never overlap.
+		button.position = positions[id] + (Vector2(-71, 0) if id == "target" and action_controls["spell"].visible else Vector2.ZERO)
 		button.size = button.custom_minimum_size
 	warning_detail.size = Vector2(minf(400, size.x * 0.55), 48)
 	warning_detail.position = Vector2(inset.x, inset.y + status_h + resources_panel.size.y + 15)

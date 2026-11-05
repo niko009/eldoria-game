@@ -9,6 +9,9 @@ signal equip_requested(equip: bool)
 signal combat_equip_requested(weapon: String)
 signal preview_requested(kind: String)
 signal joystick_moved(direction: Vector2)
+signal zoom_requested(step: float)
+signal armor_requested(equip: bool)
+signal shield_requested(equip: bool)
 
 const State = preload("res://ui/mock_game_ui_state.gd")
 const Style = preload("res://ui/ui_style.gd")
@@ -34,6 +37,18 @@ var notice_timer: Timer
 var panel_tween: Tween
 var touch_scroll = TouchScroller.new()
 var combat_equipment := "unarmed"
+var armor_equipped := false
+var shield_equipped := false
+
+func set_shield_equipped(value: bool) -> void:
+    shield_equipped = value
+    if current_panel is EldoriaInventoryPanel:
+        current_panel.set_shield_equipped(value)
+
+func set_armor_equipped(value: bool) -> void:
+    armor_equipped = value
+    if current_panel is EldoriaInventoryPanel:
+        current_panel.set_armor_equipped(value)
 var bow_aim_hint: Label
 var combat_aim_help: Label
 var gather_target_hint: Label
@@ -41,7 +56,7 @@ var gather_target_kind := ""
 var gather_target_count := 0
 var reticle_at := Vector2(-1,-1)
 var combat_target_status := "none"
-var saved_skills: Dictionary = {"archery":0,"spear":0,"defense":0}
+var saved_skills: Dictionary = {"archery":0,"spear":0,"defense":0,"magic":0}
 var hero_mana := 100
 
 func _ready() -> void:
@@ -67,6 +82,7 @@ func _ready() -> void:
     hud.open_skills.connect(func() -> void: _open("skills"))
     hud.item_selected.connect(state.select_item)
     hud.action_requested.connect(_on_action)
+    hud.zoom_requested.connect(zoom_requested.emit)
     add_child(hud)
     bow_aim_hint = Style.label("+", 29, Color("f1e3ba"))
     bow_aim_hint.name = "BowAimReticle"
@@ -147,6 +163,8 @@ func _ready() -> void:
     _layout()
 
 func set_combat_equipment(item: String) -> void:
+    if combat_equipment != item:
+        combat_target_status = "none"
     combat_equipment = item
     if state != null:
         # Server equipment ACK is authoritative. Do not re-emit selection RPC.
@@ -157,7 +175,6 @@ func set_combat_equipment(item: String) -> void:
             state.selected_item = desired
             state.changed.emit()
     if hud != null:
-        hud.set_shield_mode(item == "shield")
         hud.set_combat_mode(item)
         hud.refresh()
     _refresh_bow_hint()
@@ -169,6 +186,7 @@ func set_hero_class(choice: int) -> void:
         hud.set_mana(hero_mana,choice == HeroClasses.MAGE)
     if choice == HeroClasses.MAGE:
         set_hero_mana(hero_mana)
+    _refresh_bow_hint()
 
 func set_hero_mana(value: int) -> void:
     hero_mana = clampi(value,0,HeroClasses.MAGE_MANA_MAX)
@@ -179,18 +197,25 @@ func set_hero_mana(value: int) -> void:
 func _refresh_bow_hint() -> void:
     if bow_aim_hint == null or state == null:
         return
-    var ranged := combat_equipment in ["bow","spear"]
+    var magic_aim := state.selected_avatar == "mage" and combat_equipment in ["unarmed","staff","wooden_staff"]
+    var ranged := combat_equipment in ["bow","spear"] or magic_aim
     bow_aim_hint.visible = ranged and active_panel.is_empty()
     bow_aim_hint.text = "⊕" if combat_equipment == "bow" else "◇"
     bow_aim_hint.add_theme_color_override("font_color",
-        Color("f3d6a2") if state.amount("arrow") > 0 else Color("db867c"))
-    bow_aim_hint.tooltip_text = "Прицел на центре экрана. Ведите камерой по цели, затем нажмите ВЫСТРЕЛ."
+        Color("f3d6a2") if magic_aim or combat_equipment != "bow" or state.amount("arrow") > 0 else Color("db867c"))
+    bow_aim_hint.tooltip_text = "Наведите камеру и используйте магию" if magic_aim else "Наведите камеру на цель для атаки"
     if combat_aim_help != null:
         combat_aim_help.visible = ranged and active_panel.is_empty()
         if combat_equipment == "bow":
             combat_aim_help.text = "ПКМ / СВАЙП — ПРИЦЕЛ · %d СТРЕЛ" % state.amount("arrow") if state.amount("arrow") > 0 else "НЕТ СТРЕЛ · СОЗДАЙТЕ У КОСТРА"
+        elif magic_aim:
+            combat_aim_help.text = "МАГИЯ · НАВЕДИТЕ ПРИЦЕЛ НА ВРАГА"
         else:
             combat_aim_help.text = "КОПЬЁ · ЦЕЛЬ ВПЕРЕДИ · ДО 4,5 М"
+        if combat_equipment == "bow" and state.amount("arrow") == 0:
+            combat_target_status = "no_ammo"
+        elif combat_target_status == "no_ammo":
+            combat_target_status = "none"
         _apply_combat_target_status()
 
 func set_combat_target_status(status: String) -> void:
@@ -203,16 +228,18 @@ func _apply_combat_target_status() -> void:
     if bow_aim_hint == null or combat_aim_help == null:
         return
     var tone := Color("f1e3ba")
+    var magic_aim := state != null and state.selected_avatar == "mage" and combat_equipment in ["unarmed","staff","wooden_staff"]
     match combat_target_status:
         "target":
             tone = Color("a7f3a9")
-            combat_aim_help.text = "ЦЕЛЬ В ПРИЦЕЛЕ · ВЫСТРЕЛ" if combat_equipment == "bow" else "ЦЕЛЬ ПЕРЕД ВАМИ · УКОЛ"
+            combat_aim_help.text = "ЦЕЛЬ В ПРИЦЕЛЕ · ВЫСТРЕЛ" if combat_equipment == "bow" else "ЦЕЛЬ ПЕРЕД ВАМИ · МАГИЯ" if magic_aim else "ЦЕЛЬ ПЕРЕД ВАМИ · УКОЛ"
         "blocked":
             tone = Color("f3bb79")
             combat_aim_help.text = "ПРЕПЯТСТВИЕ НА ЛИНИИ ОГНЯ"
         "no_ammo":
-            tone = Color("f4877c")
-            combat_aim_help.text = "НЕТ СТРЕЛ · СОЗДАЙТЕ У КОСТРА"
+            if combat_equipment == "bow":
+                tone = Color("f4877c")
+                combat_aim_help.text = "НЕТ СТРЕЛ · СОЗДАЙТЕ У КОСТРА"
     bow_aim_hint.add_theme_color_override("font_color",tone)
     combat_aim_help.add_theme_color_override("font_color",tone)
 
@@ -247,12 +274,12 @@ func _position_combat_reticle() -> void:
 func set_inventory(inventory: Dictionary) -> void:
     var validated := {}
     for item_id in State.ITEMS:
-        var limit := 1 if ["axe", "spear", "bow", "shield"].has(item_id) else 40 if item_id == "arrow" else 20 if ["bandage", "repair_kit"].has(item_id) else 1000000
+        var limit := 1 if ["axe", "spear", "bow", "shield", "wooden_staff", "leather_armor"].has(item_id) else 40 if item_id == "arrow" else 20 if ["bandage", "repair_kit", "grilled_meat", "mana_potion"].has(item_id) else 1000000
         validated[item_id] = clampi(int(inventory.get(item_id, 0)), 0, limit)
     if state.inventory == validated:
         return
     state.inventory = validated
-    if state.selected_item in ["spear","bow","shield"] and int(validated.get(state.selected_item,0)) == 0:
+    if state.selected_item in ["spear","bow","shield","wooden_staff"] and int(validated.get(state.selected_item,0)) == 0:
         state.selected_item = "unarmed"
     if int(validated.get("axe", 0)) == 0:
         state.equipped_axe = false
@@ -285,7 +312,7 @@ func set_equipped_axe(equipped: bool) -> void:
 func _selected_item(item_id: String) -> void:
     # UI state is visual only: the actual equipment is acknowledged by server.
     equip_requested.emit(item_id == "axe")
-    combat_equip_requested.emit(item_id if item_id in ["spear","bow","shield"] else "unarmed")
+    combat_equip_requested.emit(item_id if item_id in ["spear","bow","shield","wooden_staff"] else "unarmed")
 
 func set_near_campfire(near: bool) -> void:
     if state != null and state.near_campfire != near:
@@ -299,6 +326,14 @@ func set_raid_status(phase: String, round_number: int, kills: int, goal: int, se
 func set_camp_health(hp: int, maximum: int) -> void:
     if hud != null:
         hud.set_camp_health(hp, maximum)
+
+func set_hunt_progress(progress: int) -> void:
+    if hud != null:
+        hud.set_hunt_progress(progress)
+
+func set_alpha_wolf_health(hp: int, alive: bool) -> void:
+    if hud != null:
+        hud.set_alpha_wolf_health(hp,alive)
 
 func set_practice_points(points: int) -> void:
     if hud != null:
@@ -373,6 +408,13 @@ func _open(kind: String) -> void:
         contents.add_child(current_panel)
         if current_panel is EldoriaInventoryPanel:
             current_panel.item_selected.connect(state.select_item)
+            current_panel.armor_equipped = armor_equipped
+            current_panel.shield_equipped = shield_equipped
+            current_panel.armor_requested.connect(armor_requested.emit)
+            current_panel.shield_requested.connect(shield_requested.emit)
+            # The scene enters _ready before equipped flags are assigned.
+            # Refresh after the server-owned snapshot is applied.
+            current_panel.refresh()
         elif current_panel is EldoriaBuildingPanel:
             current_panel.preview_available = true
             current_panel.preview_requested.connect(_preview_build)
@@ -422,7 +464,8 @@ func _craft(recipe_id: String) -> void:
         return
     if state.loading:
         return
-    _close()
+    # Keep the workshop open for repeated crafting (especially arrows).
+    # Server snapshots update ingredient counts and button availability.
     craft_requested.emit(recipe_id)
 
 func _on_action(kind: String) -> void:
@@ -489,8 +532,8 @@ func _layout() -> void:
     var mobile := OS.has_feature("mobile") or OS.get_cmdline_user_args().has("--test-live-ui") or OS.get_cmdline_user_args().has("--test-mobile-ui")
     var top_margin := 49.0 if mobile else 16.0
     var bottom_margin := 30.0 if mobile else 16.0
-    var width := minf(560, size.x - 32)
-    var height := minf(460, size.y - top_margin - bottom_margin)
+    var width := minf(600, size.x - 32)
+    var height := minf(540, size.y - top_margin - bottom_margin)
     dialog.position = Vector2((size.x - width) * 0.5, maxf(top_margin, (size.y - height) * 0.5))
     dialog.size = Vector2(width, height)
     if notice != null:

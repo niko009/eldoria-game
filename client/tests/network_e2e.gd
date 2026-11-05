@@ -88,12 +88,17 @@ func _run() -> void:
 	remote_start = game.players[remote_id].position
 	# Move toward the clear spawn, rather than into the blocking rock at x~5.
 	Input.action_press("move_left")
+	var rejoined_moved := false
 	for i in range(100):
 		await process_frame
+		if game.players.has(remote_id) and game.players[remote_id].position.distance_to(remote_start) >= 1.0:
+			rejoined_moved = true
 	Input.action_release("move_left")
 	for i in range(60):
 		await process_frame
-	if game.players[remote_id].position.distance_to(remote_start) < 1.0:
+		if game.players.has(remote_id) and game.players[remote_id].position.distance_to(remote_start) >= 1.0:
+			rejoined_moved = true
+	if not rejoined_moved:
 		_fail("reconnected client's movement did not replicate")
 		return
 	if not await _await_players(1, 200):

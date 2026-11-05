@@ -65,6 +65,7 @@ func _ready() -> void:
     _create_landmark()
     # Append grass resources AFTER all legacy resources to retain PostgreSQL IDs.
     _append_grass_resources()
+    _append_mana_herbs()
     _flush_batches()
     _create_visual_accents()
     preload("res://alpine_scenery.gd").build(self)
@@ -350,6 +351,26 @@ func _append_grass_resources() -> void:
             continue
         _record_resource("herb", grass["pos"], 1, grass["group"], grass["index"])
 
+func _append_mana_herbs() -> void:
+    # Append only: old resource IDs in saved worlds remain stable.
+    for p in [Vector2(6,9),Vector2(-9,13),Vector2(14,-7),Vector2(-18,-12),Vector2(24,19),Vector2(-27,23),Vector2(35,-24),Vector2(-39,-16)]:
+        var where := Vector3(p.x,height_at(p.x,p.y),p.y)
+        _record_resource("mana_herb",where,1)
+        var blossom := MeshInstance3D.new()
+        blossom.name = "ManaHerb_%d" % resources.size()
+        var mesh := SphereMesh.new()
+        mesh.radius = 0.19
+        mesh.height = 0.32
+        blossom.mesh = mesh
+        blossom.position = where + Vector3.UP * 0.25
+        var material := _mat(Color("548fee"))
+        material.emission_enabled = true
+        material.emission = Color("337de5")
+        material.emission_energy_multiplier = 1.3
+        blossom.material_override = material
+        add_child(blossom)
+        resources[-1]["mana_visual"] = blossom
+
 func _record_resource(kind: String, where: Vector3, amount: int,
         group: String = "", index: int = -1, obstacle_id: int = -1) -> void:
     var new_id := resources.size()+1
@@ -369,6 +390,8 @@ func set_resource_quantity(resource_id: int, amount: int) -> void:
     if before == depleted:
         return
     _resource_exhausted[resource_id] = depleted
+    if entry["kind"] == "mana_herb" and entry.has("mana_visual"):
+        entry["mana_visual"].visible = not depleted
     if entry["kind"] in ["wood","herb"]:
         if int(entry["index"]) >= 0:
             _set_batch_instance(str(entry["group"]),int(entry["index"]),not depleted)

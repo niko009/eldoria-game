@@ -9,8 +9,8 @@ func _run() -> void:
 	game._host()
 	game.set_physics_process(false)
 	var id: int = game.own_id
-	if id <= 0 or game.passive_creatures.size() != 6 or game.passive_actors.size() != 6:
-		_fail("six animals and training dummies missing")
+	if id <= 0 or game.passive_creatures.size() != 16 or game.passive_actors.size() != 16:
+		_fail("wildlife and training dummies missing")
 		return
 	for creature_id in game.passive_creatures:
 		var spawn: Vector3 = game.passive_creatures[creature_id]["home"]
@@ -42,7 +42,7 @@ func _run() -> void:
 		_fail("dead animal took more damage")
 		return
 	game._tick_passive_creatures(0.05,int(rabbit["respawn_at"])+1)
-	if not rabbit["alive"] or int(rabbit["hp"]) != 24 or game.passive_creatures.size() != 6:
+	if not rabbit["alive"] or int(rabbit["hp"]) != 24 or game.passive_creatures.size() != 16:
 		_fail("passive mob did not respawn")
 		return
 	var world: Node3D = game.get_node("Eldoria_Forest")

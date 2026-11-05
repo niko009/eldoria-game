@@ -40,4 +40,6 @@ static func bonus_description(skill: String, xp: int) -> String:
             return "+%d к урону" % (tiers * DAMAGE_PER_TIER)
         "defense":
             return "Поглощение %d%%" % (40 + tiers * 5)
+        "magic":
+            return "+%d к урону заклинаний" % (tiers * 2)
     return ""

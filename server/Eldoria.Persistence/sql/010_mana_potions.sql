@@ -1,0 +1,2 @@
+-- Additive persistence for mana potions. Legacy characters begin with zero.
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS mana_potion integer NOT NULL DEFAULT 0 CHECK (mana_potion BETWEEN 0 AND 20);

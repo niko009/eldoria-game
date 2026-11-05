@@ -1,0 +1,2 @@
+-- Preserve existing profiles while introducing collectible blue mana herbs.
+ALTER TABLE eldoria_players ADD COLUMN IF NOT EXISTS mana_herb integer NOT NULL DEFAULT 0 CHECK (mana_herb BETWEEN 0 AND 1000000);

@@ -6,9 +6,10 @@ const Progression = preload("res://combat_progression.gd")
 const NAMES := {
     "archery": "СТРЕЛЬБА ИЗ ЛУКА",
     "spear": "ВЛАДЕНИЕ КОПЬЁМ",
-    "defense": "ЗАЩИТА ЩИТОМ"
+    "defense": "ЗАЩИТА ЩИТОМ",
+    "magic": "МАГИЯ"
 }
-var skills: Dictionary = {"archery": 0, "spear": 0, "defense": 0}
+var skills: Dictionary = {"archery": 0, "spear": 0, "defense": 0, "magic": 0}
 
 func _ready() -> void:
     add_theme_constant_override("separation", 13)
@@ -27,7 +28,7 @@ func refresh() -> void:
     var intro := Style.label("Постоянные навыки. Опыт начисляет только сервер.", 13, Style.MUTED)
     intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     add_child(intro)
-    for skill in ["archery","spear","defense"]:
+    for skill in ["archery","spear","defense","magic"]:
         var xp: int = int(skills[skill])
         var level := Progression.level_for_xp(xp)
         var next_level := Progression.xp_required_for_level(level+1)

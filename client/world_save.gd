@@ -4,7 +4,7 @@ extends RefCounted
 # resource counts. No plaintext player token, no client-side authority.
 const SCHEMA := 1
 const WORLD_SEED := 20261101
-const ITEM_KINDS := ["wood","stone","herb","axe","bandage","repair_kit","spear","bow","shield","arrow"]
+const ITEM_KINDS := ["wood","stone","herb","mana_herb","axe","bandage","repair_kit","spear","bow","shield","arrow","meat","hide","bone","leather_armor","grilled_meat","wooden_staff","mana_potion"]
 var save_path := ""
 var last_error := ""
 var profiles: Dictionary = {}
@@ -97,16 +97,17 @@ func load_snapshot(world: Node3D) -> bool:
         if not original is Dictionary:
             last_error = "Invalid inventory"
             return false
-        var sanitized := {"wood":0,"stone":0,"herb":0,"axe":0,"bandage":0,
-            "repair_kit":0,"spear":0,"bow":0,"shield":0,"arrow":0}
+        var sanitized := {"wood":0,"stone":0,"herb":0,"mana_herb":0,"axe":0,"bandage":0,
+            "repair_kit":0,"spear":0,"bow":0,"shield":0,"arrow":0,
+            "meat":0,"hide":0,"bone":0,"leather_armor":0,"grilled_meat":0,"wooden_staff":0,"mana_potion":0}
         for kind in ITEM_KINDS:
             var v := int(original.get(kind,0))
-            var limit := 1 if kind in ["axe","spear","bow","shield"] else 40 if kind == "arrow" else 20 if kind in ["bandage","repair_kit"] else 1000000
+            var limit := 1 if kind in ["axe","spear","bow","shield","leather_armor","wooden_staff"] else 40 if kind == "arrow" else 20 if kind in ["bandage","repair_kit","grilled_meat","mana_potion"] else 1000000
             if v < 0 or v > limit:
                 last_error = "Inventory out of range"
                 return false
             sanitized[kind] = v
-        var skills := {"archery":0,"spear":0,"defense":0}
+        var skills := {"archery":0,"spear":0,"defense":0,"magic":0}
         var source_skills: Variant = profile.get("skills",{})
         if source_skills != null and not source_skills is Dictionary:
             last_error = "Invalid skills"
@@ -119,8 +120,26 @@ func load_snapshot(world: Node3D) -> bool:
                     return false
                 skills[kind] = points
         var choice := int(profile.get("avatar",0))
-        profiles[hash_key] = {"inventory":sanitized,"avatar":clampi(choice,0,2),"skills":skills}
+        var raw_equipment: Variant = profile.get("equipment",{})
+        if not raw_equipment is Dictionary:
+            last_error = "Invalid equipment structure"
+            return false
+        var equipment: Dictionary = raw_equipment
+        if not _valid_equipment(equipment,sanitized,choice):
+            last_error = "Invalid equipment"
+            return false
+        profiles[hash_key] = {"inventory":sanitized,"avatar":clampi(choice,0,2),"skills":skills,"equipment":_normalize_equipment(equipment)}
     return true
+
+static func _normalize_equipment(value: Dictionary) -> Dictionary:
+    return {"main_hand":str(value.get("main_hand","unarmed")),"off_hand":str(value.get("off_hand","unarmed")),"chest":str(value.get("chest","unarmed"))}
+
+static func _valid_equipment(value: Dictionary,inventory: Dictionary,avatar: int) -> bool:
+    var slots := _normalize_equipment(value)
+    var main: String = slots["main_hand"]
+    var off: String = slots["off_hand"]
+    var chest: String = slots["chest"]
+    return main in ["unarmed","staff","wooden_staff","spear","bow"] and off in ["unarmed","shield"] and chest in ["unarmed","leather_armor"] and (main not in ["staff","wooden_staff"] or avatar == 2) and (main not in ["spear","bow","wooden_staff"] or int(inventory.get(main,0)) > 0) and (off != "shield" or int(inventory.get("shield",0)) > 0) and (chest != "leather_armor" or int(inventory.get("leather_armor",0)) > 0) and (main not in ["spear","bow"] or off != "shield")
 
 func save_snapshot(remaining: Dictionary, world: Node3D) -> bool:
     if save_path.is_empty():

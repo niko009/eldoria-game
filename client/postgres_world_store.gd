@@ -3,7 +3,7 @@ extends RefCounted
 # All HTTP is on the dedicated server; Android/Windows clients never reach SQL.
 const WORLD_SEED := 20261101
 const API_ROUTE := "/v1/world/20261101"
-const TIMEOUT_MS := 4500
+const TIMEOUT_MS := 8000
 const MAX_BODY := 4*1024*1024
 var port := 0
 var api_key := ""
@@ -96,7 +96,17 @@ func load_snapshot(world: Node3D) -> bool:
     profiles.clear()
     depleted.clear()
     buildings.clear()
-    var snapshot := _request(HTTPClient.METHOD_GET)
+    var snapshot := {}
+    for attempt in 3:
+        snapshot = _request(HTTPClient.METHOD_GET)
+        if not snapshot.is_empty():
+            break
+        # A temporarily overloaded local API must not cause a silent reset.
+        # Only transient network errors are retryable; malformed world data
+        # is still rejected below without attempting recovery.
+        if not _is_transient_error():
+            break
+        OS.delay_msec(200)
     if snapshot.is_empty():
         return false
     if int(snapshot.get("schema",-1)) != 1 or int(snapshot.get("world_seed",-1)) != WORLD_SEED:
@@ -129,16 +139,17 @@ func load_snapshot(world: Node3D) -> bool:
         if not profile is Dictionary or not profile.get("inventory") is Dictionary:
             last_error = "Malformed player data"
             return false
-        var inventory := {"wood":0,"stone":0,"herb":0,"axe":0,"bandage":0,
-            "repair_kit":0,"spear":0,"bow":0,"shield":0,"arrow":0}
+        var inventory := {"wood":0,"stone":0,"herb":0,"mana_herb":0,"axe":0,"bandage":0,
+            "repair_kit":0,"spear":0,"bow":0,"shield":0,"arrow":0,
+            "meat":0,"hide":0,"bone":0,"leather_armor":0,"grilled_meat":0,"wooden_staff":0,"mana_potion":0}
         for kind in inventory.keys():
             var amount := int(profile["inventory"].get(kind,0))
-            var limit := 1 if kind in ["axe","spear","bow","shield"] else 40 if kind == "arrow" else 20 if kind in ["bandage","repair_kit"] else 1000000
+            var limit := 1 if kind in ["axe","spear","bow","shield","leather_armor","wooden_staff"] else 40 if kind == "arrow" else 20 if kind in ["bandage","repair_kit","grilled_meat","mana_potion"] else 1000000
             if amount < 0 or amount > limit:
                 last_error = "Invalid player inventory"
                 return false
             inventory[kind] = amount
-        var skills := {"archery":0,"spear":0,"defense":0}
+        var skills := {"archery":0,"spear":0,"defense":0,"magic":0}
         var raw_skills: Variant = profile.get("skills",{})
         if raw_skills != null and not raw_skills is Dictionary:
             last_error = "Invalid player skills"
@@ -154,7 +165,15 @@ func load_snapshot(world: Node3D) -> bool:
         if avatar < 0 or avatar > 2:
             last_error = "Invalid player avatar"
             return false
-        profiles[hash_key] = {"avatar":avatar,"inventory":inventory,"skills":skills}
+        var raw_equipment: Variant = profile.get("equipment",{})
+        if not raw_equipment is Dictionary:
+            last_error = "Invalid player equipment structure"
+            return false
+        var equipment: Dictionary = raw_equipment
+        if not preload("res://world_save.gd")._valid_equipment(equipment,inventory,avatar):
+            last_error = "Invalid player equipment"
+            return false
+        profiles[hash_key] = {"avatar":avatar,"inventory":inventory,"skills":skills,"equipment":preload("res://world_save.gd")._normalize_equipment(equipment)}
     var build_data: Variant = snapshot.get("buildings",{})
     if not build_data is Dictionary or build_data.size() > 300:
         last_error = "Invalid building snapshot"
@@ -193,10 +212,73 @@ func save_snapshot(remaining: Dictionary, world: Node3D) -> bool:
         "profiles":profiles,"depleted":depleted_only,"buildings":buildings}
     var response := _request(HTTPClient.METHOD_PUT,JSON.stringify(snapshot))
     if response.is_empty() or not response.has("revision"):
+        # A timed-out PUT may have already committed. The next PUT then gets
+        # revision 409 forever unless the client reconciles the lost ACK.
+        # NEVER trust 409 alone: require exactly one next revision and the
+        # database contents to match the exact state we intended to write.
+        if not _is_transient_error() and last_error != "Persistence API status 409":
+            return false
+        var original_error := last_error
+        for attempt in 3:
+            var live := _request(HTTPClient.METHOD_GET)
+            if not live.is_empty():
+                if int(live.get("revision",-1)) == revision+1 and _snapshot_matches(live,snapshot):
+                    revision += 1
+                    last_error = ""
+                    return true
+                last_error = "Persistence revision conflict; refusing unsafe overwrite"
+                return false
+            OS.delay_msec(150)
+        last_error = "Cannot verify ambiguous save after: " + original_error
         return false
     var next_revision := int(response["revision"])
     if next_revision != revision + 1:
         last_error = "Non-monotonic PostgreSQL revision"
         return false
     revision = next_revision
+    return true
+
+func _is_transient_error() -> bool:
+    return last_error.contains("timeout") or last_error.contains("timed out") or last_error == "Persistence API not reachable" or last_error in ["Persistence API status 429","Persistence API status 502","Persistence API status 503","Persistence API status 504"]
+
+func _snapshot_matches(live: Dictionary, expected: Dictionary) -> bool:
+    if int(live.get("world_seed",-1)) != WORLD_SEED or int(live.get("schema",-1)) != 1:
+        return false
+    var remote_resources: Variant = live.get("depleted",{})
+    var local_resources: Variant = expected.get("depleted",{})
+    if not remote_resources is Dictionary or remote_resources.size() != local_resources.size():
+        return false
+    for key in local_resources:
+        if not remote_resources.has(str(key)) or int(remote_resources[str(key)]) != int(local_resources[key]):
+            return false
+    var remote_profiles: Variant = live.get("profiles",{})
+    var local_profiles: Variant = expected.get("profiles",{})
+    if not remote_profiles is Dictionary or remote_profiles.size() != local_profiles.size():
+        return false
+    for identity in local_profiles:
+        if not remote_profiles.has(identity):
+            return false
+        var remote: Dictionary = remote_profiles[identity]
+        var wanted: Dictionary = local_profiles[identity]
+        if int(remote.get("avatar",-1)) != int(wanted.get("avatar",-1)):
+            return false
+        for item in ["wood","stone","herb","mana_herb","axe","bandage","repair_kit","spear","bow","shield","arrow","meat","hide","bone","leather_armor","grilled_meat","wooden_staff","mana_potion"]:
+            if int(remote.get("inventory",{}).get(item,-1)) != int(wanted.get("inventory",{}).get(item,0)):
+                return false
+        for skill in ["archery","spear","defense","magic"]:
+            if int(remote.get("skills",{}).get(skill,-1)) != int(wanted.get("skills",{}).get(skill,0)):
+                return false
+        if preload("res://world_save.gd")._normalize_equipment(remote.get("equipment",{})) != preload("res://world_save.gd")._normalize_equipment(wanted.get("equipment",{})):
+            return false
+    var remote_buildings: Variant = live.get("buildings",{})
+    var local_buildings: Variant = expected.get("buildings",{})
+    if not remote_buildings is Dictionary or remote_buildings.size() != local_buildings.size():
+        return false
+    for key in local_buildings:
+        if not remote_buildings.has(str(key)):
+            return false
+        var actual: Dictionary = remote_buildings[str(key)]
+        var wanted: Dictionary = local_buildings[key]
+        if str(actual.get("kind","")) != str(wanted.get("kind","")) or absf(float(actual.get("x",INF))-float(wanted.get("x",INF))) > 0.0001 or absf(float(actual.get("z",INF))-float(wanted.get("z",INF))) > 0.0001:
+            return false
     return true

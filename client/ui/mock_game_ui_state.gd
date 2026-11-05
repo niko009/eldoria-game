@@ -11,6 +11,7 @@ const ITEMS := {
 	"wood": {"name": "Древесина", "symbol": "▥"},
 	"stone": {"name": "Камень", "symbol": "◆"},
 	"herb": {"name": "Трава", "symbol": "✿"},
+	"mana_herb": {"name":"Синецвет","symbol":"✧"},
 	"axe": {"name": "Каменный топор", "symbol": "⚒"},
 	"bandage": {"name": "Повязка", "symbol": "+"},
 	"repair_kit": {"name": "Ремкомплект", "symbol": "▣"},
@@ -18,6 +19,13 @@ const ITEMS := {
 	"bow": {"name":"Лук","symbol":")"},
 	"shield": {"name":"Щит","symbol":"◈"},
 	"arrow": {"name":"Стрела","symbol":"→"},
+	"meat": {"name":"Мясо","symbol":"◒"},
+	"hide": {"name":"Шкура","symbol":"▧"},
+	"bone": {"name":"Кость","symbol":"⌁"},
+	"leather_armor": {"name":"Кожаная броня","symbol":"▣"},
+	"grilled_meat": {"name":"Жареное мясо","symbol":"◉"},
+	"wooden_staff": {"name":"Деревянный посох","symbol":"✧"},
+	"mana_potion": {"name":"Малое зелье маны","symbol":"✦"},
 }
 # Hotbar is equipment-only. Unimplemented tools are shown as locked previews.
 # No inventory quantity badges belong in the hotbar.
@@ -43,6 +51,10 @@ const RECIPES := {
 	"bow": {"name":"Лук","description":"Прицельный выстрел до 12 м · расходует стрелы","cost":{"wood":4,"herb":2}},
 	"shield": {"name":"Щит","description":"Снижает урон волков на 40%","cost":{"wood":4,"stone":1}},
 	"arrow": {"name":"Стрела","description":"Боеприпас для лука (1 штука)","cost":{"wood":1,"stone":1}},
+	"leather_armor": {"name":"Кожаная броня","description":"Пассивно уменьшает входящий урон на 15%","cost":{"hide":3,"bone":1}},
+	"grilled_meat": {"name":"Жареное мясо","description":"Восстанавливает 25 HP и даёт регенерацию здоровья на 30 секунд","cost":{"meat":1,"herb":1}},
+	"wooden_staff": {"name":"Деревянный посох","description":"Магия: +3 урона заклинаниям","cost":{"wood":4,"stone":2,"herb":3}},
+	"mana_potion": {"name":"Малое зелье маны","description":"В бою восстанавливает 35 MP; кулдаун 12 секунд","cost":{"mana_herb":2,"herb":1}},
 }
 
 var inventory: Dictionary = {"wood": 7, "stone": 3, "herb": 1, "axe": 0}
@@ -68,7 +80,7 @@ func can_afford(cost: Dictionary) -> bool:
 # "Ready" means all ingredients have been collected and the item stack is not
 # full. The actual craft button still requires a nearby campfire.
 func recipe_limit(recipe_id: String) -> int:
-	if ["axe", "spear", "bow", "shield"].has(recipe_id):
+	if ["axe", "spear", "bow", "shield", "leather_armor", "wooden_staff"].has(recipe_id):
 		return 1
 	if recipe_id == "arrow":
 		return 40
