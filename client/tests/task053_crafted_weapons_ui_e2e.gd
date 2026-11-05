@@ -32,24 +32,22 @@ func _run() -> void:
 			return
 	# Repeated ammunition crafting must keep the workshop open and the
 	# arrow card at the same index after each inventory snapshot.
-	var arrow_card: Node = ui.current_panel.get_node("RecipeCard_arrow")
+	var arrow_card: Node = ui.current_panel.tile_grid.get_node("RecipeCard_arrow")
 	var arrow_index := arrow_card.get_index()
 	for expected in [2,3,4]:
 		ui._craft("arrow")
 		if ui.active_panel != "craft" or ui.state.amount("arrow") != expected:
 			_fail("repeat crafting arrows closed workshop or failed: "+str(expected))
 			return
-		if ui.current_panel.get_node("RecipeCard_arrow").get_index() != arrow_index:
+		if ui.current_panel.tile_grid.get_node("RecipeCard_arrow").get_index() != arrow_index:
 			_fail("arrow card jumps after crafting")
 			return
 	# The user's original failure path: the workshop's 'Equip' button sent
 	# an action that main.gd previously ignored entirely.
 	if ui.active_panel != "craft":
 		ui._open("craft")
-	var equip_bow: Button = null
-	for btn in ui.current_panel.find_children("*","Button",true,false):
-		if btn.text.begins_with("Экипировать") and btn.get_parent().name == "Recipe_bow":
-			equip_bow = btn
+	ui.current_panel._choose("bow")
+	var equip_bow: Button = ui.current_panel.detail.get_node_or_null("EquipCrafted")
 	if equip_bow == null or equip_bow.disabled:
 		_fail("workshop bow equip action not clickable")
 		return
@@ -63,7 +61,8 @@ func _run() -> void:
 			_fail("crafted weapon hotbar still disabled: "+weapon)
 			return
 		ui.hud.hotbar.slot_buttons[weapon].pressed.emit()
-		if str(game.equipped_combat.get(id,"")) != weapon or ui.combat_equipment != weapon or ui.state.selected_item != weapon:
+		var equipped_ok: bool = str(game.equipped_offhand.get(id,"")) == "shield" and ui.shield_equipped if weapon == "shield" else str(game.equipped_combat.get(id,"")) == weapon and ui.combat_equipment == weapon and ui.state.selected_item == weapon
+		if not equipped_ok:
 			_fail("server, live UI or hotbar equipment selection mismatch: "+weapon)
 			return
 	# Inventory alternative also equips weapon, no crafting menu necessary.

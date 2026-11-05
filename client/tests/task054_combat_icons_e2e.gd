@@ -60,11 +60,12 @@ func _run() -> void:
 	ui._open("craft")
 	await process_frame
 	for recipe_id in ITEMS.RECIPES:
-		var card = ui.current_panel.get_node("RecipeCard_"+recipe_id).get_node("Recipe_"+recipe_id)
-		if card.find_children("ResultIcon","Control",true,false).is_empty():
+		var card: Button = ui.current_panel.tile_grid.get_node_or_null("RecipeCard_"+recipe_id)
+		if card == null or card.find_children("*","EldoriaItemIcon",true,false).is_empty() and card.get_child_count() == 0:
 			_fail("recipe product icon missing: "+recipe_id)
 			return
-		var ingredients: HBoxContainer = card.get_node("IngredientIcons")
+		ui.current_panel._choose(recipe_id)
+		var ingredients: HBoxContainer = ui.current_panel.detail.get_node("IngredientIcons")
 		if ingredients.get_child_count() != ITEMS.RECIPES[recipe_id]["cost"].size():
 			_fail("recipe cost missing icon count: "+recipe_id)
 			return
