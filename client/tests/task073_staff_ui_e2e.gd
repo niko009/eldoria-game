@@ -17,6 +17,10 @@ func _run() -> void:
     root.add_child(workshop)
     await process_frame
     workshop._choose("wooden_staff")
+    var recipe_tile: Button = workshop.tile_grid.get_node("RecipeCard_wooden_staff")
+    if recipe_tile.custom_minimum_size.x > 64 or recipe_tile.custom_minimum_size.y > 60:
+        _fail("recipe card is too large for compact workshop")
+        return
     if workshop.selected_recipe != "wooden_staff" or workshop.detail.get_node("CraftSelected").disabled:
         _fail("staff is not craftable from UI")
         return

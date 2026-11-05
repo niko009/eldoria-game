@@ -36,7 +36,7 @@ func refresh() -> void:
 		child.queue_free()
 	if state == null:
 		return
-	var heading := Style.label("РЕЦЕПТЫ  ·  Зелёный = можно создать · Красный = не хватает ресурсов", 12, Style.GOLD)
+	var heading := Style.label("РЕЦЕПТЫ   ● доступно   ○ пока нельзя", 12, Style.GOLD)
 	add_child(heading)
 	var categories := HBoxContainer.new()
 	categories.name = "RecipeCategories"
@@ -62,9 +62,10 @@ func refresh() -> void:
 		var ready := craft_enabled and state.recipe_materials_ready(recipe_id)
 		var tile := Button.new()
 		tile.name = "RecipeCard_%s" % recipe_id
-		tile.custom_minimum_size = Vector2(70, 64)
+		tile.custom_minimum_size = Vector2(62, 58)
 		tile.tooltip_text = str(recipe["name"]) + " · " + ("ГОТОВО" if ready and state.near_campfire else "ЛИМИТ" if state.amount(recipe_id) >= state.recipe_limit(recipe_id) else "НЕ ХВАТАЕТ РЕСУРСОВ" if not state.recipe_materials_ready(recipe_id) else "НУЖЕН КОСТЁР")
 		Style.button(tile, selected_recipe == recipe_id)
+		tile.add_theme_stylebox_override("normal", Style.panel(Color("243a31",0.90) if ready and state.near_campfire else Color("222b30",0.86), Color("81bf87",0.85) if ready and state.near_campfire else Color("59605e",0.43), 10))
 		tile.pressed.connect(_choose.bind(recipe_id))
 		tile_grid.add_child(tile)
 		var content := VBoxContainer.new()
@@ -72,11 +73,11 @@ func refresh() -> void:
 		content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		tile.add_child(content)
 		var icon: Control = ItemIcon.new()
-		icon.custom_minimum_size = Vector2(37, 37)
+		icon.custom_minimum_size = Vector2(32, 32)
 		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		icon.setup(recipe_id, state.amount(recipe_id) < state.recipe_limit(recipe_id), ready)
 		content.add_child(icon)
-		var mark := Style.label("●" if ready and state.near_campfire else "○", 11, Color("a9f5b0") if ready and state.near_campfire else Color("e89883"))
+		var mark := Style.label("●" if ready and state.near_campfire else "○", 10, Color("a9f5b0") if ready and state.near_campfire else Color("b1a6a0"))
 		mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		content.add_child(mark)
 	if not _category_matches(selected_recipe):
@@ -95,7 +96,7 @@ func refresh() -> void:
 	var recipe: Dictionary = State.RECIPES[selected_recipe]
 	var owned_full := state.amount(selected_recipe) >= state.recipe_limit(selected_recipe)
 	var ready := craft_enabled and state.recipe_materials_ready(selected_recipe)
-	var title := Style.label(str(recipe["name"]) + "  ×%d" % state.amount(selected_recipe), 16, Style.GOLD)
+	var title := Style.label(str(recipe["name"]) + "  ×%d" % state.amount(selected_recipe), 15, Style.GOLD)
 	detail.add_child(title)
 	detail.add_child(Style.label(str(recipe["description"]), 12, Style.MUTED))
 	var costs := HBoxContainer.new()
@@ -135,6 +136,8 @@ func refresh() -> void:
 	if state.amount(selected_recipe) > 0 and selected_recipe in ["axe", "spear", "bow", "shield", "wooden_staff", "leather_armor"]:
 		var hint := Style.label("Создано · Наденьте в Рюкзаке → Оружие / Экипировка", 12, Style.GOLD)
 		hint.name = "PostCraftHelp"
+		# The action below is the instruction; avoid duplicating a full line of text.
+		hint.visible = false
 		detail.add_child(hint)
 		var equip := Button.new()
 		equip.name = "EquipCrafted"
@@ -146,6 +149,7 @@ func refresh() -> void:
 	elif state.amount(selected_recipe) > 0 and selected_recipe in ["bandage", "mana_potion", "grilled_meat"]:
 		var hint := Style.label("Создано · Используйте кнопку предмета на игровом экране", 12, Style.GOLD)
 		hint.name = "PostCraftHelp"
+		hint.visible = false
 		detail.add_child(hint)
 		var use := Button.new()
 		use.name = "UseCrafted"
