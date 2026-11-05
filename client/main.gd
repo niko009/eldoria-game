@@ -35,6 +35,7 @@ const CLIENT_VERSION := "0.5.10-dev"
 
 const DEVELOPMENT_BUILD := true
 const SERVER_CONFIG_URL := "https://bacus.dev/projects/eldoria/server.json"
+const RECONNECT_DELAYS := [2.0, 4.0, 8.0, 12.0, 20.0]
 
 var peer: MultiplayerPeer = ENetMultiplayerPeer.new()
 var players := {}
@@ -388,6 +389,10 @@ var selected_resource_id := -1
 var info: Label
 var ip_input: LineEdit
 var config_request: HTTPRequest
+var reconnect_timer: Timer
+var reconnect_button: Button
+var reconnect_enabled := false
+var reconnect_attempts := 0
 var discovered_host := ""
 var discovered_port := PORT
 var connect_mode := "lan"
@@ -508,6 +513,10 @@ func _ui() -> void:
     config_request.timeout = 8.0
     add_child(config_request)
     config_request.request_completed.connect(_on_config_received)
+    reconnect_timer = Timer.new()
+    reconnect_timer.one_shot = true
+    reconnect_timer.timeout.connect(_retry_discovery)
+    add_child(reconnect_timer)
     player_ui = CanvasLayer.new()
     add_child(player_ui)
     var panel := VBoxContainer.new()
@@ -787,6 +796,14 @@ func _ui() -> void:
         live_ui.preview_requested.connect(_live_preview)
         live_ui.set_avatar(selected_avatar)
         live_ui.set_inventory(_empty_inventory())
+        reconnect_button = Button.new()
+        reconnect_button.name = "ReconnectNow"
+        reconnect_button.text = "ПОДКЛЮЧИТЬСЯ СНОВА"
+        reconnect_button.position = Vector2(72, 300)
+        reconnect_button.custom_minimum_size = Vector2(270, 52)
+        reconnect_button.visible = false
+        reconnect_button.pressed.connect(_fetch_server_config)
+        player_ui.add_child(reconnect_button)
 
 func _init_updater() -> void:
     updater = UPDATE_SCRIPT.new()
@@ -1016,7 +1033,7 @@ func _join_websocket(url: String) -> void:
     ws_peer.handshake_timeout = 8.0
     peer = ws_peer
     if ws_peer.create_client(url) != OK:
-        _status("Unable to start secure connection. Retry.")
+        _schedule_reconnect("Не удалось открыть соединение")
         return
     multiplayer.multiplayer_peer = peer
     _status("Connecting to Eldoria online world...")
@@ -1032,9 +1049,16 @@ func _join_server(host: String, udp_port: int) -> void:
     multiplayer.multiplayer_peer = peer
     _status("Connecting to Eldoria server %s:%d (%s)..." % [host, udp_port, connect_mode])
 
-func _fetch_server_config() -> void:
+func _fetch_server_config(manual: bool = true) -> void:
     if is_dedicated or config_request == null:
         return
+    if manual:
+        reconnect_enabled = not DEVELOPMENT_BUILD or not OS.get_environment("ELDORIA_CONFIG_URL").is_empty()
+        reconnect_attempts = 0
+        if reconnect_timer != null:
+            reconnect_timer.stop()
+    if reconnect_button != null:
+        reconnect_button.visible = false
     config_ready = false
     var endpoint := SERVER_CONFIG_URL
     var test_endpoint := OS.get_environment("ELDORIA_CONFIG_URL")
@@ -1047,11 +1071,11 @@ func _fetch_server_config() -> void:
     _status("Finding Eldoria server...")
     var result := config_request.request(endpoint, ["Cache-Control: no-cache"])
     if result != OK:
-        _status("Cannot fetch Eldoria server configuration (error %d). Retry." % result)
+        _schedule_reconnect("Ошибка поиска сервера (%d)" % result)
 
 func _on_config_received(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
     if result != HTTPRequest.RESULT_SUCCESS or response_code != 200 or body.size() > 4096:
-        _status("Server lookup failed (HTTP %d). Check Internet and retry." % response_code)
+        _schedule_reconnect("Сервер недоступен (HTTP %d)" % response_code)
         return
     var json := JSON.new()
     if json.parse(body.get_string_from_utf8()) != OK or not json.data is Dictionary:
@@ -1107,6 +1131,8 @@ func _is_valid_host_name(value: String) -> bool:
     return not value.begins_with(".") and not value.ends_with(".")
 
 func _connected() -> void:
+    if reconnect_button != null:
+        reconnect_button.visible = false
     own_id = multiplayer.get_unique_id()
     var identity := OS.get_environment("ELDORIA_TEST_IDENTITY")
     if identity.is_empty() and OS.get_cmdline_user_args().is_empty():
@@ -1119,6 +1145,7 @@ func _connected() -> void:
 func _on_join(id: int) -> void:
     if multiplayer.is_server():
         if connected_peers.size() >= MAX_PLAYERS:
+            print("ELDORIA PEER REJECTED server_full id=%d" % id)
             multiplayer.multiplayer_peer.disconnect_peer(id)
             return
         connected_peers[id] = true
@@ -1126,6 +1153,8 @@ func _on_join(id: int) -> void:
         _status("Player %s connected" % id)
 
 func _on_leave(id: int) -> void:
+    if multiplayer.is_server():
+        print("ELDORIA PEER DISCONNECTED %d" % id)
     var ally_departed := not multiplayer.is_server() and own_id != 0 and id != own_id and players.has(id)
     connected_peers.erase(id)
     last_telemetry_by_peer.erase(id)
@@ -1260,16 +1289,41 @@ func _clear_session() -> void:
 func _disconnect() -> void:
     if is_dedicated:
         return
+    reconnect_enabled = false
+    reconnect_attempts = 0
+    if reconnect_button != null:
+        reconnect_button.visible = false
+    if reconnect_timer != null:
+        reconnect_timer.stop()
     _clear_session()
     _status("Disconnected. Host or join to play.")
 
 func _connection_failed() -> void:
     _clear_session()
-    _status("Cannot reach Eldoria game server. On LAN, use the same Wi-Fi. Retry.")
+    _schedule_reconnect("Сервер недоступен")
 
 func _server_disconnected() -> void:
     _clear_session()
-    _status("Server disconnected")
+    _schedule_reconnect("Связь с сервером потеряна")
+
+func _schedule_reconnect(reason: String) -> void:
+    if reconnect_button != null:
+        reconnect_button.visible = true
+    if reconnect_timer == null or not reconnect_enabled or is_dedicated:
+        _status(reason)
+        return
+    if reconnect_attempts >= RECONNECT_DELAYS.size():
+        reconnect_enabled = false
+        _status(reason + ". Нажмите «ПОДКЛЮЧИТЬСЯ СНОВА»")
+        return
+    var delay: float = RECONNECT_DELAYS[reconnect_attempts]
+    reconnect_attempts += 1
+    reconnect_timer.start(delay)
+    _status("%s · повтор %d/%d через %d с" % [reason, reconnect_attempts, RECONNECT_DELAYS.size(), int(delay)])
+
+func _retry_discovery() -> void:
+    if reconnect_enabled and own_id == 0:
+        _fetch_server_config(false)
 
 func _status(message: String) -> void:
     if info != null:
@@ -1290,6 +1344,7 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
         identity_hash = identity_token.sha256_text()
         if identity_hash in player_identity_keys.values():
             # A single credential must not control two connected characters.
+            print("ELDORIA PEER REJECTED duplicate_identity id=%d" % id)
             multiplayer.multiplayer_peer.disconnect_peer(id)
             return
         player_identity_keys[id] = identity_hash
@@ -1301,6 +1356,7 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
     if not identity_hash.is_empty() and not persistent_profiles.has(identity_hash):
         persistent_profiles[identity_hash] = {"avatar":validated,"inventory":_empty_inventory(),"skills":_empty_skills(),"equipment":{"main_hand":"staff" if validated == HERO_CLASSES.MAGE else "unarmed","off_hand":"unarmed","chest":"unarmed"}}
         if not _save_world_state():
+            print("ELDORIA PEER REJECTED persistence_unavailable id=%d" % id)
             persistent_profiles.erase(identity_hash)
             player_identity_keys.erase(id)
             multiplayer.multiplayer_peer.disconnect_peer(id)
@@ -1368,6 +1424,10 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
 func spawn_remote(id: int, pos: Vector3, choice: int = 0) -> void:
     var new_ally := own_id != 0 and id != own_id and not players.has(id)
     _spawn(id, pos, choice)
+    if id == own_id:
+        reconnect_attempts = 0
+        if reconnect_timer != null:
+            reconnect_timer.stop()
     _update_online_players()
     if new_ally and live_ui != null:
         live_ui.show_message("Союзник присоединился к миру")
