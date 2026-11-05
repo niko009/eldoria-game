@@ -112,6 +112,8 @@ func can_select_tool(tool_id: String) -> bool:
 		return false
 	if not bool(TOOLS[tool_id]["implemented"]):
 		return false
+	if tool_id == "wooden_staff" and selected_avatar != "mage":
+		return false
 	return not ["axe", "spear", "bow", "shield", "wooden_staff"].has(tool_id) or amount(tool_id) > 0
 
 func select_item(item_id: String) -> void:

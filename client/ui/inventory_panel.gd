@@ -74,7 +74,7 @@ func refresh() -> void:
 		slot.name = "ItemSlot_%s" % item_id
 		slot.text = "" # The grid shows pictures and quantities, not item names.
 		slot.tooltip_text = "%s · %d шт.\n%s" % [data["name"],count,_item_help(item_id)]
-		var can_equip: bool = item_id in ["axe","spear","bow","shield","wooden_staff"] and count > 0
+		var can_equip: bool = item_id in ["axe","spear","bow","shield","wooden_staff"] and count > 0 and state.can_select_tool(item_id)
 		Style.button(slot, state.selected_item == item_id and can_equip)
 		slot.custom_minimum_size = Vector2(112, 85)
 		slot.focus_mode = Control.FOCUS_NONE
