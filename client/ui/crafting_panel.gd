@@ -3,6 +3,7 @@ class_name EldoriaCraftingPanel
 
 signal craft_requested(recipe_id: String)
 signal use_requested(recipe_id: String)
+signal equip_requested(recipe_id: String)
 
 const Style = preload("res://ui/ui_style.gd")
 const State = preload("res://ui/mock_game_ui_state.gd")
@@ -35,7 +36,7 @@ func refresh() -> void:
 		child.queue_free()
 	if state == null:
 		return
-	var heading := Style.label("ВЫБЕРИТЕ ПРЕДМЕТ", 12, Style.GOLD)
+	var heading := Style.label("РЕЦЕПТЫ  ·  Зелёный = можно создать · Красный = не хватает ресурсов", 12, Style.GOLD)
 	add_child(heading)
 	var categories := HBoxContainer.new()
 	categories.name = "RecipeCategories"
@@ -62,7 +63,7 @@ func refresh() -> void:
 		var tile := Button.new()
 		tile.name = "RecipeCard_%s" % recipe_id
 		tile.custom_minimum_size = Vector2(70, 64)
-		tile.tooltip_text = str(recipe["name"])
+		tile.tooltip_text = str(recipe["name"]) + " · " + ("ГОТОВО" if ready and state.near_campfire else "ЛИМИТ" if state.amount(recipe_id) >= state.recipe_limit(recipe_id) else "НЕ ХВАТАЕТ РЕСУРСОВ" if not state.recipe_materials_ready(recipe_id) else "НУЖЕН КОСТЁР")
 		Style.button(tile, selected_recipe == recipe_id)
 		tile.pressed.connect(_choose.bind(recipe_id))
 		tile_grid.add_child(tile)
@@ -75,7 +76,7 @@ func refresh() -> void:
 		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		icon.setup(recipe_id, state.amount(recipe_id) < state.recipe_limit(recipe_id), ready)
 		content.add_child(icon)
-		var mark := Style.label("●" if ready else "○", 11, Color("a9f5b0") if ready else Color("e89883"))
+		var mark := Style.label("●" if ready and state.near_campfire else "○", 11, Color("a9f5b0") if ready and state.near_campfire else Color("e89883"))
 		mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		content.add_child(mark)
 	if not _category_matches(selected_recipe):
@@ -112,6 +113,16 @@ func refresh() -> void:
 		icon.custom_minimum_size = Vector2(28, 28)
 		ingredient.add_child(icon)
 		ingredient.add_child(Style.label("%d/%d" % [owned,required], 12, Color("a9f5b0") if owned >= required else Color("e89883")))
+	var shortages: Array[String] = []
+	for material in recipe["cost"]:
+		var missing: int = maxi(0, int(recipe["cost"][material]) - state.amount(material))
+		if missing > 0:
+			shortages.append("%s ×%d" % [str(State.ITEMS[material]["name"]), missing])
+	if not shortages.is_empty():
+		var missing_label := Style.label("Собрать: " + ", ".join(shortages), 12, Color("e89883"))
+		missing_label.name = "MissingIngredients"
+		missing_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		detail.add_child(missing_label)
 	if not state.near_campfire:
 		detail.add_child(Style.label("Для изготовления нужен костёр рядом", 12, Color("e89883")))
 	var action := Button.new()
@@ -121,6 +132,28 @@ func refresh() -> void:
 	action.disabled = not ready or not state.near_campfire or state.loading
 	action.pressed.connect(func() -> void: craft_requested.emit(selected_recipe))
 	detail.add_child(action)
+	if state.amount(selected_recipe) > 0 and selected_recipe in ["axe", "spear", "bow", "shield", "wooden_staff", "leather_armor"]:
+		var hint := Style.label("Создано · Наденьте в Рюкзаке → Оружие / Экипировка", 12, Style.GOLD)
+		hint.name = "PostCraftHelp"
+		detail.add_child(hint)
+		var equip := Button.new()
+		equip.name = "EquipCrafted"
+		equip.text = "Надеть: %s" % str(recipe["name"])
+		equip.disabled = state.loading or (selected_recipe == "wooden_staff" and state.selected_avatar != "mage")
+		Style.button(equip)
+		equip.pressed.connect(func() -> void: equip_requested.emit(selected_recipe))
+		detail.add_child(equip)
+	elif state.amount(selected_recipe) > 0 and selected_recipe in ["bandage", "mana_potion", "grilled_meat"]:
+		var hint := Style.label("Создано · Используйте кнопку предмета на игровом экране", 12, Style.GOLD)
+		hint.name = "PostCraftHelp"
+		detail.add_child(hint)
+		var use := Button.new()
+		use.name = "UseCrafted"
+		use.text = "Использовать: %s" % str(recipe["name"])
+		use.disabled = state.loading or (selected_recipe == "mana_potion" and state.selected_avatar != "mage")
+		Style.button(use)
+		use.pressed.connect(func() -> void: use_requested.emit(selected_recipe))
+		detail.add_child(use)
 
 func _category_matches(recipe_id: String) -> bool:
 	match selected_category:

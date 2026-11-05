@@ -422,6 +422,7 @@ func _open(kind: String) -> void:
         elif current_panel is EldoriaCraftingPanel:
             current_panel.craft_enabled = true
             current_panel.craft_requested.connect(_craft)
+            current_panel.equip_requested.connect(_equip_crafted)
             current_panel.use_requested.connect(func(recipe_id: String) -> void:
                 _close()
                 action_requested.emit(recipe_id))
@@ -467,6 +468,19 @@ func _craft(recipe_id: String) -> void:
     # Keep the workshop open for repeated crafting (especially arrows).
     # Server snapshots update ingredient counts and button availability.
     craft_requested.emit(recipe_id)
+
+func _equip_crafted(recipe_id: String) -> void:
+    if state.amount(recipe_id) <= 0 or state.loading:
+        return
+    if recipe_id == "leather_armor":
+        armor_requested.emit(true)
+    elif recipe_id == "shield":
+        shield_requested.emit(true)
+    elif state.can_select_tool(recipe_id):
+        state.select_item(recipe_id)
+    else:
+        return
+    _close()
 
 func _on_action(kind: String) -> void:
     if kind == "inventory":

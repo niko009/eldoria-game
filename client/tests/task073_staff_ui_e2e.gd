@@ -20,10 +20,20 @@ func _run() -> void:
     if workshop.selected_recipe != "wooden_staff" or workshop.detail.get_node("CraftSelected").disabled:
         _fail("staff is not craftable from UI")
         return
+    state.inventory["stone"] = 0
+    state.changed.emit()
+    var shortages: Label = workshop.detail.get_node_or_null("MissingIngredients")
+    if shortages == null or not shortages.text.contains("Камень") or not shortages.text.contains("×2"):
+        _fail("missing ingredients are not explained")
+        return
+    state.inventory["stone"] = 2
     state.inventory["wooden_staff"] = 1
     state.changed.emit()
     if not workshop.detail.get_node("CraftSelected").disabled:
         _fail("staff cap not reflected after inventory snapshot")
+        return
+    if workshop.detail.get_node_or_null("PostCraftHelp") == null:
+        _fail("crafted staff has no next-step guidance")
         return
     if not SAVE._valid_equipment({"main_hand":"wooden_staff"},state.inventory,2):
         _fail("mage cannot equip owned staff")

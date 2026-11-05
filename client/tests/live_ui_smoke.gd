@@ -15,6 +15,34 @@ func _run() -> void:
         quit(1)
         return
     var ui = game.live_ui
+    ui.set_avatar(2)
+    ui.set_inventory({"wooden_staff":1,"mana_potion":1})
+    ui._open("craft")
+    ui.current_panel._choose("wooden_staff")
+    var staff_equip: Button = ui.current_panel.detail.get_node("EquipCrafted")
+    if staff_equip.disabled:
+        push_error("Crafted mage staff equip button disabled")
+        quit(41)
+        return
+    staff_equip.pressed.emit()
+    if ui.active_panel != "" or ui.state.selected_item != "wooden_staff":
+        push_error("Crafted mage staff equip did not select weapon and close workshop")
+        quit(42)
+        return
+    ui._open("craft")
+    ui.current_panel._choose("mana_potion")
+    var use_potion: Button = ui.current_panel.detail.get_node("UseCrafted")
+    if use_potion.disabled:
+        push_error("Crafted mage potion use action disabled")
+        quit(43)
+        return
+    var actions: Array[String] = []
+    ui.action_requested.connect(func(action: String) -> void: actions.append(action))
+    use_potion.pressed.emit()
+    if ui.active_panel != "" or actions.is_empty() or actions.back() != "mana_potion":
+        push_error("Crafted potion did not request server consumable action")
+        quit(44)
+        return
     ui.set_inventory({"wooden_staff":1})
     ui.set_avatar(2)
     ui.state.select_item("wooden_staff")
