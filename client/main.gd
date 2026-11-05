@@ -1126,6 +1126,7 @@ func _on_join(id: int) -> void:
         _status("Player %s connected" % id)
 
 func _on_leave(id: int) -> void:
+    var ally_departed := not multiplayer.is_server() and own_id != 0 and id != own_id and players.has(id)
     connected_peers.erase(id)
     last_telemetry_by_peer.erase(id)
     player_identity_keys.erase(id)
@@ -1135,8 +1136,12 @@ func _on_leave(id: int) -> void:
     shield_taunt_ready_at.erase(id)
     training_last_hit.erase(id)
     _remove_actor(id)
+    if ally_departed and live_ui != null:
+        live_ui.show_message("Союзник покинул мир")
+    _update_online_players()
     # SceneMultiplayer propagates peer_disconnected to all clients already.
     # No extra RPC: a peer may have closed its ENet channel during this signal.
+
 
 @rpc("authority", "call_remote", "reliable")
 func despawn_remote(id: int) -> void:
@@ -1361,7 +1366,15 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func spawn_remote(id: int, pos: Vector3, choice: int = 0) -> void:
+    var new_ally := own_id != 0 and id != own_id and not players.has(id)
     _spawn(id, pos, choice)
+    _update_online_players()
+    if new_ally and live_ui != null:
+        live_ui.show_message("Союзник присоединился к миру")
+
+func _update_online_players() -> void:
+    if not is_dedicated and live_ui != null:
+        live_ui.set_online_players(players.size() if own_id != 0 else 0)
 
 func _spawn(id: int, pos: Vector3, choice: int = -1) -> void:
     if players.has(id):
@@ -3209,6 +3222,7 @@ func _hero_ability_on_server(id: int, direction: Vector3, now: int = -1) -> bool
         if target_id == 0:
             _send_hero_message(id,"Рядом нет раненых союзников")
             return false
+        var healed: int = mini(missing,HERO_CLASSES.MAGE_HEAL_HP)
         hero_mana[id] = float(hero_mana[id])-HERO_CLASSES.MAGE_MANA_COST
         hero_ability_ready_at[id] = now+HERO_CLASSES.MAGE_HEAL_COOLDOWN_MS
         player_health[target_id] = mini(MAX_HEALTH,int(player_health[target_id])+HERO_CLASSES.MAGE_HEAL_HP)
@@ -3218,10 +3232,13 @@ func _hero_ability_on_server(id: int, direction: Vector3, now: int = -1) -> bool
         elif multiplayer.get_peers().has(target_id):
             health_snapshot.rpc_id(target_id,int(player_health[target_id]),MAX_HEALTH)
         _send_mana_snapshot(id)
+        if target_id != id:
+            _award_skill_xp(id,"magic",2)
+            _send_hero_message(target_id,"Союзник исцелил вас: +%d HP" % healed)
         hero_ability_visual.rpc(id,"heal",target_id)
         if not is_dedicated:
             hero_ability_visual(id,"heal",target_id)
-        _send_hero_message(id,"Лечение: +%d HP" % mini(missing,HERO_CLASSES.MAGE_HEAL_HP))
+        _send_hero_message(id,"Союзник исцелён: +%d HP" % healed if target_id != id else "Лечение: +%d HP" % healed)
         return true
     return false
 

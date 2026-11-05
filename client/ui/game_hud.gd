@@ -27,6 +27,7 @@ var preview_mode := true
 
 var status_panel: PanelContainer
 var status_detail: Label
+var online_detail: Label
 var health_detail: Label
 var health_bar: ProgressBar
 var xp_bar: ProgressBar
@@ -106,6 +107,11 @@ func _create_status() -> void:
 	title_row.add_child(avatar_name)
 	status_detail = Style.label("●", 12, SAGE)
 	title_row.add_child(status_detail)
+	online_detail = Style.label("", 11, SAGE)
+	online_detail.name = "OnlinePlayers"
+	online_detail.visible = false
+	title_row.add_child(online_detail)
+
 	var hp_row := HBoxContainer.new()
 	hp_row.add_theme_constant_override("separation", 6)
 	stats.add_child(hp_row)
@@ -133,6 +139,13 @@ func _create_status() -> void:
 	xp_bar.show_percentage = false
 	xp_bar.max_value = 1
 	xp_row.add_child(xp_bar)
+
+func set_online_players(count: int) -> void:
+	if online_detail == null:
+		return
+	online_detail.visible = count > 0
+	online_detail.text = "● %d" % count if count > 0 else ""
+	online_detail.tooltip_text = "Игроков в мире: %d" % count
 
 func _create_resources() -> void:
 	resources_panel = HBoxContainer.new()

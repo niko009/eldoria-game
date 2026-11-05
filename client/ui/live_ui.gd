@@ -351,6 +351,10 @@ func set_status(message: String) -> void:
         state.connection_status = message
         state.changed.emit()
 
+func set_online_players(count: int) -> void:
+    if hud != null:
+        hud.set_online_players(count)
+
 func set_avatar(choice: int) -> void:
     if state == null:
         return

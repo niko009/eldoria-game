@@ -79,6 +79,9 @@ func _run() -> void:
 	if game.player_health[knight] != 85 or game.player_health[rogue] != 70 or int(game.hero_mana[mage]) != 60:
 		_fail("Mage heal target, amount or mana incorrect")
 		return
+	if int(game.player_skills[mage].get("magic",0)) != 2:
+		_fail("Healing an ally should grant mage practice XP")
+		return
 	if game._hero_ability_on_server(mage,Vector3.ZERO,now+14000):
 		_fail("Mage bypassed cooldown")
 		return
