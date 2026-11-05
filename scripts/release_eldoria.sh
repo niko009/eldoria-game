@@ -78,6 +78,11 @@ install -d -m 0750 -o mbacus -g mbacus "$STAGE/godot-data/godot"
 ln -s "$(dirname "$GODOT_TEMPLATES")" "$STAGE/godot-data/godot/export_templates"
 HEAD="$(run_builder git -C "$WORK" rev-parse HEAD)"
 echo "Source commit=$HEAD"
+if [[ -n "${ELDORIA_EXPECTED_COMMIT:-}" ]]; then
+  [[ "$ELDORIA_EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ && "$HEAD" == "$ELDORIA_EXPECTED_COMMIT" ]] || {
+    echo "Release source SHA does not match approved remote branch: $HEAD" >&2; exit 6;
+  }
+fi
 if [[ "$MODE" == --deploy && "$SOURCE_REF" == *'*'* ]]; then exit 6; fi
 
 # Version stamping in a separate, archived release checkout, never in the user's

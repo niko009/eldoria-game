@@ -1,0 +1,15 @@
+[Unit]
+Description=Eldoria release-branch deployment controller
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/
+ExecStart=/usr/bin/python3 /usr/local/libexec/eldoria_release_watcher.py
+TimeoutStartSec=2700
+UMask=0077
+StandardOutput=journal
+StandardError=journal
