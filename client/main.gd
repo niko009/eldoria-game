@@ -4360,8 +4360,10 @@ func _live_preview(kind: String) -> void:
 
 func _live_action(kind: String) -> void:
     match kind:
-        "spear", "bow", "shield":
+        "spear", "bow":
             _try_equip_combat(kind)
+        "shield":
+            _try_equip_offhand(true)
         "bandage":
             _try_use_consumable("bandage")
         "grilled_meat":
