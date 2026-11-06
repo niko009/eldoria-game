@@ -24,7 +24,7 @@ func _run() -> void:
 		return
 	# Disable enemy AI for this deterministic networking test only.
 	game.set_physics_process(false)
-	game.player_inventories[attacker] = {"wood":0,"stone":0,"herb":0,"bow":1,"arrow":3}
+	game.player_inventories[attacker] = {"wood":0,"stone":0,"herb":0,"bow":1,"arrow":5}
 	game.inventory_snapshot.rpc_id(attacker,game.player_inventories[attacker])
 	# Do not equip the weapon programmatically. Actual client hotbar must
 	# send the equipment RPC, and server has to validate ownership.
@@ -43,23 +43,31 @@ func _run() -> void:
 		return
 	for frame in 240:
 		await process_frame
-		if int(game.player_inventories[attacker].get("arrow",-1)) == 2:
+		if int(game.player_inventories[attacker].get("arrow",-1)) == 4:
 			break
-	if game.wolf_health != 60 or int(game.player_inventories[attacker].get("arrow",-1)) != 2:
-		_fail("network miss did not consume exactly one arrow")
+	if game.wolf_health != 60 or int(game.player_inventories[attacker].get("arrow",-1)) != 4:
+		_fail("first shot did not preserve 5 -> 4 arrows")
 		return
 	for frame in 350:
 		await process_frame
-		if int(game.player_inventories[attacker].get("arrow",-1)) == 1:
+		if int(game.player_inventories[attacker].get("arrow",-1)) == 3:
 			break
-	if game.wolf_health != 40 or int(game.player_inventories[attacker].get("arrow",-1)) != 1:
+	if game.wolf_health != 40 or int(game.player_inventories[attacker].get("arrow",-1)) != 3:
 		_fail("network aimed hit did not damage wolf")
 		return
+	for expected in [2,1,0]:
+		for frame in 270:
+			await process_frame
+			if int(game.player_inventories[attacker].get("arrow",-1)) == expected:
+				break
+		if int(game.player_inventories[attacker].get("arrow",-1)) != expected:
+			_fail("expected arrow count %d after next shot" % expected)
+			return
 	if int(game.player_inventories[witness].get("arrow",0)) != 0:
 		_fail("second player's ammunition was changed")
 		return
 	await create_timer(0.8).timeout
-	print("TASK047 BOW NETWORK SERVER PASS miss, hit, inventory separation")
+	print("TASK047 BOW NETWORK SERVER PASS 5 -> 4 -> 3 -> 2 -> 1 -> 0, no other-player spend")
 	quit(0)
 func _fail(why: String) -> void:
 	printerr("TASK047 BOW NETWORK SERVER FAIL: "+why)
