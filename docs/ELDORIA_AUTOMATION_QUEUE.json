@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "project": "eldoria-game",
+  "updated_at": "2026-11-06",
+  "baseline": {
+    "production_version_at_planning": "0.5.26",
+    "source_commit": "83f8f8d2a9bbfcd45197ae430e3cdb26466f8301",
+    "reference_document": "docs/ELDORIA_DEVELOPMENT_QUEUES.md"
+  },
+  "automation_policy": {
+    "default_queue": "autonomous",
+    "allow_preparation_for_approval": true,
+    "allow_feature_branch_commits": true,
+    "allow_pull_requests": true,
+    "allow_local_and_isolated_integration_tests": true,
+    "allow_automatic_merge_to_release": false,
+    "allow_production_releases": false,
+    "allow_production_database_changes": false,
+    "allow_destructive_data_actions": false,
+    "allow_automatic_art_selection_or_replacement": false,
+    "on_approval_block": "skip_and_continue_autonomous",
+    "on_technical_block": "record_reason_and_take_another_independent_task",
+    "on_unverified_android_hardware": "record_NOT_VERIFIED_do_not_claim_pass",
+    "scheduled_agent_configured": false
+  },
+  "autonomous": [
+    {"id":"A-01","task":"TASK-089","title":"Health bars: authoritative current/max mob HP","priority":0,"status":"TODO","depends_on":[],"doc":"docs/TASK-089_MOB_HEALTH_BARS.md"},
+    {"id":"A-02","task":"TASK-087-GP-01-04","title":"Arrows, joystick+attack, target selection","priority":0,"status":"TODO","depends_on":[],"doc":"docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md"},
+    {"id":"A-03","task":"TASK-087-GP-06-08","title":"Staff+shield, consumables, tree regrowth","priority":0,"status":"TODO","depends_on":[],"doc":"docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md"},
+    {"id":"A-04","task":"TASK-090","title":"Full art, icons, assets and UI audit, previews only","priority":1,"status":"TODO","depends_on":[],"doc":"docs/TASK-090_ASSET_AND_UI_AUDIT.md"},
+    {"id":"A-05","task":"TASK-087-UI","title":"Functional HUD, scrolling, safe area fixes","priority":1,"status":"TODO","depends_on":[],"doc":"docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md"},
+    {"id":"A-06","task":"TASK-088-QUEST","title":"Server quest progress, XP/material rewards, solo/coop","priority":1,"status":"TODO","depends_on":[],"doc":"docs/TASK-088_QUESTS_AND_MAGIC_PROGRESSION.md"},
+    {"id":"A-07","task":"TASK-088-MAGIC","title":"Server-validated magic XP independent of melee","priority":1,"status":"TODO","depends_on":[],"doc":"docs/TASK-088_QUESTS_AND_MAGIC_PROGRESSION.md"},
+    {"id":"A-08","task":"TASK-091","title":"Research and render at least six mob candidates","priority":1,"status":"TODO","depends_on":[],"doc":"docs/TASK-091_MOB_SELECTION.md"},
+    {"id":"A-09","task":"QA-PERFORMANCE","title":"WSS, Android Low/High performance and regression","priority":2,"status":"TODO","depends_on":[],"doc":"docs/ELDORIA_DEVELOPMENT_QUEUES.md"}
+  ],
+  "approval_required": [
+    {"id":"B-01","task":"TASK-091/TASK-092","title":"Approve each of at least four new mob models and animations before integration","status":"APPROVAL_REQUIRED","depends_on_approval_ids":[],"doc":"docs/TASK-091_MOB_SELECTION.md"},
+    {"id":"B-02","task":"TASK-090-ART","title":"Approve entire art/icon/model replacement style and chosen assets","status":"APPROVAL_REQUIRED","depends_on_approval_ids":[],"doc":"docs/TASK-090_ASSET_AND_UI_AUDIT.md"},
+    {"id":"B-03","task":"TASK-090-UI","title":"Approve visual UI redesign and undecided hotbar/block UX","status":"APPROVAL_REQUIRED","depends_on_approval_ids":[],"doc":"docs/TASK-090_ASSET_AND_UI_AUDIT.md"},
+    {"id":"B-04","task":"FUTURE-CONTENT","title":"Approve major quest world/lore and future systems","status":"APPROVAL_REQUIRED","depends_on_approval_ids":[],"doc":"docs/ELDORIA_DEVELOPMENT_QUEUES.md"}
+  ]
+}
