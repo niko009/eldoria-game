@@ -71,6 +71,22 @@ func _run() -> void:
     if not game.sprint_active:
         _fail("staff attack interrupted sprint toggle")
         return
+    game.input_driver.set_joystick(Vector2(0.8,-0.4))
+    var start_msec: int = Time.get_ticks_msec()
+    if game._movement_axis_for_frame(start_msec) != Vector2.ZERO:
+        _fail("attack animation must briefly pause movement")
+        return
+    if game._movement_axis_for_frame(start_msec + game.ATTACK_MOVE_PAUSE_MS) != Vector2(0.8,-0.4):
+        _fail("movement did not resume with the original joystick direction")
+        return
+    if not game.sprint_active:
+        _fail("attack pause cleared sprint state")
+        return
+    game.player_health[id] = 0
+    game._try_attack()
+    if game._movement_axis_for_frame(start_msec + game.ATTACK_MOVE_PAUSE_MS) != Vector2(0.8,-0.4):
+        _fail("dead actor unexpectedly extended attack pause")
+        return
     print("TASK082 MULTITOUCH PASS movement held while second finger attacks")
     game._disconnect()
     quit(0)
