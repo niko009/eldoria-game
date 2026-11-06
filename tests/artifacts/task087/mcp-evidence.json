@@ -1,0 +1,31 @@
+{
+  "addon_version": "2026.10.20.1",
+  "godot_version": "4.5.2-stable (official)",
+  "stopped": {
+    "playing": false,
+    "scene": "",
+    "paused": false
+  },
+  "dressing_children": [
+    "tuft_core",
+    "Fern_1_extra",
+    "Bush_Common_extra",
+    "pebble_core",
+    "tuft_extra",
+    "pebble_extra",
+    "Grass_Wispy_Tall_extra",
+    "blossom_core",
+    "blossom_extra",
+    "Landmark_stone",
+    "Landmark_bark",
+    "Landmark_wood",
+    "Landmark_moss",
+    "Landmark_rune",
+    "Fireflies"
+  ],
+  "project_path": "C:/Users/m.bacus/Documents/test/Eldoria-world-atmosphere/client/",
+  "screenshot": "mcp-after.png",
+  "bridge_connected": true,
+  "runtime_connected": true,
+  "dressing_path": "/root/WorldSurvey/Eldoria/Eldoria_Forest/WorldDressing"
+}

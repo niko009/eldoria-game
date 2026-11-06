@@ -1,6 +1,6 @@
 # TASK-087.07 / TASK-087.08 — World atmosphere
 
-Work branch: `feature/TASK-087-world-atmosphere`. Base: `a16a036`,
+Work branch: `feature/TASK-087-world-atmosphere`. Base: `f32598e`,
 `origin/feature/TASK-064-wildlife-hud`. No merge or release authorized.
 
 ## A. Baseline audit
@@ -17,7 +17,7 @@ Intel UHD Graphics 730. `client/atmosphere/Survey.tscn` instantiates the real
 `Main.tscn` offline with two actors, a wolf, a tent and a campfire. It does not
 host, connect to production, or save a world. Cameras, actors, resolution and
 sampling are identical in Before/After. The baseline is a fresh detached
-worktree at `a16a036`, with only the survey harness copied into it.
+worktree at `f32598e`, with only the survey harness copied into it.
 
 - [High baseline and measurements](../tests/artifacts/task087/before-high/metrics.json)
 - [Low baseline and measurements](../tests/artifacts/task087/before-low/metrics.json)
@@ -35,8 +35,14 @@ session restored the localhost bridge without publishing a port. Project
 inspection, editor play, real runtime screenshot and stop succeeded. Addon and
 probe are temporary local tools; they are not part of the shipped project.
 
-`docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md` is absent from the requested base.
-The attached TASK-087.07/.08 specification is the scope authority.
+The repository originally had a stale local TASK-064 reference at `a16a036`:
+its fetch refspec tracks only TASK-021. This was detected before PR publication.
+The reference was explicitly fetched, the task rebased onto `f32598e`, and
+baseline/render/tests repeated. The now-present
+`docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md` was read; WORLD-01/02/03 match this
+scope. Gameplay and UI backlog remain with the parallel agent. The preliminary
+MCP baseline screenshot is from `a16a036`; the paired final comparisons use
+`f32598e` on both sides (before/after this task).
 
 ## B–D. Реализовано
 
@@ -63,11 +69,14 @@ The attached TASK-087.07/.08 specification is the scope authority.
   unshaded backdrop теперь темнеет вместе с ночью. Персонажи и волк читаются
   на холодной земле; два ближайших костра в High дают более широкий тёплый свет
   (радиус 7 → 9 м, ночная энергия 1.05 → 1.65), без дополнительных теней.
-- High: **10 438** новых пакетных деталей, 12 MultiMesh-групп, дистанции
-  58/75 м, 24 светлячка в одной группе только ночью. Low: **2 264** детали,
-  6 видимых групп, дистанция 40 м, без светлячков и дополнительных огней костра.
+- High: **9 581** новых пакетных деталей, 9 MultiMesh-групп, дистанции
+  58/75 м, 24 светлячка в одной группе только ночью. Low: **3 001** деталь,
+  3 видимые группы, дистанция 40 м, без светлячков и дополнительных огней костра.
   Геометрия ориентиров одинакова в обоих профилях. Материалы Low — стандартные,
   без дорогих экранных эффектов, прозрачности или новых текстурных загрузок.
+  Для Low увеличена плотность дешёвых травяных треугольников; дополнительные
+  импортированные кусты/папоротники остаются только в High. Так заполнение
+  среднего плана не требует дорогих моделей на каждом пучке травы.
 - Меши ориентиров объединены по пяти материалам. Новые мелкие детали не
   отбрасывают тени. Сбор, инвентарь, бой, XP, RPC, PostgreSQL и восстановление
   ресурсов не изменены. Новый декор не расходует RNG генерации ресурсов.
@@ -114,7 +123,7 @@ Quaternius Stylized Nature MegaKit Standard, CC0; источник и лицен
 | `collision_perf_e2e` | PASS: движение/скольжение, коллизии, профили |
 | `task037_collision_benchmark` | PASS: 2500 запросов, совпадение spatial grid и полного перебора |
 | `task075_mana_herb_world_e2e` | PASS: существующие mana herbs |
-| `task087_world_contract` | PASS: все 355 ресурсов и 164 старые коллизии побитно совпали по хешу; 3 ориентира; новые опоры не перекрывают сбор; плотность Low ниже High |
+| `task087_world_contract` | PASS: записи 355 ресурсов и 164 старых коллизий совпали по хешу; 3 ориентира; новые опоры не перекрывают сбор; плотность Low ниже High |
 | `forest_resource_visual_e2e`, Windows OpenGL | PASS: видимость/истощение/возврат дерева и травы, коллизия срубленного дерева |
 | `task063_atmosphere_e2e`, Windows OpenGL | PASS: переходы день/ночь, ближайшие 2 костра, отсутствие теней огней, выключение эффектов Low, очистка |
 | `forest_depletion_persistence_e2e`, два последовательных процесса | PASS: сохранение и восстановление истощённых ресурсов в отдельный временный JSON |
@@ -125,6 +134,17 @@ Quaternius Stylized Nature MegaKit Standard, CC0; источник и лицен
 указанный выше. Новая PostgreSQL БД не создавалась и production не использовался.
 Ранние неудачные прогоны (ошибка вывода типа GDScript, сравнение JSON int/float,
 подавление рендера перекрытого окна) исправлены; они не учитываются как PASS.
+После rebase первый import также выявил устаревшую запись MD5 в локальном
+Godot-кэше; повторный полный import и весь профильный набор прошли без ошибок.
+Сводка exit codes и фактические маркеры тестов сохранены в
+[qa-results.json](../tests/artifacts/task087/qa-results.json) и
+[qa-evidence.txt](../tests/artifacts/task087/qa-evidence.txt).
+
+Финальный MCP-прогон: проверен путь task worktree и Godot 4.5.2; запущена
+Survey через редактор, прочитано дерево работающей игры с WorldDressing,
+получен [реальный кадр](../tests/artifacts/task087/mcp-after.png), затем
+`godot_runtime_stop_scene` подтвердил `playing=false`. Отдельно проверен
+[ночной небосвод с луной](../tests/artifacts/task087/night-sky/night_sky.png).
 
 ### Воспроизведение кадров
 
@@ -141,11 +161,42 @@ Quaternius Stylized Nature MegaKit Standard, CC0; источник и лицен
 пропускная способность рендерящегося стенда, не обещание FPS длительной игровой
 сессии. Память — Godot `MEMORY_STATIC`, не полный RSS и не видеопамять.
 
+## Производительность: финальный сравнительный прогон
+
+Windows 11 / Intel UHD Graphics 730 / Godot 4.5.2 OpenGL / 1024×576 / VSync off. В ячейках — Before → After. Исходные JSON включены рядом с PNG. Это короткий render-throughput benchmark; значения Low около 145 FPS ограничены циклом стенда и не доказывают запас производительности телефона.
+
+| Профиль / ракурс | FPS | p95, мс | Draw calls | Static memory, MiB |
+|---|---:|---:|---:|---:|
+| high / clearing_day | 38,5 → 34,3 | 83,2 → 92,1 | 479 → 493 | 56,7 → 66,5 |
+| high / forest_day | 47,0 → 43,2 | 76,4 → 81,9 | 355 → 367 | 56,7 → 66,5 |
+| high / road | 43,5 → 39,2 | 82,1 → 89,8 | 432 → 446 | 56,7 → 66,5 |
+| high / forest_night | 47,2 → 43,7 | 76,1 → 81,4 | 355 → 368 | 56,7 → 66,5 |
+| high / camp_night | 34,3 → 38,4 | 85,2 → 92,9 | 474 → 489 | 56,8 → 66,5 |
+| high / landmark | 47,6 → 42,6 | 76,6 → 83,9 | 311 → 324 | 56,8 → 66,5 |
+| high / encounter | 36,5 → 37,9 | 90,9 → 91,2 | 465 → 480 | 56,8 → 66,5 |
+| high / stone_circle | 39,1 → 43,4 | 90,1 → 79,8 | 370 → 383 | 56,8 → 66,5 |
+| high / old_camp | 43,8 → 46,0 | 69,5 → 75,1 | 202 → 215 | 57,6 → 66,5 |
+| high / shore | 49,3 → 44,9 | 66,8 → 76,3 | 202 → 215 | 57,6 → 66,5 |
+| low / clearing_day | 112,5 → 118,5 | 10,7 → 6,9 | 89 → 97 | 57,4 → 66,3 |
+| low / forest_day | 145,1 → 145,0 | 6,9 → 6,9 | 34 → 41 | 57,4 → 66,3 |
+| low / road | 145,1 → 145,0 | 6,9 → 6,9 | 94 → 101 | 57,5 → 66,3 |
+| low / forest_night | 145,1 → 145,1 | 6,9 → 6,9 | 34 → 41 | 57,5 → 66,3 |
+| low / camp_night | 145,0 → 145,1 | 6,9 → 6,9 | 89 → 97 | 57,5 → 66,3 |
+| low / landmark | 145,1 → 145,1 | 6,9 → 7,0 | 29 → 37 | 57,5 → 66,3 |
+| low / encounter | 145,1 → 145,1 | 6,9 → 6,9 | 92 → 99 | 57,5 → 66,3 |
+| low / stone_circle | 145,1 → 145,1 | 6,9 → 6,9 | 94 → 99 | 57,5 → 66,3 |
+| low / old_camp | 145,1 → 145,1 | 6,9 → 6,9 | 35 → 40 | 57,5 → 66,3 |
+| low / shore | 145,1 → 145,1 | 6,9 → 6,9 | 35 → 43 | 57,5 → 66,3 |
+
 ## Ограничения и выпуск
 
 - Физический Android недоступен: `adb devices -l` не показывает устройств.
   FPS/p95 на телефоне, touch/safe area и длительный нагрев **не проверены**.
   Windows Low — проверка профиля, не замена Android-приёмки.
+- High имеет измеримую стоимость: например, стартовая поляна на UHD 730
+  38.5 → 34.3 FPS. Профиль не объявляется бесплатным или оптимизированным
+  для слабого телефона; для таких устройств предусмотрен Low. Долгая игровая
+  сессия и GPU/RSS-профилирование не проводились.
 - Декоративные цветы/пни/руны не дают лут. Ориентиры пока без квестов.
 - Добавленные твёрдые опоры требуют одинаковой ревизии мира на клиентах и
   dedicated server. Обновлять только клиента против старого сервера нельзя.

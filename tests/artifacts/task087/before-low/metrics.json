@@ -1,72 +1,72 @@
 [
   {
     "draw_calls": 89.0,
-    "fps": 125.765949567854,
-    "p95_ms": 7.778,
-    "static_memory_mb": 56.3363885879517,
+    "fps": 112.50309383508,
+    "p95_ms": 10.71,
+    "static_memory_mb": 57.446816444397,
     "view": "clearing_day"
   },
   {
     "draw_calls": 34.0,
-    "fps": 166.690126758581,
-    "p95_ms": 6.939,
-    "static_memory_mb": 56.3371248245239,
+    "fps": 145.062320384641,
+    "p95_ms": 6.936,
+    "static_memory_mb": 57.4475526809692,
     "view": "forest_day"
   },
   {
     "draw_calls": 94.0,
-    "fps": 157.56109431432,
-    "p95_ms": 7.276,
-    "static_memory_mb": 56.3397302627563,
+    "fps": 145.058579489684,
+    "p95_ms": 6.937,
+    "static_memory_mb": 57.4501581192017,
     "view": "road"
   },
   {
     "draw_calls": 34.0,
-    "fps": 163.797182688458,
-    "p95_ms": 7.283,
-    "static_memory_mb": 56.3409242630005,
+    "fps": 145.08921374543,
+    "p95_ms": 6.94,
+    "static_memory_mb": 57.4513521194458,
     "view": "forest_night"
   },
   {
     "draw_calls": 89.0,
-    "fps": 168.9604613747,
-    "p95_ms": 6.785,
-    "static_memory_mb": 56.3416147232056,
+    "fps": 144.961617385086,
+    "p95_ms": 6.935,
+    "static_memory_mb": 57.4520425796509,
     "view": "camp_night"
   },
   {
     "draw_calls": 29.0,
-    "fps": 188.370034094976,
-    "p95_ms": 6.234,
-    "static_memory_mb": 56.3423051834106,
+    "fps": 145.05600773632,
+    "p95_ms": 6.933,
+    "static_memory_mb": 57.452733039856,
     "view": "landmark"
   },
   {
     "draw_calls": 92.0,
-    "fps": 156.951376463572,
-    "p95_ms": 7.346,
-    "static_memory_mb": 56.3431177139282,
+    "fps": 145.060449913044,
+    "p95_ms": 6.933,
+    "static_memory_mb": 57.4535455703735,
     "view": "encounter"
   },
   {
     "draw_calls": 94.0,
-    "fps": 162.37192914089,
-    "p95_ms": 6.883,
-    "static_memory_mb": 56.3438081741333,
+    "fps": 145.070270427103,
+    "p95_ms": 6.933,
+    "static_memory_mb": 57.4542360305786,
     "view": "stone_circle"
   },
   {
     "draw_calls": 35.0,
-    "fps": 194.478117970426,
-    "p95_ms": 5.965,
-    "static_memory_mb": 56.3448038101196,
+    "fps": 145.077519754722,
+    "p95_ms": 6.933,
+    "static_memory_mb": 57.4552316665649,
     "view": "old_camp"
   },
   {
     "draw_calls": 35.0,
-    "fps": 189.391946633558,
-    "p95_ms": 6.07,
-    "static_memory_mb": 56.3454942703247,
+    "fps": 145.063957086858,
+    "p95_ms": 6.931,
+    "static_memory_mb": 57.45592212677,
     "view": "shore"
   }
 ]

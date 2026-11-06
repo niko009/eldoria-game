@@ -1,0 +1,72 @@
+[
+  {
+    "test": "import",
+    "errors": 0,
+    "exit_code": 0
+  },
+  {
+    "test": "scene",
+    "errors": 0,
+    "exit_code": 0
+  },
+  {
+    "test": "collision_perf_e2e",
+    "errors": 0,
+    "exit_code": 0
+  },
+  {
+    "test": "task037_collision_benchmark",
+    "errors": 0,
+    "exit_code": 0
+  },
+  {
+    "test": "task075_mana_herb_world_e2e",
+    "errors": 0,
+    "exit_code": 0
+  },
+  {
+    "test": "task087_world_contract",
+    "errors": 0,
+    "exit_code": 0
+  },
+  {
+    "test": "forest_resource_visual_e2e",
+    "errors": 0,
+    "exit_code": 0
+  },
+  {
+    "test": "task063_atmosphere_e2e",
+    "errors": 0,
+    "exit_code": 0
+  },
+  {
+    "test": "depletion-save",
+    "errors": 0,
+    "exit_code": 0
+  },
+  {
+    "test": "depletion-restore",
+    "errors": 0,
+    "exit_code": 0
+  },
+  {
+    "test": "resource-a",
+    "errors": 0,
+    "exit_code": 0
+  },
+  {
+    "test": "resource-b",
+    "errors": 0,
+    "exit_code": 0
+  },
+  {
+    "test": "websocket-a",
+    "errors": 0,
+    "exit_code": 0
+  },
+  {
+    "test": "websocket-b",
+    "errors": 0,
+    "exit_code": 0
+  }
+]

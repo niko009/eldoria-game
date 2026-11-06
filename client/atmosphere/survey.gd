@@ -44,7 +44,10 @@ func _ready() -> void:
     # both revisions, so throughput never measures a non-rendering idle loop.
     RenderingServer.render_loop_enabled = false
     var metrics: Array = []
-    for view in VIEWS:
+    var views := VIEWS
+    if "--sky-only" in OS.get_cmdline_user_args():
+        views = [["night_sky",Vector3(0,3,14),Vector3(-35,51,-66),true]]
+    for view in views:
         print("SURVEY VIEW ", view[0])
         game.camera.position = view[1]
         game.camera.look_at(view[2])

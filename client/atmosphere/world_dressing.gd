@@ -153,7 +153,7 @@ func _understory() -> void:
             var p := center + Vector2(cos(angle),sin(angle)*0.68)*distance
             if not _allowed(p):
                 continue
-            var extra := detail % 6 != 0
+            var extra := detail % 3 != 0
             _scatter("tuft",p,_rng.randf_range(0.7,1.5),extra)
             if detail % 18 == 0:
                 var id := "Fern_1" if center.x > 8 else "Grass_Wispy_Tall"

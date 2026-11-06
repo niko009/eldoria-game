@@ -1,0 +1,47 @@
+import exit=0 errors=0
+scene exit=0 errors=0
+collision_perf_e2e exit=0 errors=0
+task037_collision_benchmark exit=0 errors=0
+task075_mana_herb_world_e2e exit=0 errors=0
+task087_world_contract exit=0 errors=0
+forest_resource_visual_e2e exit=0 errors=0
+task063_atmosphere_e2e exit=0 errors=0
+depletion-save exit=0 errors=0
+depletion-restore exit=0 errors=0
+resource-a exit=0 errors=0
+resource-b exit=0 errors=0
+websocket-a exit=0 errors=0
+websocket-b exit=0 errors=0
+[collision_perf_e2e]
+COLLISION + BATCHING PASS trees=103 blockers=172 groups=26 low_visible=17 high_visible=26
+[task037_collision_benchmark]
+TASK037 COLLISION PARITY PASS queries=2500 blockers=172 active=137
+TASK037 MICROBENCH sweep_scan_us=326854 sweep_grid_us=18681 ratio=17.5 identical_hits=1128
+[task075_mana_herb_world_e2e]
+TASK075 MANA HERB WORLD PASS 8 deterministic plants, depletion and restoration
+[task087_world_contract]
+TASK087 WORLD CONTRACT PASS resources=355 low=3001 high=9581 landmarks=3
+[forest_resource_visual_e2e]
+FOREST RESOURCE OPENGL PASS tree+grass disappear, tree collider removed, rollback and saved-state replay
+[task063_atmosphere_e2e]
+TASK063 ATMOSPHERE OPENGL PASS smooth day/night sky and fog, nearest two warm camp lights, no shadows, Android LOW disables lights, cleanup
+[depletion-save]
+DEPLETION INITIAL PASS: 4 wood removed trunk, grass collected, state saved
+[depletion-restore]
+DEPLETION RESTORED PASS: felled tree, removed collider and harvested grass
+[resource-a]
+RESOURCE OWN INVENTORY PASS A herb=1
+RESOURCE AUTHORITATIVE SYNC PASS A
+RESOURCE LATE JOIN OBSERVED PASS A
+[resource-b]
+RESOURCE OWN INVENTORY PASS B herb=1
+RESOURCE AUTHORITATIVE SYNC PASS B
+RESOURCE LATE JOIN SNAPSHOT PASS B
+[websocket-a]
+WEBSOCKET PROTOCOL MOVEMENT PASS A
+WEBSOCKET PROTOCOL INTERACTION PASS A
+WEBSOCKET PROTOCOL REJOIN + INTERACTION PASS A
+[websocket-b]
+WEBSOCKET PROTOCOL MOVEMENT PASS B
+WEBSOCKET PROTOCOL INTERACTION PASS B
+WEBSOCKET PROTOCOL REJOIN PASS B
