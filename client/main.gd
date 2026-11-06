@@ -1889,12 +1889,12 @@ func _apply_raid_lighting(phase: String) -> void:
     if forest.environment_node != null:
         var environment: Environment = forest.environment_node.environment
         _lighting_tween = create_tween().set_parallel(true)
-        _lighting_tween.tween_property(sunlight,"light_energy",0.29 if night else 0.82,1.15)
-        _lighting_tween.tween_property(sunlight,"light_color",Color("9eafd6") if night else Color("ffdda8"),1.15)
-        _lighting_tween.tween_property(environment,"ambient_light_color",Color("6e84ac") if night else Color("a9bfd0"),1.15)
-        _lighting_tween.tween_property(environment,"ambient_light_energy",0.21 if night else 0.48,1.15)
-        _lighting_tween.tween_property(environment,"fog_density",0.0036 if night else 0.0016,1.15)
-        _lighting_tween.tween_property(environment,"fog_light_color",Color("61799f") if night else Color("afc6d5"),1.15)
+        _lighting_tween.tween_property(sunlight,"light_energy",0.42 if night else 0.82,1.15)
+        _lighting_tween.tween_property(sunlight,"light_color",Color("a5c3e8") if night else Color("ffdda8"),1.15)
+        _lighting_tween.tween_property(environment,"ambient_light_color",Color("8299b5") if night else Color("a9bfd0"),1.15)
+        _lighting_tween.tween_property(environment,"ambient_light_energy",0.34 if night else 0.48,1.15)
+        _lighting_tween.tween_property(environment,"fog_density",0.0025 if night else 0.0016,1.15)
+        _lighting_tween.tween_property(environment,"fog_light_color",Color("536d8a") if night else Color("afc6d5"),1.15)
         var sky_mat := environment.sky.sky_material as ShaderMaterial
         if sky_mat != null:
             var stored_mix: Variant = sky_mat.get_shader_parameter("night_mix")

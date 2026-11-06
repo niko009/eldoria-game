@@ -11,7 +11,7 @@ void vertex() { world_position = (MODEL_MATRIX * vec4(VERTEX,1.0)).xyz; }
 void fragment() {
     float patches = noise(world_position.xz * 0.65);
     float grain = noise(world_position.xz * 13.0);
-    vec3 base = pow(COLOR.rgb, vec3(1.85)) * mix(0.92,1.12,patches);
+    vec3 base = pow(COLOR.rgb, vec3(1.55)) * mix(0.88,1.12,patches);
     base *= mix(0.96,1.03,grain);
     float grass = smoothstep(-0.01,0.04,COLOR.g-COLOR.r);
     vec3 detail = texture(meadow_albedo,world_position.xz*0.25).rgb;

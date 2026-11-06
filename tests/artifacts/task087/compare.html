@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Eldoria · TASK-087 · Before / After</title>
+<style>
+body{margin:0;background:#111c22;color:#e4ece5;font:16px system-ui,sans-serif}main{max-width:1600px;margin:auto;padding:28px}h1{font-size:28px;margin:0 0 10px}p{color:#a6b8b5}nav{display:flex;gap:20px;flex-wrap:wrap;margin:24px 0}select{padding:10px;background:#263a40;color:white;border:1px solid #50655e;border-radius:4px}label{display:flex;align-items:center;gap:10px}.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}figure{margin:0}img{width:100%;display:block;background:#1c3033}figcaption{padding:12px 0;font-weight:600}pre{font:13px system-ui;white-space:pre-wrap;color:#a6b8b5}a{color:#96d6c5}@media(max-width:750px){.pair{grid-template-columns:1fr}}
+</style>
+<main>
+<h1>Eldoria — мир и ночная атмосфера</h1>
+<p>Реальные кадры Godot 4.5.2 / Windows OpenGL / Intel UHD 730, 1024 × 576. Одинаковые камеры и персонажи. Low на Windows — не тест Android.</p>
+<nav>
+<label>Сцена <select id="view">
+<option value="clearing_day">Стартовая поляна</option><option value="forest_day">Лес днём</option><option value="road">Дорога</option><option value="forest_night">Лес ночью</option><option value="camp_night">Костёр ночью</option><option value="landmark">Древние руины</option><option value="encounter">Персонажи и волк</option><option value="stone_circle">Каменный круг</option><option value="old_camp">Заброшенная стоянка</option><option value="shore">Берег водоёма</option>
+</select></label>
+<label>Профиль <select id="profile"><option value="high">High</option><option value="low">Low</option></select></label>
+</nav>
+<div class="pair"><figure><img id="before" alt="До изменений"><figcaption>Before — a16a036</figcaption></figure><figure><img id="after" alt="После изменений"><figcaption>After — TASK-087</figcaption></figure></div>
+<p>Геометрия ресурсов и рельефа сохранена. Добавлены подлесок, природные детали, три ориентира, читаемое лунное освещение и более выразительный огонь.</p>
+<p><a href="../../../docs/TASK-087_WORLD_ATMOSPHERE_REPORT.md">Отчёт и ограничения</a> · <a id="bm">Измерения Before</a> · <a id="am">Измерения After</a></p>
+</main>
+<script>
+const view=document.getElementById('view'),profile=document.getElementById('profile');
+function update(){for(const stage of ['before','after']){document.getElementById(stage).src=`${stage}-${profile.value}/${view.value}.png`;document.getElementById(stage==='before'?'bm':'am').href=`${stage}-${profile.value}/metrics.json`;}}
+view.addEventListener('change',update);profile.addEventListener('change',update);update();
+</script>
+</html>

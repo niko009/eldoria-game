@@ -40,7 +40,7 @@ func _run() -> void:
     if not ambience.night or game._lighting_tween==null:
         _fail("night transition did not start");return
     await create_timer(1.35).timeout
-    if absf(game.sunlight.light_energy-0.29)>0.02 or absf(environment.fog_density-0.0036)>0.0002:
+    if absf(game.sunlight.light_energy-0.42)>0.02 or absf(environment.fog_density-0.0025)>0.0002:
         _fail("night energy/fog values incorrect");return
     if float(sky.get_shader_parameter("night_mix"))<0.98:
         _fail("night shader did not reach evening color");return

@@ -47,6 +47,7 @@ var _path_low: Material
 var _ground_low: Material
 var _ground_high: Material
 var environment_node: WorldEnvironment
+var world_dressing: Node3D
 
 func _ready() -> void:
     # Clients share a deterministic visual landscape; no RNG calls in gameplay.
@@ -69,6 +70,9 @@ func _ready() -> void:
     _flush_batches()
     _create_visual_accents()
     preload("res://alpine_scenery.gd").build(self)
+    world_dressing = preload("res://atmosphere/world_dressing.gd").new()
+    add_child(world_dressing)
+    world_dressing.build(self)
 
 func height_at(x: float, z: float) -> float:
     var radius := Vector2(x, z).length()
@@ -585,6 +589,8 @@ func _flush_batches() -> void:
 
 func apply_detail_quality(high: bool) -> void:
     _low_quality = not high
+    if world_dressing != null:
+        world_dressing.apply_quality(high)
     if high and _ground_high.get_shader_parameter("meadow_albedo") == null:
         _ground_high.set_shader_parameter("meadow_albedo",load("res://assets/terrain/meadow_albedo.png"))
     if _terrain_instance != null:

@@ -39,6 +39,10 @@ func _ready() -> void:
     if destination.is_empty():
         return # MCP interactive survey remains open.
     DirAccess.make_dir_recursive_absolute(destination)
+    # Windows can suppress automatic rendering for an occluded window while
+    # process_frame still fires. Explicitly render exactly one frame/sample on
+    # both revisions, so throughput never measures a non-rendering idle loop.
+    RenderingServer.render_loop_enabled = false
     var metrics: Array = []
     for view in VIEWS:
         print("SURVEY VIEW ", view[0])
@@ -51,6 +55,7 @@ func _ready() -> void:
         var draws := 0.0
         for i in 90:
             var begin := Time.get_ticks_usec()
+            RenderingServer.force_draw()
             await get_tree().process_frame
             samples.append((Time.get_ticks_usec() - begin) / 1000.0)
             draws += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)

@@ -25,8 +25,8 @@ func _ready() -> void:
         lamp.name = "CampWarmLight%d" % i
         lamp.light_color = Color("ffac63")
         lamp.light_energy = 1.0
-        lamp.omni_range = 7.0
-        lamp.omni_attenuation = 2.1
+        lamp.omni_range = 9.0
+        lamp.omni_attenuation = 1.7
         lamp.shadow_enabled = false
         lamp.visible = false
         add_child(lamp)
@@ -78,7 +78,7 @@ func update_campfires(buildings: Dictionary, viewer: Vector3) -> void:
         if active:
             camp_lights[i].position = nearby[i]["at"]
             embers[i].position = nearby[i]["at"]
-            camp_lights[i].light_energy = 1.05 if night else 0.52
+            camp_lights[i].light_energy = 1.65 if night else 0.52
 
 func _process(delta: float) -> void:
     if not high_detail:
@@ -86,7 +86,7 @@ func _process(delta: float) -> void:
     _flicker_clock += delta
     for i in camp_lights.size():
         if camp_lights[i].visible:
-            camp_lights[i].light_energy = (1.05 if night else 0.52) * (
+            camp_lights[i].light_energy = (1.65 if night else 0.52) * (
                 0.92 + 0.07*sin(_flicker_clock*7.2+i*2.1))
 
 func active_light_count() -> int:

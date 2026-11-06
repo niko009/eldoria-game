@@ -30,5 +30,9 @@ void sky() {
     float star_hash = fract(sin(dot(star_tile, vec2(12.9898, 78.233))) * 43758.5453);
     float star = step(0.996, star_hash) * smoothstep(0.14, 0.35, height);
     color += vec3(0.52, 0.61, 0.83) * star * night_mix;
-    COLOR = direction.y >= 0.0 ? color : vec3(0.32, 0.42, 0.39);
+    float moon = max(dot(direction, normalize(vec3(-0.35, 0.48, -0.8))), 0.0);
+    color += vec3(0.12, 0.20, 0.31) * pow(moon, 48.0) * night_mix;
+    color = mix(color, vec3(0.76, 0.86, 0.90), smoothstep(0.9988, 0.9993, moon) * night_mix);
+    color = mix(color, vec3(0.16, 0.22, 0.31), mask * 0.22 * night_mix);
+    COLOR = direction.y >= 0.0 ? color : mix(vec3(0.32, 0.42, 0.39), vec3(0.06,0.10,0.16), night_mix);
 }

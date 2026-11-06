@@ -1,0 +1,72 @@
+[
+  {
+    "draw_calls": 493.0,
+    "fps": 34.1955942396382,
+    "p95_ms": 90.053,
+    "static_memory_mb": 66.1257343292236,
+    "view": "clearing_day"
+  },
+  {
+    "draw_calls": 367.0,
+    "fps": 42.4218342352687,
+    "p95_ms": 83.598,
+    "static_memory_mb": 66.1258106231689,
+    "view": "forest_day"
+  },
+  {
+    "draw_calls": 446.0,
+    "fps": 38.9483596681946,
+    "p95_ms": 89.992,
+    "static_memory_mb": 66.1331882476807,
+    "view": "road"
+  },
+  {
+    "draw_calls": 368.0,
+    "fps": 43.3142526029459,
+    "p95_ms": 82.229,
+    "static_memory_mb": 66.1364583969116,
+    "view": "forest_night"
+  },
+  {
+    "draw_calls": 489.0,
+    "fps": 34.9463941728053,
+    "p95_ms": 93.638,
+    "static_memory_mb": 66.1378087997437,
+    "view": "camp_night"
+  },
+  {
+    "draw_calls": 324.0,
+    "fps": 42.3038885734377,
+    "p95_ms": 84.643,
+    "static_memory_mb": 66.1378393173218,
+    "view": "landmark"
+  },
+  {
+    "draw_calls": 480.0,
+    "fps": 37.6822880685315,
+    "p95_ms": 91.547,
+    "static_memory_mb": 66.1393117904663,
+    "view": "encounter"
+  },
+  {
+    "draw_calls": 383.0,
+    "fps": 35.6403884802344,
+    "p95_ms": 82.709,
+    "static_memory_mb": 66.1393423080444,
+    "view": "stone_circle"
+  },
+  {
+    "draw_calls": 215.0,
+    "fps": 45.9351242927905,
+    "p95_ms": 75.954,
+    "static_memory_mb": 66.1403379440308,
+    "view": "old_camp"
+  },
+  {
+    "draw_calls": 215.0,
+    "fps": 44.5432314332676,
+    "p95_ms": 77.37,
+    "static_memory_mb": 66.1410284042358,
+    "view": "shore"
+  }
+]
