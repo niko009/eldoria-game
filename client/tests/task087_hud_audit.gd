@@ -28,7 +28,7 @@ func _run() -> void:
             await process_frame
             # Stretch mode maps 800x360 to a larger logical UI viewport.
             # Compare global Control coordinates to the logical HUD bounds.
-            var screen := ui.hud.get_global_rect()
+            var screen: Rect2 = ui.hud.get_global_rect()
             var controls: Dictionary = {"status":ui.hud.status_panel, "resources":ui.hud.resources_panel,
                 "hotbar":ui.hud.hotbar, "joystick":ui.hud.joystick, "menu":ui.hud.top_actions}
             for key in ui.hud.action_controls:
