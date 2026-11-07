@@ -9,6 +9,7 @@ var save_path := ""
 var last_error := ""
 var profiles: Dictionary = {}
 var depleted: Dictionary = {}
+var regrowth_at: Dictionary = {}
 var buildings: Dictionary = {}
 
 func configure(path: String) -> bool:
@@ -23,6 +24,7 @@ func configure(path: String) -> bool:
 
 func load_snapshot(world: Node3D) -> bool:
     depleted.clear()
+    regrowth_at.clear()
     profiles.clear()
     buildings.clear()
     if save_path.is_empty():
@@ -47,9 +49,10 @@ func load_snapshot(world: Node3D) -> bool:
         last_error = "Incompatible world schema or seed"
         return false
     var resource_data: Variant = doc.get("depleted",{})
+    var regrowth_data: Variant = doc.get("regrowth_at",{})
     var player_data: Variant = doc.get("profiles",{})
     var build_data: Variant = doc.get("buildings",{})
-    if not resource_data is Dictionary or not player_data is Dictionary or not build_data is Dictionary or build_data.size() > 300:
+    if not resource_data is Dictionary or not regrowth_data is Dictionary or not player_data is Dictionary or not build_data is Dictionary or build_data.size() > 300:
         last_error = "Invalid snapshot data"
         return false
     for key in resource_data.keys():
@@ -67,6 +70,20 @@ func load_snapshot(world: Node3D) -> bool:
             return false
         if amount < int(entry["amount"]):
             depleted[id] = amount
+    # Optional schema-1 extension; old snapshots have no timers, so legacy
+    # depleted trees stay depleted instead of regrowing without a deadline.
+    for key in regrowth_data:
+        var id_text := str(key)
+        if not id_text.is_valid_int():
+            last_error = "Invalid regrowth resource ID"
+            return false
+        var id := int(id_text)
+        var record: Dictionary = world.resource_by_id(id)
+        var deadline := int(regrowth_data[key])
+        if record.is_empty() or str(record["kind"]) != "wood" or int(depleted.get(id,-1)) != 0 or deadline < 1 or deadline > 4102444800:
+            last_error = "Invalid tree regrowth deadline"
+            return false
+        regrowth_at[id] = deadline
     for key in build_data.keys():
         if not str(key).is_valid_int() or int(key) < 1 or int(key) > 100000:
             last_error = "Invalid building id"
@@ -153,7 +170,16 @@ func save_snapshot(remaining: Dictionary, world: Node3D) -> bool:
         var value := clampi(int(remaining[key]),0,int(entry["amount"]))
         if value < int(entry["amount"]):
             depleted_only[str(id)] = value
-    var doc := {"schema":SCHEMA, "world_seed":WORLD_SEED, "depleted":depleted_only, "profiles":profiles,"buildings":buildings}
+    var deadlines := {}
+    for key in regrowth_at:
+        var id := int(key)
+        var entry: Dictionary = world.resource_by_id(id)
+        var deadline := int(regrowth_at[key])
+        if entry.is_empty() or str(entry["kind"]) != "wood" or int(remaining.get(id,-1)) != 0 or deadline < 1 or deadline > 4102444800:
+            last_error = "Invalid regrowth state to persist"
+            return false
+        deadlines[str(id)] = deadline
+    var doc := {"schema":SCHEMA, "world_seed":WORLD_SEED, "depleted":depleted_only, "regrowth_at":deadlines, "profiles":profiles,"buildings":buildings}
     var temporary := save_path + ".tmp"
     var file := FileAccess.open(temporary,FileAccess.WRITE)
     if file == null:

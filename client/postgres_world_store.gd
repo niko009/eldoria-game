@@ -10,6 +10,7 @@ var api_key := ""
 var revision := 0
 var profiles: Dictionary = {}
 var depleted: Dictionary = {}
+var regrowth_at: Dictionary = {}
 var buildings: Dictionary = {}
 var last_error := ""
 var _connected := false
@@ -95,6 +96,7 @@ func _request(method: HTTPClient.Method, body: String = "") -> Dictionary:
 func load_snapshot(world: Node3D) -> bool:
     profiles.clear()
     depleted.clear()
+    regrowth_at.clear()
     buildings.clear()
     var snapshot := {}
     for attempt in 3:
@@ -130,6 +132,21 @@ func load_snapshot(world: Node3D) -> bool:
             last_error = "Invalid PostgreSQL resource quantity"
             return false
         depleted[id] = value
+    var regrowth_data: Variant = snapshot.get("regrowth_at",{})
+    if not regrowth_data is Dictionary:
+        last_error = "Invalid PostgreSQL regrowth data"
+        return false
+    for id_text in regrowth_data:
+        if not str(id_text).is_valid_int():
+            last_error = "Invalid PostgreSQL regrowth ID"
+            return false
+        var id := int(id_text)
+        var entry: Dictionary = world.resource_by_id(id)
+        var deadline := int(regrowth_data[id_text])
+        if entry.is_empty() or str(entry["kind"]) != "wood" or int(depleted.get(id,-1)) != 0 or deadline < 1 or deadline > 4102444800:
+            last_error = "Invalid PostgreSQL regrowth deadline"
+            return false
+        regrowth_at[id] = deadline
     for identity in snapshot["profiles"].keys():
         var hash_key := String(identity)
         if hash_key.length()!=64 or not hash_key.is_valid_hex_number():
@@ -209,7 +226,15 @@ func save_snapshot(remaining: Dictionary, world: Node3D) -> bool:
             depleted_only[str(id)] = amount
     var snapshot := {
         "schema":1, "world_seed":WORLD_SEED,"revision":revision,
-        "profiles":profiles,"depleted":depleted_only,"buildings":buildings}
+        "profiles":profiles,"depleted":depleted_only,"buildings":buildings,"regrowth_at":{}}
+    for key in regrowth_at:
+        var id := int(key)
+        var entry: Dictionary = world.resource_by_id(id)
+        var deadline := int(regrowth_at[key])
+        if entry.is_empty() or str(entry["kind"]) != "wood" or int(remaining.get(id,-1)) != 0 or deadline < 1 or deadline > 4102444800:
+            last_error = "Invalid PostgreSQL regrowth state"
+            return false
+        snapshot["regrowth_at"][str(id)] = deadline
     var response := _request(HTTPClient.METHOD_PUT,JSON.stringify(snapshot))
     if response.is_empty() or not response.has("revision"):
         # A timed-out PUT may have already committed. The next PUT then gets
@@ -250,6 +275,13 @@ func _snapshot_matches(live: Dictionary, expected: Dictionary) -> bool:
         return false
     for key in local_resources:
         if not remote_resources.has(str(key)) or int(remote_resources[str(key)]) != int(local_resources[key]):
+            return false
+    var remote_regrowth: Variant = live.get("regrowth_at",{})
+    var local_regrowth: Variant = expected.get("regrowth_at",{})
+    if not remote_regrowth is Dictionary or not local_regrowth is Dictionary or remote_regrowth.size() != local_regrowth.size():
+        return false
+    for key in local_regrowth:
+        if not remote_regrowth.has(str(key)) or int(remote_regrowth[str(key)]) != int(local_regrowth[key]):
             return false
     var remote_profiles: Variant = live.get("profiles",{})
     var local_profiles: Variant = expected.get("profiles",{})
