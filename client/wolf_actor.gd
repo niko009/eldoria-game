@@ -82,6 +82,8 @@ func update_state(point: Vector3, hp: int, alive: bool, direction: Vector3 = Vec
     if alive and (down or not initialized):
         _death_generation += 1
         down = false
+        # A new life must not inherit the previous life's damage-reveal timer.
+        health_reveal_until = 0
         visible = true
         _action_until_msec = 0
         _wanted_locomotion = "Idle"
