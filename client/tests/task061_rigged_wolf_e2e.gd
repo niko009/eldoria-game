@@ -54,8 +54,12 @@ func _run() -> void:
         _fail("corpse not hidden after Death sequence");return
     wolf.update_state(Vector3(2,0,1),60,true,Vector3.ZERO)
     await process_frame
-    if not wolf.visible or wolf.down or wolf.current_clip != "Idle" or not wolf.health_bar.visible:
-        _fail("respawn failed to reset pose, visibility and health bar");return
+    if not wolf.visible or wolf.down or wolf.current_clip != "Idle" or wolf.health_bar.visible:
+        _fail("respawn failed to reset pose or hide unfocused health bar");return
+    wolf.set_health_focus(true)
+    if not wolf.health_bar.visible or wolf.health_text.text != "60 / 60":
+        _fail("respawned target must show fresh current/max HP on focus");return
+    wolf.set_health_focus(false)
     wolf.update_state(Vector3(2,0,1),0,false,Vector3.ZERO)
     wolf.update_state(Vector3(2,0,1),60,true,Vector3.ZERO)
     await create_timer(1.82).timeout

@@ -311,8 +311,12 @@ func set_equipped_axe(equipped: bool) -> void:
 
 func _selected_item(item_id: String) -> void:
     # UI state is visual only: the actual equipment is acknowledged by server.
+    # A shield is off-hand equipment: selecting it must not replace the staff.
+    if item_id == "shield":
+        shield_requested.emit(true)
+        return
     equip_requested.emit(item_id == "axe")
-    combat_equip_requested.emit(item_id if item_id in ["spear","bow","shield","wooden_staff"] else "unarmed")
+    combat_equip_requested.emit(item_id if item_id in ["spear","bow","wooden_staff"] else "unarmed")
 
 func set_near_campfire(near: bool) -> void:
     if state != null and state.near_campfire != near:

@@ -12,6 +12,9 @@ var model: Node3D
 var animator: AnimationPlayer
 var skin_mesh: MeshInstance3D
 var health_bar: MeshInstance3D
+var health_text: Label3D
+var health_focus := false
+var health_reveal_until := 0
 var visual_hp := 60
 var max_health := 60
 var down := false
@@ -62,6 +65,14 @@ func _ready() -> void:
     red.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
     health_bar.material_override = red
     body.add_child(health_bar)
+    health_text = Label3D.new()
+    health_text.name = "HealthValue"
+    health_text.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+    health_text.font_size = 30
+    health_text.outline_size = 7
+    health_text.modulate = Color("fff2e0")
+    health_text.position.y = 1.65
+    body.add_child(health_text)
     _update_health()
 
 func update_state(point: Vector3, hp: int, alive: bool, direction: Vector3 = Vector3.ZERO) -> void:
@@ -71,6 +82,8 @@ func update_state(point: Vector3, hp: int, alive: bool, direction: Vector3 = Vec
     if alive and (down or not initialized):
         _death_generation += 1
         down = false
+        # A new life must not inherit the previous life's damage-reveal timer.
+        health_reveal_until = 0
         visible = true
         _action_until_msec = 0
         _wanted_locomotion = "Idle"
@@ -78,6 +91,7 @@ func update_state(point: Vector3, hp: int, alive: bool, direction: Vector3 = Vec
         _reset_hit_overlay()
     if alive and initialized and health < visual_hp and not down:
         play_hit_reaction()
+        health_reveal_until = Time.get_ticks_msec() + 3000
     if not alive and not down:
         if initialized:
             _play_death()
@@ -95,6 +109,7 @@ func update_state(point: Vector3, hp: int, alive: bool, direction: Vector3 = Vec
     _update_health()
 
 func _process(delta: float) -> void:
+    _refresh_health_visibility()
     if down or animator == null:
         return
     rotation.y = lerp_angle(rotation.y, _target_yaw, 1.0 - exp(-10.0 * delta))
@@ -164,5 +179,19 @@ func _play_clip(name: String, fade: float = 0.08, speed: float = 1.0) -> void:
 
 func _update_health() -> void:
     if health_bar != null:
-        health_bar.visible = not down
+        health_bar.visible = not down and visual_hp > 0
         health_bar.scale.x = maxf(0.01, float(visual_hp) / float(max_health))
+    if health_text != null:
+        health_text.text = "%d / %d" % [visual_hp,max_health]
+    _refresh_health_visibility()
+
+func set_health_focus(focused: bool) -> void:
+    health_focus = focused
+    _refresh_health_visibility()
+
+func _refresh_health_visibility() -> void:
+    var show_hp := initialized and not down and visual_hp > 0 and (health_focus or Time.get_ticks_msec() < health_reveal_until)
+    if health_bar != null:
+        health_bar.visible = show_hp
+    if health_text != null:
+        health_text.visible = show_hp

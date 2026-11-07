@@ -263,15 +263,17 @@ func _run() -> void:
             quit(19)
             return
     var combat_requests: Array[String] = []
+    var shield_requests: Array[bool] = []
     ui.combat_equip_requested.connect(func(weapon: String) -> void: combat_requests.append(weapon))
+    ui.shield_requested.connect(func(equip: bool) -> void: shield_requests.append(equip))
     ui.state.select_item("spear")
     ui.set_combat_equipment("spear")
     ui.state.select_item("bow")
     ui.set_combat_equipment("bow")
     ui.state.select_item("shield")
-    ui.set_combat_equipment("shield")
-    if combat_requests.slice(-3) != ["spear","bow","shield"] or ui.state.selected_item != "shield":
-        push_error("Hotbar did not route owned combat weapons to server equipment")
+    ui.set_shield_equipped(true)
+    if combat_requests.slice(-2) != ["spear","bow"] or shield_requests.is_empty() or not shield_requests[-1] or ui.combat_equipment != "bow" or not ui.shield_equipped:
+        push_error("Hotbar must equip shield in off-hand without replacing main-hand weapon")
         quit(20)
         return
     ui._craft("axe")
