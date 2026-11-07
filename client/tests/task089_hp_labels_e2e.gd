@@ -1,0 +1,40 @@
+extends SceneTree
+const WOLF := preload("res://wolf_actor.gd")
+const PASSIVE := preload("res://passive_actor.gd")
+func _initialize() -> void:
+	call_deferred("_run")
+func _run() -> void:
+	var wolf = WOLF.new()
+	root.add_child(wolf)
+	await process_frame
+	wolf.update_state(Vector3.ZERO,60,true)
+	assert(wolf.health_text.text == "60 / 60")
+	assert(not wolf.health_text.visible)
+	wolf.set_health_focus(true)
+	assert(wolf.health_text.visible)
+	wolf.update_state(Vector3.ZERO,30,true)
+	assert(wolf.health_text.text == "30 / 60")
+	assert(is_equal_approx(wolf.health_bar.scale.x,0.5))
+	wolf.set_health_focus(false)
+	assert(wolf.health_text.visible)
+	wolf.update_state(Vector3.ZERO,0,false)
+	assert(not wolf.health_text.visible)
+	for kind in ["rabbit","deer","rare_deer","dummy"]:
+		var animal = PASSIVE.new()
+		animal.setup(kind)
+		root.add_child(animal)
+		await process_frame
+		var maximum: int = 24 if kind == "rabbit" else 55 if kind == "deer" else 95 if kind == "rare_deer" else 100
+		animal.update_state(Vector3.ZERO,maximum,true,Vector3.ZERO)
+		assert(animal.health_text.text == "%d / %d" % [maximum,maximum])
+		assert(not animal.health_text.visible)
+		animal.set_health_focus(true)
+		assert(animal.health_text.visible)
+		animal.update_state(Vector3.ZERO,1,true,Vector3.ZERO)
+		assert(animal.health_text.text == "1 / %d" % maximum)
+		animal.update_state(Vector3.ZERO,0,false,Vector3.ZERO)
+		assert(not animal.health_text.visible)
+		animal.queue_free()
+	wolf.queue_free()
+	print("TASK089 HP LABELS PASS wolf + rabbit/deer/rare_deer/dummy focus, damage, death")
+	quit(0)

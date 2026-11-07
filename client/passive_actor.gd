@@ -22,6 +22,11 @@ var deer_gait := 0.0
 var deer_motion := 0.0
 var health_track: MeshInstance3D
 var health_fill: MeshInstance3D
+var health_text: Label3D
+var visual_hp := 0
+var max_health := 24
+var health_focus := false
+var health_reveal_until := 0
 
 func setup(kind: String) -> void:
 	species = kind if kind in ["rabbit", "deer", "rare_deer", "dummy"] else "rabbit"
@@ -72,6 +77,8 @@ func _ready() -> void:
 			marker.font_size = 35
 			marker.modulate = Color("ffe28e")
 			add_child(marker)
+	if species == "dummy":
+		_create_health_bar()
 	last_position = position
 
 func _create_health_bar() -> void:
@@ -98,6 +105,13 @@ func _create_health_bar() -> void:
 	green.albedo_color = Color("9bd37c")
 	health_fill.material_override = green
 	add_child(health_fill)
+	health_text = Label3D.new()
+	health_text.name = "HealthValue"
+	health_text.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	health_text.font_size = 30
+	health_text.outline_size = 7
+	health_text.position.y = label_height + 0.23
+	add_child(health_text)
 
 func _sphere(label: String, point: Vector3, scale_by: Vector3, mat: Material) -> void:
 	var mesh := MeshInstance3D.new()
@@ -130,7 +144,12 @@ func update_state(at: Vector3, hp: int, alive: bool, direction: Vector3) -> void
 		position = position.lerp(at,0.55)
 	active = true
 	visible = alive
-	life = clampf(float(hp)/(24.0 if species == "rabbit" else 100.0 if species == "dummy" else 95.0 if species == "rare_deer" else 55.0),0.0,1.0)
+	max_health = 24 if species == "rabbit" else 100 if species == "dummy" else 95 if species == "rare_deer" else 55
+	var next_hp := clampi(hp,0,max_health)
+	if was_alive and next_hp < visual_hp:
+		health_reveal_until = Time.get_ticks_msec() + 3000
+	visual_hp = next_hp
+	life = float(visual_hp)/float(max_health)
 	if species != "dummy":
 		if alive and not was_alive:
 			presentation.reset(body)
@@ -141,10 +160,11 @@ func update_state(at: Vector3, hp: int, alive: bool, direction: Vector3) -> void
 			presentation.death(self, body)
 	was_alive = alive
 	if health_track != null:
-		health_track.visible = alive
-		health_fill.visible = health_track.visible
 		health_fill.scale.x = maxf(0.001,life)
 		health_fill.position.x = -(1.0-life)*0.43
+	if health_text != null:
+		health_text.text = "%d / %d" % [visual_hp,max_health]
+	_refresh_health_visibility()
 	if direction.length_squared() > 0.01:
 		target_yaw = atan2(-direction.x,-direction.z)
 	# Server sends velocity direction only while walking/fleeing. Keep animation
@@ -154,6 +174,7 @@ func update_state(at: Vector3, hp: int, alive: bool, direction: Vector3) -> void
 	last_position = at
 
 func _process(delta: float) -> void:
+	_refresh_health_visibility()
 	presentation.step(self, delta, was_alive and speed_visual > 0.1, global_position)
 	if body != null and visible:
 		if species == "dummy":
@@ -171,6 +192,18 @@ func _process(delta: float) -> void:
 
 func _exit_tree() -> void:
 	presentation.clear_corpses()
+
+func set_health_focus(focused: bool) -> void:
+	health_focus = focused
+	_refresh_health_visibility()
+
+func _refresh_health_visibility() -> void:
+	var show_hp := active and was_alive and visual_hp > 0 and (health_focus or Time.get_ticks_msec() < health_reveal_until)
+	if health_track != null:
+		health_track.visible = show_hp
+		health_fill.visible = show_hp
+	if health_text != null:
+		health_text.visible = show_hp
 
 func _update_deer_gait(delta: float) -> void:
 	if deer_skeleton == null or deer_legs.size() != 4 or deer_shins.size() != 4:
