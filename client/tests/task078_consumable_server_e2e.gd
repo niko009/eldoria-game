@@ -66,7 +66,22 @@ func _run() -> void:
     if not game._equip_combat_on_server(id,"wooden_staff"):
         _fail("mage could not equip crafted staff")
         return
-    print("TASK078 SERVER ACTIONS PASS consumables, cooldown, class, bow/shield exclusion, mage staff")
+    if not game._equip_offhand_on_server(id,true):
+        _fail("mage could not equip shield alongside staff")
+        return
+    if game._equipment_for(id)["main_hand"] != "wooden_staff" or game._equipment_for(id)["off_hand"] != "shield":
+        _fail("shield displaced mage staff")
+        return
+    if not game._equip_offhand_on_server(id,false) or game._equipment_for(id)["main_hand"] != "wooden_staff":
+        _fail("unequipping shield displaced mage staff")
+        return
+    if not game._equip_offhand_on_server(id,true) or not game._equip_combat_on_server(id,"bow"):
+        _fail("mage bow/shield transition failed")
+        return
+    if game._equipment_for(id)["off_hand"] != "unarmed" or game._equip_offhand_on_server(id,true):
+        _fail("mage bow incorrectly allowed shield")
+        return
+    print("TASK078 SERVER ACTIONS PASS consumables, cooldown, class, mage staff+shield, bow exclusion")
     game._disconnect()
     quit(0)
 

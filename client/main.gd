@@ -30,6 +30,7 @@ const HERO_CLASSES := preload("res://hero_classes.gd")
 const JUMP_MOTION := preload("res://jump_motion.gd")
 const UPDATE_SCRIPT := preload("res://update_manager.gd")
 const MOVE_SPEED := 6.0
+const ATTACK_MOVE_PAUSE_MS := 140
 const CLIENT_VERSION := "0.5.10-dev"
 # TASK-039 is a development protocol: never auto-connect to production v0.5.9.
 
@@ -45,6 +46,7 @@ var player_inventories := {}
 var player_health := {}
 var player_respawn_at := {}
 var last_attack_at := {}
+var local_attack_pause_until_msec := 0
 const MAX_HEALTH := 100
 const WOLF_MAX_HEALTH := 60
 const WOLF_BITE_DAMAGE := 7
@@ -1568,7 +1570,9 @@ func _physics_process(delta: float) -> void:
         return
     if peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
         return
-    var axis: Vector2 = input_driver.get_move_vector()
+    # Keep the joystick pointer and sprint toggle intact while the attack
+    # animation starts. Movement resumes automatically after this short pause.
+    var axis: Vector2 = _movement_axis_for_frame(Time.get_ticks_msec())
     var fast := sprint_active or Input.is_key_pressed(KEY_SHIFT)
     var speed := MOVE_SPEED * (1.5 if fast else 1.0)
     if int(player_choices.get(own_id,-1)) == HERO_CLASSES.ROGUE:
@@ -2481,6 +2485,7 @@ func player_hurt_visual(id: int) -> void:
 func _try_attack() -> void:
     if own_id == 0 or not players.has(own_id) or int(player_health.get(own_id, MAX_HEALTH)) <= 0:
         return
+    local_attack_pause_until_msec = Time.get_ticks_msec() + ATTACK_MOVE_PAUSE_MS
     if selected_target_id != 0:
         var target := _combat_target_data(selected_target_id)
         if not target.is_empty():
@@ -2506,6 +2511,11 @@ func _try_attack() -> void:
         _attack_on_server(own_id, aim,selected_target_id)
     else:
         request_attack.rpc_id(1, aim,selected_target_id)
+
+func _movement_axis_for_frame(now_msec: int) -> Vector2:
+    if now_msec < local_attack_pause_until_msec:
+        return Vector2.ZERO
+    return input_driver.get_move_vector()
 
 func _bow_aim_direction() -> Vector3:
     # Camera yaw and pitch are input-only; origin and hit detection are
@@ -2607,6 +2617,15 @@ func _select_combat_target(target_id: int) -> void:
     _refresh_selected_target()
 
 func _refresh_selected_target() -> void:
+    if not is_dedicated:
+        if is_instance_valid(wolf_actor):
+            wolf_actor.set_health_focus(selected_target_id == -1)
+        for pack_id in pack_actors:
+            if is_instance_valid(pack_actors[pack_id]):
+                pack_actors[pack_id].set_health_focus(selected_target_id == int(pack_id))
+        for creature_id in passive_actors:
+            if is_instance_valid(passive_actors[creature_id]):
+                passive_actors[creature_id].set_health_focus(selected_target_id == 100 + int(creature_id))
     if selected_target_id == 0 or is_dedicated:
         return
     var target := _combat_target_data(selected_target_id)
@@ -4360,8 +4379,10 @@ func _live_preview(kind: String) -> void:
 
 func _live_action(kind: String) -> void:
     match kind:
-        "spear", "bow", "shield":
+        "spear", "bow":
             _try_equip_combat(kind)
+        "shield":
+            _try_equip_offhand(true)
         "bandage":
             _try_use_consumable("bandage")
         "grilled_meat":
