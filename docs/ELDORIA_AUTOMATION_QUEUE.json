@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project": "eldoria-game",
-  "updated_at": "2026-11-06",
+  "updated_at": "2026-11-07",
   "baseline": {
     "production_version_at_planning": "0.5.26",
     "source_commit": "83f8f8d2a9bbfcd45197ae430e3cdb26466f8301",
@@ -50,9 +50,10 @@
       "task": "TASK-087-GP-06-08",
       "title": "Staff+shield, consumables, tree regrowth",
       "priority": 0,
-      "status": "TODO",
+      "status": "IN_PROGRESS",
       "depends_on": [],
-      "doc": "docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md"
+      "doc": "docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md",
+      "progress": "TASK-087.06 tree regrowth: JSON persistence and two WS client tests passed in isolated environment; PostgreSQL migration/integration and Android not verified, so A-03 remains IN_PROGRESS"
     },
     {
       "id": "A-04",

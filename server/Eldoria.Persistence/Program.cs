@@ -88,8 +88,10 @@ CREATE TABLE IF NOT EXISTS eldoria_resources (
     world_seed integer NOT NULL REFERENCES eldoria_worlds(world_seed) ON DELETE CASCADE,
     resource_id integer NOT NULL CHECK (resource_id BETWEEN 1 AND 100000),
     remaining integer NOT NULL CHECK (remaining BETWEEN 0 AND 1000000),
+    regrow_at_unix bigint NOT NULL DEFAULT 0 CHECK (regrow_at_unix BETWEEN 0 AND 4102444800),
     PRIMARY KEY (world_seed, resource_id)
 );
+ALTER TABLE eldoria_resources ADD COLUMN IF NOT EXISTS regrow_at_unix bigint NOT NULL DEFAULT 0 CHECK (regrow_at_unix BETWEEN 0 AND 4102444800);
 """;
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls(url);
@@ -160,13 +162,18 @@ app.MapGet("/v1/world/{seed:int}", async (int seed, CancellationToken ct) =>
         revision = (long)(await readRevision.ExecuteScalarAsync(ct) ?? throw new InvalidOperationException("Missing world"));
     }
     var depleted = new Dictionary<string, int>();
+    var regrowth = new Dictionary<string, long>();
     await using (var read = new NpgsqlCommand(
-        "SELECT resource_id,remaining FROM eldoria_resources WHERE world_seed=@seed", conn, snapshotTx))
+        "SELECT resource_id,remaining,regrow_at_unix FROM eldoria_resources WHERE world_seed=@seed", conn, snapshotTx))
     {
         read.Parameters.AddWithValue("seed", seed);
         await using var reader = await read.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
-            depleted[reader.GetInt32(0).ToString()] = reader.GetInt32(1);
+        {
+            var id = reader.GetInt32(0).ToString();
+            depleted[id] = reader.GetInt32(1);
+            if (reader.GetInt64(2) > 0) regrowth[id] = reader.GetInt64(2);
+        }
     }
     var profiles = new Dictionary<string, ProfileDto>();
     await using (var read = new NpgsqlCommand(
@@ -192,7 +199,7 @@ app.MapGet("/v1/world/{seed:int}", async (int seed, CancellationToken ct) =>
             buildings[reader.GetInt32(0).ToString()] = new BuildingDto(reader.GetString(1),reader.GetDouble(2),reader.GetDouble(3));
     }
     await snapshotTx.CommitAsync(ct);
-    return Results.Ok(new SnapshotDto(1, seed, revision, depleted, profiles, buildings));
+    return Results.Ok(new SnapshotDto(1, seed, revision, depleted, profiles, buildings, regrowth));
 });
 
 app.MapPut("/v1/world/{seed:int}", async (int seed, SnapshotDto? snapshot, CancellationToken ct) =>
@@ -200,6 +207,10 @@ app.MapPut("/v1/world/{seed:int}", async (int seed, SnapshotDto? snapshot, Cance
     if (seed != Seed || snapshot is null || snapshot.schema != 1 || snapshot.world_seed != Seed
         || snapshot.revision < 0 || snapshot.profiles is null || snapshot.depleted is null
         || snapshot.profiles.Count > MaxProfiles || snapshot.depleted.Count > MaxResources
+        || (snapshot.regrowth_at?.Count ?? 0) > MaxResources
+        || (snapshot.regrowth_at?.Any(kv => !int.TryParse(kv.Key, out var id)
+            || id is < 1 or > 100000 || kv.Value is < 1 or > 4102444800
+            || !snapshot.depleted.TryGetValue(kv.Key, out var amount) || amount != 0) ?? false)
         || (snapshot.buildings?.Count ?? 0) > 300
         || (snapshot.buildings?.Any(pair => !int.TryParse(pair.Key,out var id) || id is < 1 or > 100000
             || pair.Value is null || pair.Value.kind is not ("tent" or "campfire")
@@ -272,15 +283,17 @@ app.MapPut("/v1/world/{seed:int}", async (int seed, SnapshotDto? snapshot, Cance
         await clear.ExecuteNonQueryAsync(ct);
     }
     await using (var insert = new NpgsqlCommand(
-        "INSERT INTO eldoria_resources(world_seed,resource_id,remaining) VALUES (@seed,@id,@remaining)", conn, tx))
+        "INSERT INTO eldoria_resources(world_seed,resource_id,remaining,regrow_at_unix) VALUES (@seed,@id,@remaining,@regrow)", conn, tx))
     {
         insert.Parameters.AddWithValue("seed", seed);
         insert.Parameters.Add("id", NpgsqlTypes.NpgsqlDbType.Integer);
         insert.Parameters.Add("remaining", NpgsqlTypes.NpgsqlDbType.Integer);
+        insert.Parameters.Add("regrow", NpgsqlTypes.NpgsqlDbType.Bigint);
         foreach (var pair in snapshot.depleted)
         {
             insert.Parameters["id"].Value = int.Parse(pair.Key);
             insert.Parameters["remaining"].Value = pair.Value;
+            insert.Parameters["regrow"].Value = snapshot.regrowth_at?.GetValueOrDefault(pair.Key) ?? 0L;
             await insert.ExecuteNonQueryAsync(ct);
         }
     }
@@ -453,4 +466,5 @@ record ProfileDto(int avatar, InventoryDto inventory, SkillDto? skills = null, E
 record BuildingDto(string kind, double x, double z);
 record SnapshotDto(int schema, int world_seed, long revision,
     Dictionary<string, int> depleted, Dictionary<string, ProfileDto> profiles,
-    Dictionary<string, BuildingDto>? buildings = null);
+    Dictionary<string, BuildingDto>? buildings = null,
+    Dictionary<string, long>? regrowth_at = null);

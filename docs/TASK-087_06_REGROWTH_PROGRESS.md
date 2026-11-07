@@ -1,7 +1,30 @@
-# TASK-087.06 — partial implementation (not accepted)
+# TASK-087.06 — дерево восстанавливается через 300 секунд
 
-Implemented isolated `tree_regrowth.gd` policy: 300-second UTC Unix deadline, deterministic 299/300 boundary and building-footprint check. This is **not yet wired into the game**. No resource will regrow with this commit alone.
+**Ветка:** `feature/TASK-087-06-tree-regrowth-complete` (от v0.5.27).
+**Статус:** TESTED в изолированной JSON-среде и с двумя WSS-клиентами; PostgreSQL-интеграция и физический Android **NOT_VERIFIED**. **Production и БД не менялись.**
 
-Verified Godot 4.5.2 `--headless --editor --import --quit` exit 0 and `--headless --script res://tests/task087_tree_regrowth_policy_e2e.gd` exit 0. No WSS, Android or restart integration was run.
+## Что реализовано
 
-Remaining: persist per-tree UTC deadlines across **both** JSON and PostgreSQL stores with backwards compatibility; record depletion atomically with inventory; server tick with collision/occupied building deferral and authoritative resource snapshots; tests for restart, 299/300, two clients, repeated harvesting, legacy snapshots and Android performance. Existing depleted trees must not suddenly regrow during migration. No production schema change or deployment is authorized.
+- После *полного* исчерпания дерева сервер записывает UTC Unix deadline = время + 300 секунд одновременно с количеством ресурса и личным инвентарём игрока.
+- Дедлайн сохраняется в JSON schema=1 (`regrowth_at`, необязательное поле) и через PostgreSQL Persistence API (`regrowth_at` + `eldoria_resources.regrow_at_unix`). Старые сохранения без поля читаются; **ранее вырубленные деревья без дедлайна не возвращаются автоматически**.
+- Сервер раз в 1,5 секунды проверяет сроки; деревья под постройками или непосредственно рядом с игроком откладываются. За один шаг обрабатываются не более 16 деревьев.
+- Сначала сохраняется серверное состояние, и только затем всем клиентам отправляется авторитетный `resource_changed`: дерево появляется вновь с полной прочностью и коллизией. При ошибке сохранения восстановление откатывается, сохраняя *исходные* сроки; повторяется с паузой.
+- Стартующий после перезапуска dedicated server восстанавливает дедлайны из хранилища. Клиенты не имеют права задавать сроки или количество ресурсов.
+
+## PostgreSQL: обязательный порядок при БУДУЩЕМ релизе
+
+1. Отдельно согласовать миграцию production: **backup с проверкой архива**, затем `server/Eldoria.Persistence/sql/012_tree_regrowth.sql`. Миграция только добавляет bigint-колонку с дефолтом 0. Старые строки не получают искусственного дедлайна.
+2. Обновить **.NET Persistence API** из той же версии, что и Godot server; проверить GET/PUT roundtrip `regrowth_at`.
+3. Только потом переключить Godot dedicated server и клиентские сборки. **Существующий скрипт релиза Eldoria обновляет Godot/Android/Windows, но не обновляет .NET Persistence API и не применяет миграции. Его нельзя использовать для публикации этого изменения без отдельного подготовленного обновления persistence API.**
+4. Проверить два реальных клиента Android/Windows, дерево после 299/300 секунд, пропажу/возвращение коллизии, restart, блокировку постройкой, хранение инвентаря и отсутствие дюпа.
+
+## Проверки
+
+- `dotnet restore` + `dotnet build server/Eldoria.Persistence/Eldoria.Persistence.csproj`: **PASS**, exit 0, 0 warnings / 0 errors.
+- `Godot 4.5.2 --headless --editor --quit`: **PASS**, exit 0.
+- `res://tests/task087_tree_regrowth_policy_e2e.gd`: **PASS**, boundary 299/300 + building clearance.
+- `bash tests/run_task087_tree_regrowth_e2e.sh`: **PASS**, три отдельных реальных процесса Godot + JSON: вырубка, перезапуск, таймер, игрок/постройка, откат при ошибке сохранения, восстановление, ещё один перезапуск.
+- `bash tests/run_task087_tree_regrowth_network_e2e.sh`: **PASS**, Godot dedicated WebSocket + два независимых клиента, оба наблюдают 0→полную прочность.
+- PostgreSQL roundtrip/миграция и физический Android: **NOT_VERIFIED**. Отсутствует изолированная PostgreSQL среда; на production тестовые миграции не запускались.
+
+**Не путать изолированную функцию с полной acceptance:** когда PG и WSS ещё не проверены, не отмечать весь TASK-087.06 DONE. Обновлять результаты здесь после реальных запусков.
