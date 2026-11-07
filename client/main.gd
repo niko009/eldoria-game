@@ -2607,6 +2607,15 @@ func _select_combat_target(target_id: int) -> void:
     _refresh_selected_target()
 
 func _refresh_selected_target() -> void:
+    if not is_dedicated:
+        if is_instance_valid(wolf_actor):
+            wolf_actor.set_health_focus(selected_target_id == -1)
+        for pack_id in pack_actors:
+            if is_instance_valid(pack_actors[pack_id]):
+                pack_actors[pack_id].set_health_focus(selected_target_id == int(pack_id))
+        for creature_id in passive_actors:
+            if is_instance_valid(passive_actors[creature_id]):
+                passive_actors[creature_id].set_health_focus(selected_target_id == 100 + int(creature_id))
     if selected_target_id == 0 or is_dedicated:
         return
     var target := _combat_target_data(selected_target_id)
