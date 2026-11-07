@@ -21,23 +21,472 @@
     "on_approval_block": "skip_and_continue_autonomous",
     "on_technical_block": "record_reason_and_take_another_independent_task",
     "on_unverified_android_hardware": "record_NOT_VERIFIED_do_not_claim_pass",
-    "scheduled_agent_configured": false
+    "scheduled_agent_configured": false,
+    "selection_order": "First eligible P0 by priority and dependencies; skip blocked and continue with an independent A task, then P1. DEFERRED means no automatic full implementation.",
+    "task_definitions_authoritative": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+    "deny_deferred_implementation": true
   },
   "autonomous": [
-    {"id":"A-01","task":"TASK-089","title":"Health bars: authoritative current/max mob HP","priority":0,"status":"TODO","depends_on":[],"doc":"docs/TASK-089_MOB_HEALTH_BARS.md"},
-    {"id":"A-02","task":"TASK-087-GP-01-04","title":"Arrows, joystick+attack, target selection","priority":0,"status":"TODO","depends_on":[],"doc":"docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md"},
-    {"id":"A-03","task":"TASK-087-GP-06-08","title":"Staff+shield, consumables, tree regrowth","priority":0,"status":"TODO","depends_on":[],"doc":"docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md"},
-    {"id":"A-04","task":"TASK-090","title":"Full art, icons, assets and UI audit, previews only","priority":1,"status":"TODO","depends_on":[],"doc":"docs/TASK-090_ASSET_AND_UI_AUDIT.md"},
-    {"id":"A-05","task":"TASK-087-UI","title":"Functional HUD, scrolling, safe area fixes","priority":1,"status":"TODO","depends_on":[],"doc":"docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md"},
-    {"id":"A-06","task":"TASK-088-QUEST","title":"Server quest progress, XP/material rewards, solo/coop","priority":1,"status":"TODO","depends_on":[],"doc":"docs/TASK-088_QUESTS_AND_MAGIC_PROGRESSION.md"},
-    {"id":"A-07","task":"TASK-088-MAGIC","title":"Server-validated magic XP independent of melee","priority":1,"status":"TODO","depends_on":[],"doc":"docs/TASK-088_QUESTS_AND_MAGIC_PROGRESSION.md"},
-    {"id":"A-08","task":"TASK-091","title":"Research and render at least six mob candidates","priority":1,"status":"TODO","depends_on":[],"doc":"docs/TASK-091_MOB_SELECTION.md"},
-    {"id":"A-09","task":"QA-PERFORMANCE","title":"WSS, Android Low/High performance and regression","priority":2,"status":"TODO","depends_on":[],"doc":"docs/ELDORIA_DEVELOPMENT_QUEUES.md"}
+    {
+      "id": "A-01",
+      "task": "TASK-089",
+      "title": "Health bars: authoritative current/max mob HP",
+      "priority": 0,
+      "status": "TODO",
+      "depends_on": [],
+      "doc": "docs/TASK-089_MOB_HEALTH_BARS.md"
+    },
+    {
+      "id": "A-02",
+      "task": "TASK-087-GP-01-04",
+      "title": "Arrows, joystick+attack, target selection",
+      "priority": 0,
+      "status": "TODO",
+      "depends_on": [],
+      "doc": "docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md"
+    },
+    {
+      "id": "A-03",
+      "task": "TASK-087-GP-06-08",
+      "title": "Staff+shield, consumables, tree regrowth",
+      "priority": 0,
+      "status": "TODO",
+      "depends_on": [],
+      "doc": "docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md"
+    },
+    {
+      "id": "A-04",
+      "task": "TASK-090",
+      "title": "Full art, icons, assets and UI audit, previews only",
+      "priority": 1,
+      "status": "TODO",
+      "depends_on": [],
+      "doc": "docs/TASK-090_ASSET_AND_UI_AUDIT.md"
+    },
+    {
+      "id": "A-05",
+      "task": "TASK-087-UI",
+      "title": "Functional HUD, scrolling, safe area fixes",
+      "priority": 1,
+      "status": "TODO",
+      "depends_on": [],
+      "doc": "docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md"
+    },
+    {
+      "id": "A-06",
+      "task": "TASK-088-QUEST",
+      "title": "Server quest progress, XP/material rewards, solo/coop",
+      "priority": 0,
+      "status": "TODO",
+      "depends_on": [],
+      "doc": "docs/TASK-088_QUESTS_AND_MAGIC_PROGRESSION.md"
+    },
+    {
+      "id": "A-07",
+      "task": "TASK-088-MAGIC",
+      "title": "Server-validated magic XP independent of melee",
+      "priority": 1,
+      "status": "TODO",
+      "depends_on": [],
+      "doc": "docs/TASK-088_QUESTS_AND_MAGIC_PROGRESSION.md"
+    },
+    {
+      "id": "A-08",
+      "task": "TASK-091",
+      "title": "Research and render at least six mob candidates",
+      "priority": 1,
+      "status": "TODO",
+      "depends_on": [],
+      "doc": "docs/TASK-091_MOB_SELECTION.md"
+    },
+    {
+      "id": "A-09",
+      "task": "QA-PERFORMANCE",
+      "title": "WSS, Android Low/High performance and regression",
+      "priority": 2,
+      "status": "TODO",
+      "depends_on": [],
+      "doc": "docs/ELDORIA_DEVELOPMENT_QUEUES.md"
+    },
+    {
+      "id": "A-10",
+      "task": "TASK-093",
+      "title": "Первый результат за 5–10 минут",
+      "priority": 0,
+      "status": "TODO",
+      "depends_on": [
+        "A-06"
+      ],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-11",
+      "task": "TASK-094",
+      "title": "Настоящая группа и общий индикатор задания",
+      "priority": 0,
+      "status": "TODO",
+      "depends_on": [
+        "A-06"
+      ],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-12",
+      "task": "TASK-095",
+      "title": "Спасти раненого напарника",
+      "priority": 0,
+      "status": "TODO",
+      "depends_on": [],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-13",
+      "task": "TASK-096",
+      "title": "Командные преимущества классов",
+      "priority": 0,
+      "status": "TODO",
+      "depends_on": [],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-14",
+      "task": "TASK-097",
+      "title": "Кооперативное взаимодействие в руинах",
+      "priority": 0,
+      "status": "TODO",
+      "depends_on": [],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-15",
+      "task": "TASK-098",
+      "title": "Первая законченная глава «Следы в лесу»",
+      "priority": 0,
+      "status": "TODO",
+      "depends_on": [
+        "A-06",
+        "A-11",
+        "A-14"
+      ],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-16",
+      "task": "TASK-099",
+      "title": "Тактический босс из существующего альфа-волка",
+      "priority": 0,
+      "status": "TODO",
+      "depends_on": [
+        "A-01"
+      ],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-17",
+      "task": "TASK-100",
+      "title": "Командная победа, персональная награда",
+      "priority": 0,
+      "status": "TODO",
+      "depends_on": [
+        "A-06"
+      ],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-18",
+      "task": "TASK-102",
+      "title": "Баланс для одного и двух игроков",
+      "priority": 0,
+      "status": "TODO",
+      "depends_on": [],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-19",
+      "task": "TASK-104",
+      "title": "Тест реального 60-минутного приключения",
+      "priority": 0,
+      "status": "TODO",
+      "depends_on": [
+        "A-10",
+        "A-11",
+        "A-12",
+        "A-13",
+        "A-14",
+        "A-15",
+        "A-16",
+        "A-17",
+        "A-18"
+      ],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-20",
+      "task": "TASK-101",
+      "title": "Полезные улучшения лагеря",
+      "priority": 1,
+      "status": "TODO",
+      "depends_on": [],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-21",
+      "task": "TASK-103",
+      "title": "Осмысленная цепочка крафта",
+      "priority": 1,
+      "status": "TODO",
+      "depends_on": [],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-22",
+      "task": "TASK-105",
+      "title": "Повторяемые экспедиции на 10–20 минут",
+      "priority": 1,
+      "status": "TODO",
+      "depends_on": [
+        "A-06"
+      ],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-23",
+      "task": "TASK-106",
+      "title": "Небольшие тайники и сокровища",
+      "priority": 1,
+      "status": "TODO",
+      "depends_on": [
+        "A-06"
+      ],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-24",
+      "task": "TASK-107",
+      "title": "Полезная роль разбойника",
+      "priority": 1,
+      "status": "TODO",
+      "depends_on": [],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-25",
+      "task": "TASK-108",
+      "title": "Разные ночные нападения",
+      "priority": 1,
+      "status": "TODO",
+      "depends_on": [],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-26",
+      "task": "TASK-109",
+      "title": "Сопроводить потерявшегося NPC",
+      "priority": 1,
+      "status": "TODO",
+      "depends_on": [
+        "A-06"
+      ],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-27",
+      "task": "TASK-110",
+      "title": "Не терять напарника",
+      "priority": 1,
+      "status": "TODO",
+      "depends_on": [
+        "A-11"
+      ],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-28",
+      "task": "TASK-111",
+      "title": "Качественные улучшения оружия",
+      "priority": 1,
+      "status": "TODO",
+      "depends_on": [],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-29",
+      "task": "TASK-112",
+      "title": "Разный рост классов",
+      "priority": 1,
+      "status": "TODO",
+      "depends_on": [
+        "A-07"
+      ],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-30",
+      "task": "TASK-113",
+      "title": "Маленькие достижения без FOMO",
+      "priority": 1,
+      "status": "TODO",
+      "depends_on": [
+        "A-06"
+      ],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    },
+    {
+      "id": "A-31",
+      "task": "TASK-114",
+      "title": "Сигнал помощи и безопасный сбор группы",
+      "priority": 1,
+      "status": "TODO",
+      "depends_on": [
+        "A-11"
+      ],
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
+      "approval_dependencies": []
+    }
   ],
   "approval_required": [
-    {"id":"B-01","task":"TASK-091/TASK-092","title":"Approve each of at least four new mob models and animations before integration","status":"APPROVAL_REQUIRED","depends_on_approval_ids":[],"doc":"docs/TASK-091_MOB_SELECTION.md"},
-    {"id":"B-02","task":"TASK-090-ART","title":"Approve entire art/icon/model replacement style and chosen assets","status":"APPROVAL_REQUIRED","depends_on_approval_ids":[],"doc":"docs/TASK-090_ASSET_AND_UI_AUDIT.md"},
-    {"id":"B-03","task":"TASK-090-UI","title":"Approve visual UI redesign and undecided hotbar/block UX","status":"APPROVAL_REQUIRED","depends_on_approval_ids":[],"doc":"docs/TASK-090_ASSET_AND_UI_AUDIT.md"},
-    {"id":"B-04","task":"FUTURE-CONTENT","title":"Approve major quest world/lore and future systems","status":"APPROVAL_REQUIRED","depends_on_approval_ids":[],"doc":"docs/ELDORIA_DEVELOPMENT_QUEUES.md"}
-  ]
+    {
+      "id": "B-01",
+      "task": "TASK-091/TASK-092",
+      "title": "Approve each of at least four new mob models and animations before integration",
+      "status": "APPROVAL_REQUIRED",
+      "depends_on_approval_ids": [],
+      "doc": "docs/TASK-091_MOB_SELECTION.md"
+    },
+    {
+      "id": "B-02",
+      "task": "TASK-090-ART",
+      "title": "Approve entire art/icon/model replacement style and chosen assets",
+      "status": "APPROVAL_REQUIRED",
+      "depends_on_approval_ids": [],
+      "doc": "docs/TASK-090_ASSET_AND_UI_AUDIT.md"
+    },
+    {
+      "id": "B-03",
+      "task": "TASK-090-UI",
+      "title": "Approve visual UI redesign and undecided hotbar/block UX",
+      "status": "APPROVAL_REQUIRED",
+      "depends_on_approval_ids": [],
+      "doc": "docs/TASK-090_ASSET_AND_UI_AUDIT.md"
+    },
+    {
+      "id": "B-04",
+      "task": "FUTURE-CONTENT",
+      "title": "Approve major quest world/lore and future systems",
+      "status": "APPROVAL_REQUIRED",
+      "depends_on_approval_ids": [],
+      "doc": "docs/ELDORIA_DEVELOPMENT_QUEUES.md"
+    }
+  ],
+  "deferred": [
+    {
+      "id": "TASK-115",
+      "title": "Простые жители и профессии",
+      "status": "DEFERRED",
+      "autonomous_scope": "documentation_and_isolated_prototypes_only",
+      "requires_product_approval_for_implementation": true,
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md"
+    },
+    {
+      "id": "TASK-116",
+      "title": "Поселение и королевство",
+      "status": "DEFERRED",
+      "autonomous_scope": "documentation_and_isolated_prototypes_only",
+      "requires_product_approval_for_implementation": true,
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md"
+    },
+    {
+      "id": "TASK-117",
+      "title": "Мягкое выживание",
+      "status": "DEFERRED",
+      "autonomous_scope": "documentation_and_isolated_prototypes_only",
+      "requires_product_approval_for_implementation": true,
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md"
+    },
+    {
+      "id": "TASK-118",
+      "title": "Биомы и погода",
+      "status": "DEFERRED",
+      "autonomous_scope": "documentation_and_isolated_prototypes_only",
+      "requires_product_approval_for_implementation": true,
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md"
+    },
+    {
+      "id": "TASK-119",
+      "title": "Пещера и ловушки",
+      "status": "DEFERRED",
+      "autonomous_scope": "documentation_and_isolated_prototypes_only",
+      "requires_product_approval_for_implementation": true,
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md"
+    },
+    {
+      "id": "TASK-120",
+      "title": "Разрушаемый грунт и тоннели",
+      "status": "DEFERRED",
+      "autonomous_scope": "documentation_and_isolated_prototypes_only",
+      "requires_product_approval_for_implementation": true,
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md"
+    },
+    {
+      "id": "TASK-121",
+      "title": "Экспедиции NPC, караваны, торговля",
+      "status": "DEFERRED",
+      "autonomous_scope": "documentation_and_isolated_prototypes_only",
+      "requires_product_approval_for_implementation": true,
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md"
+    },
+    {
+      "id": "TASK-122",
+      "title": "Союзы, дипломатия, PvP и права",
+      "status": "DEFERRED",
+      "autonomous_scope": "documentation_and_isolated_prototypes_only",
+      "requires_product_approval_for_implementation": true,
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md"
+    },
+    {
+      "id": "TASK-123",
+      "title": "Наследник, экипировка мобов и офлайн-щит",
+      "status": "DEFERRED",
+      "autonomous_scope": "documentation_and_isolated_prototypes_only",
+      "requires_product_approval_for_implementation": true,
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md"
+    },
+    {
+      "id": "TASK-124",
+      "title": "Длинные игровые сессии и 10 игроков",
+      "status": "DEFERRED",
+      "autonomous_scope": "documentation_and_isolated_prototypes_only",
+      "requires_product_approval_for_implementation": true,
+      "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md"
+    }
+  ],
+  "coop_planning": {
+    "master_backlog": "docs/ELDORIA_COOP_MASTER_BACKLOG.md",
+    "legacy_task_review": "docs/ELDORIA_LEGACY_BACKLOG_RECONCILIATION.md",
+    "playtest_protocol": "docs/ELDORIA_COOP_PLAYTEST_PROTOCOL.md",
+    "new_task_count": 32,
+    "autonomous_new_tasks": 22,
+    "deferred_future_tasks": 10
+  }
 }
