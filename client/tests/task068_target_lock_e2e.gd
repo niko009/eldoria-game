@@ -9,6 +9,9 @@ func _run() -> void:
 	game.selected_avatar = 1
 	root.add_child(game)
 	await process_frame
+	# The E2E exercises the game host locally; UDP binding is not reliable
+	# in isolated development sandboxes, so use the same WS host as production.
+	game.is_websocket_host = true
 	game._host()
 	game.set_physics_process(false)
 	var id: int = game.own_id
