@@ -18,6 +18,7 @@
 - `task088_starter_quest_policy_e2e.gd`: invalid / overflow / duplicate / prerequisites PASS.
 - `tests/run_task088_starter_quest_e2e.sh`: isolated JSON 3-process initial→claim→restart PASS, including forced save failure rollback.
 - `tests/run_task088_starter_quest_wss_e2e.sh`: dedicated WebSocket host + 2 distinct clients PASS; one player claims twice, only their XP/items change.
+- `client/tests/task088_starter_quest_hud_e2e.gd` under real Godot OpenGL/Xvfb: **six screenshot/geometry captures PASS** at 800×360 and 1280×720 for active, completed and claimed states; the quest prompt and Claim button are contained in the status panel. JPEG samples of actual 800×360 Godot UI: [active](audits/quest-088/800x360-active.jpg), [claim ready](audits/quest-088/800x360-completed.jpg), [claimed](audits/quest-088/800x360-claimed.jpg).
 - PostgreSQL end-to-end: **NOT_VERIFIED until a test on an isolated PG database is recorded.**
 - Physical Android/Windows graphical interaction: NOT_VERIFIED. Non-production, no user-world migration.
 
