@@ -298,6 +298,10 @@ func set_health(hp: int, maximum: int) -> void:
         state.max_health = maxi(1, maximum)
         state.changed.emit()
 
+func set_quest_progress(quests: Dictionary) -> void:
+    if hud != null:
+        hud.set_quest_progress(quests)
+
 func reset_health() -> void:
     if state != null:
         state.health_known = false

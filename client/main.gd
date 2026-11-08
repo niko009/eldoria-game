@@ -13,6 +13,7 @@ const POSTGRES_WORLD_STORE_SCRIPT := preload("res://postgres_world_store.gd")
 const BUILDING_SCRIPT := preload("res://building_object.gd")
 const TREE_REGROWTH_SCRIPT := preload("res://tree_regrowth.gd")
 const REVIVE_POLICY := preload("res://coop_revive_policy.gd")
+const QUESTS := preload("res://quest_progress.gd")
 const HARVEST_VFX_SCRIPT := preload("res://harvest_vfx.gd")
 const TELEMETRY_SCRIPT := preload("res://performance_telemetry.gd")
 const TELEMETRY_SINK_SCRIPT := preload("res://telemetry_sink.gd")
@@ -45,6 +46,7 @@ var players := {}
 var player_choices := {}
 var resource_remaining := {}
 var player_inventories := {}
+var player_quests: Dictionary = {} # Per-peer, source of truth is server + stored profile.
 var player_health := {}
 var player_respawn_at := {}
 var player_downed_until: Dictionary = {} # Authoritative server-only deadlines.
@@ -1210,6 +1212,7 @@ func _remove_actor(id: int) -> void:
     emote_counts.erase(id)
     player_choices.erase(id)
     player_inventories.erase(id)
+    player_quests.erase(id)
     practice_points.erase(id)
     player_skills.erase(id)
     shield_taunt_until.erase(id)
@@ -1228,6 +1231,7 @@ func _clear_session() -> void:
     next_footstep_at.clear()
     footstep_variant.clear()
     player_health.clear()
+    player_quests.clear()
     player_respawn_at.clear()
     player_downed_until.clear()
     downed_peers.clear()
@@ -1375,7 +1379,7 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
     # Persist a new identity BEFORE making it visible to other players.
     # Do not let an unavailable DB silently spawn an unsaved online player.
     if not identity_hash.is_empty() and not persistent_profiles.has(identity_hash):
-        persistent_profiles[identity_hash] = {"avatar":validated,"inventory":_empty_inventory(),"skills":_empty_skills(),"equipment":{"main_hand":"staff" if validated == HERO_CLASSES.MAGE else "unarmed","off_hand":"unarmed","chest":"unarmed"}}
+        persistent_profiles[identity_hash] = {"avatar":validated,"inventory":_empty_inventory(),"skills":_empty_skills(),"quests":QUESTS.initial(),"equipment":{"main_hand":"staff" if validated == HERO_CLASSES.MAGE else "unarmed","off_hand":"unarmed","chest":"unarmed"}}
         if not _save_world_state():
             print("ELDORIA PEER REJECTED persistence_unavailable id=%d" % id)
             persistent_profiles.erase(identity_hash)
@@ -1396,6 +1400,7 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
     player_health[id] = MAX_HEALTH
     hero_mana[id] = HERO_CLASSES.MAGE_MANA_MAX
     player_inventories[id] = _empty_inventory()
+    player_quests[id] = QUESTS.initial()
     player_skills[id] = _empty_skills()
     practice_points[id] = 0
     equipped_axes[id] = false
@@ -1404,6 +1409,7 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
     equipped_armor[id] = false
     if not identity_hash.is_empty() and persistent_profiles.has(identity_hash):
         player_inventories[id] = persistent_profiles[identity_hash]["inventory"].duplicate(true)
+        player_quests[id] = QUESTS.normalize(persistent_profiles[identity_hash].get("quests",{}))
         player_skills[id] = persistent_profiles[identity_hash].get("skills",_empty_skills()).duplicate(true)
         var saved_equipment: Dictionary = persistent_profiles[identity_hash].get("equipment",{})
         equipped_combat[id] = str(saved_equipment.get("main_hand","unarmed"))
@@ -1417,6 +1423,7 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
     armor_equip_snapshot.rpc_id(id,bool(equipped_armor[id]))
     resource_snapshot.rpc_id(id, resource_remaining)
     inventory_snapshot.rpc_id(id, player_inventories[id])
+    quest_snapshot.rpc_id(id, player_quests[id])
     axe_equip_snapshot.rpc_id(id, false)
     health_snapshot.rpc_id(id, MAX_HEALTH, MAX_HEALTH)
     for existing in player_downed_until:
@@ -3601,6 +3608,75 @@ func _empty_inventory() -> Dictionary:
 func _empty_skills() -> Dictionary:
     return {"archery":0,"spear":0,"defense":0,"magic":0}
 
+@rpc("authority","call_remote","reliable")
+func quest_snapshot(quests: Dictionary) -> void:
+    if live_ui != null:
+        live_ui.set_quest_progress(quests)
+
+func _send_quest_snapshot(id: int) -> void:
+    var quests: Dictionary = player_quests.get(id,QUESTS.initial())
+    if id == own_id:
+        quest_snapshot(quests)
+    elif multiplayer.get_peers().has(id):
+        quest_snapshot.rpc_id(id,quests)
+
+func _try_claim_first_quest() -> void:
+    if own_id <= 0:
+        return
+    if multiplayer.is_server():
+        _quest_claim_on_server(own_id)
+    else:
+        request_quest_claim.rpc_id(1,QUESTS.ID)
+
+@rpc("any_peer","reliable")
+func request_quest_claim(quest_id: String) -> void:
+    if multiplayer.is_server() and quest_id == QUESTS.ID:
+        _quest_claim_on_server(multiplayer.get_remote_sender_id())
+
+func _quest_claim_on_server(id: int) -> bool:
+    if not multiplayer.is_server() or not players.has(id) or int(player_health.get(id,0)) <= 0:
+        return false
+    var quests: Dictionary = player_quests.get(id,QUESTS.initial())
+    var inventory: Dictionary = player_inventories.get(id,{}).duplicate(true)
+    var skills: Dictionary = player_skills.get(id,{}).duplicate(true)
+    var avatar := int(player_choices.get(id,-1))
+    if not QUESTS.can_claim(quests,inventory,skills,avatar):
+        return false
+    var old_quests := quests.duplicate(true)
+    var old_inventory := inventory.duplicate(true)
+    var old_skills := skills.duplicate(true)
+    var skill: String = QUESTS.reward_skill(avatar)
+    inventory["herb"] = int(inventory.get("herb",0)) + QUESTS.REWARD_HERB
+    skills[skill] = int(skills.get(skill,0)) + QUESTS.REWARD_XP
+    quests = quests.duplicate(true)
+    quests[QUESTS.ID]["status"] = "claimed"
+    player_quests[id] = quests
+    player_inventories[id] = inventory
+    player_skills[id] = skills
+    var key := str(player_identity_keys.get(id,""))
+    if not key.is_empty():
+        persistent_profiles[key]["quests"] = quests.duplicate(true)
+        persistent_profiles[key]["inventory"] = inventory.duplicate(true)
+        persistent_profiles[key]["skills"] = skills.duplicate(true)
+    if not _save_world_state():
+        player_quests[id] = old_quests
+        player_inventories[id] = old_inventory
+        player_skills[id] = old_skills
+        if not key.is_empty():
+            persistent_profiles[key]["quests"] = old_quests.duplicate(true)
+            persistent_profiles[key]["inventory"] = old_inventory.duplicate(true)
+            persistent_profiles[key]["skills"] = old_skills.duplicate(true)
+        return false
+    _send_quest_snapshot(id)
+    if id == own_id:
+        inventory_snapshot(inventory)
+        skill_snapshot(skills)
+    else:
+        inventory_snapshot.rpc_id(id,inventory)
+        skill_snapshot.rpc_id(id,skills)
+    _send_hero_message(id,"Задание выполнено! +2 травы, +5 опыта навыка")
+    return true
+
 func _award_skill_xp(player_id: int, skill: String, points: int) -> bool:
     if not multiplayer.is_server() or not players.has(player_id) or skill not in SKILL_KINDS or points <= 0:
         return false
@@ -4232,6 +4308,7 @@ func _gather_on_server(player_id: int, resource_id: int) -> bool:
     var chop_amount := 2 if kind == "wood" and has_equipped_axe else 1
     chop_amount = mini(chop_amount, int(resource_remaining[resource_id]))
     var old_deadline := int(tree_regrowth_at.get(resource_id,0))
+    var old_quests: Dictionary = player_quests.get(player_id,QUESTS.initial()).duplicate(true)
     resource_remaining[resource_id] = int(resource_remaining[resource_id])-chop_amount
     world.set_resource_quantity(resource_id,int(resource_remaining[resource_id]))
     if kind == "wood" and int(resource_remaining[resource_id]) == 0:
@@ -4241,11 +4318,14 @@ func _gather_on_server(player_id: int, resource_id: int) -> bool:
     var inventory: Dictionary = player_inventories[player_id]
     inventory[kind] = int(inventory.get(kind,0))+chop_amount
     player_inventories[player_id] = inventory
+    var updated_quests: Dictionary = QUESTS.gather(old_quests,kind,chop_amount)
+    player_quests[player_id] = updated_quests
     # Persist the resource depletion and private inventory together before
     # broadcasting success; revert the in-memory action if disk write fails.
     if player_identity_keys.has(player_id):
         var key: String = player_identity_keys[player_id]
         persistent_profiles[key]["inventory"] = inventory.duplicate(true)
+        persistent_profiles[key]["quests"] = updated_quests.duplicate(true)
     if not _save_world_state():
         resource_remaining[resource_id] = int(resource_remaining[resource_id])+chop_amount
         world.set_resource_quantity(resource_id,int(resource_remaining[resource_id]))
@@ -4255,8 +4335,10 @@ func _gather_on_server(player_id: int, resource_id: int) -> bool:
             tree_regrowth_at.erase(resource_id)
         inventory[kind] = int(inventory[kind])-chop_amount
         player_inventories[player_id] = inventory
+        player_quests[player_id] = old_quests
         if player_identity_keys.has(player_id):
             persistent_profiles[player_identity_keys[player_id]]["inventory"] = inventory.duplicate(true)
+            persistent_profiles[player_identity_keys[player_id]]["quests"] = old_quests.duplicate(true)
         return false
     for remote_peer in connected_peers.keys():
         resource_changed.rpc_id(int(remote_peer),resource_id,int(resource_remaining[resource_id]))
@@ -4264,6 +4346,10 @@ func _gather_on_server(player_id: int, resource_id: int) -> bool:
         inventory_snapshot(inventory)
     else:
         inventory_snapshot.rpc_id(player_id,inventory)
+    if updated_quests != old_quests:
+        _send_quest_snapshot(player_id)
+        if str(updated_quests[QUESTS.ID]["status"]) == "completed":
+            _send_hero_message(player_id,"Припасы собраны! Получите награду в журнале.")
     for remote_peer in connected_peers.keys():
         gather_effect.rpc_id(int(remote_peer),player_id,kind,resource_id,
             int(resource_remaining[resource_id]),pos)
@@ -4584,6 +4670,8 @@ func _live_preview(kind: String) -> void:
 
 func _live_action(kind: String) -> void:
     match kind:
+        "quest_claim":
+            _try_claim_first_quest()
         "spear", "bow":
             _try_equip_combat(kind)
         "shield":
