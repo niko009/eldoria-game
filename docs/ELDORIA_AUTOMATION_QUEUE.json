@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project": "eldoria-game",
-  "updated_at": "2026-11-07",
+  "updated_at": "2026-11-08",
   "baseline": {
     "production_version_at_planning": "0.5.26",
     "source_commit": "83f8f8d2a9bbfcd45197ae430e3cdb26466f8301",
@@ -32,18 +32,20 @@
       "task": "TASK-089",
       "title": "Health bars: authoritative current/max mob HP",
       "priority": 0,
-      "status": "TODO",
+      "status": "TESTED",
       "depends_on": [],
-      "doc": "docs/TASK-089_MOB_HEALTH_BARS.md"
+      "doc": "docs/TASK-089_MOB_HEALTH_BARS.md",
+      "audit": "Targeted Godot test passed in v0.5.27 candidate; two-peer HP and Android not verified; not DONE"
     },
     {
       "id": "A-02",
       "task": "TASK-087-GP-01-04",
       "title": "Arrows, joystick+attack, target selection",
       "priority": 0,
-      "status": "TODO",
+      "status": "IN_PROGRESS",
       "depends_on": [],
-      "doc": "docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md"
+      "doc": "docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md",
+      "audit": "Partial code exists. See docs/RELEASE_0528_TASK_AUDIT.md; no full acceptance"
     },
     {
       "id": "A-03",
@@ -53,25 +55,28 @@
       "status": "IN_PROGRESS",
       "depends_on": [],
       "doc": "docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md",
-      "progress": "TASK-087.06 tree regrowth: JSON persistence and two WS client tests passed in isolated environment; PostgreSQL migration/integration and Android not verified, so A-03 remains IN_PROGRESS"
+      "progress": "TASK-087.06 tree regrowth: JSON persistence and two WS client tests passed in isolated environment; PostgreSQL migration/integration and Android not verified, so A-03 remains IN_PROGRESS",
+      "audit": "Partial code exists. See docs/RELEASE_0528_TASK_AUDIT.md; no full acceptance"
     },
     {
       "id": "A-04",
       "task": "TASK-090",
       "title": "Full art, icons, assets and UI audit, previews only",
       "priority": 1,
-      "status": "TODO",
+      "status": "IN_PROGRESS",
       "depends_on": [],
-      "doc": "docs/TASK-090_ASSET_AND_UI_AUDIT.md"
+      "doc": "docs/TASK-090_ASSET_AND_UI_AUDIT.md",
+      "audit": "Partial code exists. See docs/RELEASE_0528_TASK_AUDIT.md; no full acceptance"
     },
     {
       "id": "A-05",
       "task": "TASK-087-UI",
       "title": "Functional HUD, scrolling, safe area fixes",
       "priority": 1,
-      "status": "TODO",
+      "status": "IN_PROGRESS",
       "depends_on": [],
-      "doc": "docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md"
+      "doc": "docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md",
+      "audit": "Partial code exists. See docs/RELEASE_0528_TASK_AUDIT.md; no full acceptance"
     },
     {
       "id": "A-06",
@@ -80,7 +85,8 @@
       "priority": 0,
       "status": "TODO",
       "depends_on": [],
-      "doc": "docs/TASK-088_QUESTS_AND_MAGIC_PROGRESSION.md"
+      "doc": "docs/TASK-088_QUESTS_AND_MAGIC_PROGRESSION.md",
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-07",
@@ -89,7 +95,8 @@
       "priority": 1,
       "status": "TODO",
       "depends_on": [],
-      "doc": "docs/TASK-088_QUESTS_AND_MAGIC_PROGRESSION.md"
+      "doc": "docs/TASK-088_QUESTS_AND_MAGIC_PROGRESSION.md",
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-08",
@@ -98,7 +105,8 @@
       "priority": 1,
       "status": "TODO",
       "depends_on": [],
-      "doc": "docs/TASK-091_MOB_SELECTION.md"
+      "doc": "docs/TASK-091_MOB_SELECTION.md",
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-09",
@@ -107,7 +115,8 @@
       "priority": 2,
       "status": "TODO",
       "depends_on": [],
-      "doc": "docs/ELDORIA_DEVELOPMENT_QUEUES.md"
+      "doc": "docs/ELDORIA_DEVELOPMENT_QUEUES.md",
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-10",
@@ -119,7 +128,8 @@
         "A-06"
       ],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-11",
@@ -131,17 +141,19 @@
         "A-06"
       ],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-12",
       "task": "TASK-095",
       "title": "Спасти раненого напарника",
       "priority": 0,
-      "status": "TODO",
+      "status": "IN_PROGRESS",
       "depends_on": [],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Partial code exists. See docs/RELEASE_0528_TASK_AUDIT.md; no full acceptance"
     },
     {
       "id": "A-13",
@@ -151,7 +163,8 @@
       "status": "TODO",
       "depends_on": [],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-14",
@@ -161,7 +174,8 @@
       "status": "TODO",
       "depends_on": [],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-15",
@@ -175,7 +189,8 @@
         "A-14"
       ],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-16",
@@ -187,7 +202,8 @@
         "A-01"
       ],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-17",
@@ -199,7 +215,8 @@
         "A-06"
       ],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-18",
@@ -209,7 +226,8 @@
       "status": "TODO",
       "depends_on": [],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-19",
@@ -229,7 +247,8 @@
         "A-18"
       ],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-20",
@@ -239,7 +258,8 @@
       "status": "TODO",
       "depends_on": [],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-21",
@@ -249,7 +269,8 @@
       "status": "TODO",
       "depends_on": [],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-22",
@@ -261,7 +282,8 @@
         "A-06"
       ],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-23",
@@ -273,7 +295,8 @@
         "A-06"
       ],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-24",
@@ -283,7 +306,8 @@
       "status": "TODO",
       "depends_on": [],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-25",
@@ -293,7 +317,8 @@
       "status": "TODO",
       "depends_on": [],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-26",
@@ -305,7 +330,8 @@
         "A-06"
       ],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-27",
@@ -317,7 +343,8 @@
         "A-11"
       ],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-28",
@@ -327,7 +354,8 @@
       "status": "TODO",
       "depends_on": [],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-29",
@@ -339,7 +367,8 @@
         "A-07"
       ],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-30",
@@ -351,7 +380,8 @@
         "A-06"
       ],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     },
     {
       "id": "A-31",
@@ -363,7 +393,8 @@
         "A-11"
       ],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
-      "approval_dependencies": []
+      "approval_dependencies": [],
+      "audit": "Not implemented/accepted as specified; details in docs/RELEASE_0528_TASK_AUDIT.md"
     }
   ],
   "approval_required": [
