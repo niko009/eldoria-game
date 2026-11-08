@@ -11,6 +11,7 @@ const JOYSTICK_SCRIPT := preload("res://mobile_joystick.gd")
 const WORLD_SAVE_SCRIPT := preload("res://world_save.gd")
 const POSTGRES_WORLD_STORE_SCRIPT := preload("res://postgres_world_store.gd")
 const BUILDING_SCRIPT := preload("res://building_object.gd")
+const TREE_REGROWTH_SCRIPT := preload("res://tree_regrowth.gd")
 const HARVEST_VFX_SCRIPT := preload("res://harvest_vfx.gd")
 const TELEMETRY_SCRIPT := preload("res://performance_telemetry.gd")
 const TELEMETRY_SINK_SCRIPT := preload("res://telemetry_sink.gd")
@@ -337,6 +338,8 @@ var player_identity_keys := {}
 var persistent_profiles := {}
 var world_store: RefCounted
 var placed_buildings: Dictionary = {}
+var tree_regrowth_at: Dictionary = {} # Server-only UTC Unix deadlines; persisted with inventory.
+var next_tree_regrowth_tick_ms := 0
 var building_nodes: Dictionary = {}
 var next_building_id := 1
 var build_selector: OptionButton
@@ -863,6 +866,7 @@ func _configure_world_persistence() -> bool:
     for id in world_store.depleted.keys():
         resource_remaining[int(id)] = int(world_store.depleted[id])
         world.set_resource_quantity(int(id),int(resource_remaining[int(id)]))
+    tree_regrowth_at = world_store.regrowth_at.duplicate(true)
     print("ELDORIA PERSISTENCE LOADED profiles=%d depleted=%d" % [persistent_profiles.size(),world_store.depleted.size()])
     return true
 
@@ -871,6 +875,7 @@ func _save_world_state() -> bool:
         return true
     world_store.profiles = persistent_profiles.duplicate(true)
     world_store.buildings = placed_buildings.duplicate(true)
+    world_store.regrowth_at = tree_regrowth_at.duplicate(true)
     var world: Node3D = get_node("Eldoria_Forest")
     if not world_store.save_snapshot(resource_remaining,world):
         push_error("ELDORIA PERSISTENCE SAVE ERROR: "+world_store.last_error)
@@ -2002,6 +2007,9 @@ func _combat_server_tick(delta: float) -> void:
     if not multiplayer.is_server() or multiplayer.multiplayer_peer is OfflineMultiplayerPeer:
         return
     var now := Time.get_ticks_msec()
+    if now >= next_tree_regrowth_tick_ms:
+        next_tree_regrowth_tick_ms = now + 1500
+        _tick_tree_regrowth(int(Time.get_unix_time_from_system()))
     for id in hero_mana:
         if int(player_choices.get(id,-1)) != HERO_CLASSES.MAGE or not players.has(id):
             continue
@@ -3607,6 +3615,8 @@ func _use_consumable_on_server(id: int, recipe_id: String) -> bool:
 
 func _reset_resources() -> void:
     resource_remaining.clear()
+    tree_regrowth_at.clear()
+    next_tree_regrowth_tick_ms = 0
     var world: Node3D = get_node("Eldoria_Forest")
     for entry in world.resources:
         resource_remaining[int(entry["id"])] = int(entry["amount"])
@@ -4083,8 +4093,11 @@ func _gather_on_server(player_id: int, resource_id: int) -> bool:
     var has_equipped_axe: bool = bool(equipped_axes.get(player_id, false)) and int(player_inventories.get(player_id, {}).get("axe", 0)) == 1
     var chop_amount := 2 if kind == "wood" and has_equipped_axe else 1
     chop_amount = mini(chop_amount, int(resource_remaining[resource_id]))
+    var old_deadline := int(tree_regrowth_at.get(resource_id,0))
     resource_remaining[resource_id] = int(resource_remaining[resource_id])-chop_amount
     world.set_resource_quantity(resource_id,int(resource_remaining[resource_id]))
+    if kind == "wood" and int(resource_remaining[resource_id]) == 0:
+        tree_regrowth_at[resource_id] = TREE_REGROWTH_SCRIPT.deadline_on_depletion(int(Time.get_unix_time_from_system()))
     if not player_inventories.has(player_id):
         player_inventories[player_id] = _empty_inventory()
     var inventory: Dictionary = player_inventories[player_id]
@@ -4098,6 +4111,10 @@ func _gather_on_server(player_id: int, resource_id: int) -> bool:
     if not _save_world_state():
         resource_remaining[resource_id] = int(resource_remaining[resource_id])+chop_amount
         world.set_resource_quantity(resource_id,int(resource_remaining[resource_id]))
+        if old_deadline > 0:
+            tree_regrowth_at[resource_id] = old_deadline
+        else:
+            tree_regrowth_at.erase(resource_id)
         inventory[kind] = int(inventory[kind])-chop_amount
         player_inventories[player_id] = inventory
         if player_identity_keys.has(player_id):
@@ -4116,6 +4133,56 @@ func _gather_on_server(player_id: int, resource_id: int) -> bool:
         _gather_effect_local(player_id,kind,resource_id,
             int(resource_remaining[resource_id]),pos)
     return true
+
+func _tick_tree_regrowth(now_unix: int) -> int:
+    # Dedicated-server only. Batch a bounded number into one world revision so
+    # a failed PG/JSON commit never makes any client see an uncommitted tree.
+    if not multiplayer.is_server() or multiplayer.multiplayer_peer is OfflineMultiplayerPeer:
+        return 0
+    var world: Node3D = get_node("Eldoria_Forest")
+    var restored: Dictionary = {}
+    var former_deadlines: Dictionary = {}
+    for key in tree_regrowth_at.keys():
+        var id := int(key)
+        if not TREE_REGROWTH_SCRIPT.ready(int(tree_regrowth_at[id]),now_unix):
+            continue
+        var entry: Dictionary = world.resource_by_id(id)
+        if entry.is_empty() or str(entry["kind"]) != "wood" or int(resource_remaining.get(id,-1)) != 0:
+            # Invariant violation: do not erase invalid persistent state in a
+            # tick. Reconcile the world snapshot before retrying.
+            continue
+        var at: Vector3 = entry["pos"]
+        if TREE_REGROWTH_SCRIPT.blocked_by_building(at,placed_buildings,BUILDING_SCRIPT.RADII):
+            continue
+        var occupied := false
+        for actor in players.values():
+            if Vector2(actor.position.x,actor.position.z).distance_to(Vector2(at.x,at.z)) < 1.6:
+                occupied = true
+                break
+        if occupied:
+            continue
+        restored[id] = int(entry["amount"])
+        former_deadlines[id] = int(tree_regrowth_at[id])
+        resource_remaining[id] = int(entry["amount"])
+        world.set_resource_quantity(id,int(entry["amount"]))
+        tree_regrowth_at.erase(id)
+        if restored.size() >= 16:
+            break
+    if restored.is_empty():
+        return 0
+    if not _save_world_state():
+        for id in restored:
+            resource_remaining[id] = 0
+            world.set_resource_quantity(id,0)
+            tree_regrowth_at[id] = int(former_deadlines[id])
+        next_tree_regrowth_tick_ms = Time.get_ticks_msec() + 10000
+        return 0
+    for id in restored:
+        for remote_peer in connected_peers.keys():
+            resource_changed.rpc_id(int(remote_peer),int(id),int(restored[id]))
+        if own_id != 0:
+            resource_changed(int(id),int(restored[id]))
+    return restored.size()
 
 @rpc("authority", "call_remote", "reliable")
 func resource_snapshot(snapshot: Dictionary) -> void:
