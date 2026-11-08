@@ -1,7 +1,27 @@
-# TASK-095 — server revive policy (partial)
+# TASK-095 — server revive: policy + tested feature branch
 
-This commit introduces an isolated deterministic eligibility/hold policy and
-tests. **It is not wired into gameplay and does not implement player rescue.**
+**Status 2026-11-08:** New feature code integrated on an isolated branch
+from production v0.5.28. Automated server, UI and two-WebSocket-client
+tests pass. **Not deployed; not DONE until physical Android acceptance.**
+
+The server now owns a 12-second cooperative downed window, a 1.8-second
+hold-to-revive action and 30 HP on rescue. Solo respawn remains four seconds;
+hold eligibility uses authoritative health, positions, distance and collision
+obstacles, and movement/damage/menu interruption is enforced. Remote clients
+receive downed and health snapshots; late joiners get the existing downed state.
+
+Tests: `task095_revive_policy_e2e.gd`, `task095_revive_server_e2e.gd`,
+`task095_revive_ui_e2e.gd`, and
+`tests/run_task095_revive_network_e2e.sh`. All PASS in isolated Godot tests.
+
+Open: physical Android hold gesture, reconnection/race acceptance, richer
+downed animations, and user balancing. See
+`docs/audits/TASK-087_090_095_FOLLOWUP_20261108.md`.
+
+## Historical policy-only spike (v0.5.27)
+
+The original v0.5.27 commit introduced only an isolated deterministic policy.
+It was **not** wired into gameplay until this subsequent feature branch.
 
 Provisional values: 12-second downed window, 1.8-second uninterrupted hold,
 2.5-meter range, 30 HP on successful rescue. These are tuning candidates, not

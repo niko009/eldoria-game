@@ -42,21 +42,21 @@
       "task": "TASK-087-GP-01-04",
       "title": "Arrows, joystick+attack, target selection",
       "priority": 0,
-      "status": "IN_PROGRESS",
+      "status": "TESTED",
       "depends_on": [],
       "doc": "docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md",
-      "audit": "Partial code exists. See docs/RELEASE_0528_TASK_AUDIT.md; no full acceptance"
+      "audit": "Partial acceptance only: targeted Godot/WSS tests PASS; physical Android and full task criteria NOT_VERIFIED. See docs/audits/TASK-087_090_095_FOLLOWUP_20261108.md"
     },
     {
       "id": "A-03",
       "task": "TASK-087-GP-06-08",
       "title": "Staff+shield, consumables, tree regrowth",
       "priority": 0,
-      "status": "IN_PROGRESS",
+      "status": "TESTED",
       "depends_on": [],
       "doc": "docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md",
-      "progress": "TASK-087.06 tree regrowth: JSON persistence and two WS client tests passed in isolated environment; PostgreSQL migration/integration and Android not verified, so A-03 remains IN_PROGRESS",
-      "audit": "Partial code exists. See docs/RELEASE_0528_TASK_AUDIT.md; no full acceptance"
+      "progress": "Staff+shield, consumables, JSON/WSS tree and production v0.5.28 PG schema verified; awaiting Android acceptance, no full DONE",
+      "audit": "Partial acceptance only: targeted Godot/WSS tests PASS; physical Android and full task criteria NOT_VERIFIED. See docs/audits/TASK-087_090_095_FOLLOWUP_20261108.md"
     },
     {
       "id": "A-04",
@@ -66,17 +66,17 @@
       "status": "IN_PROGRESS",
       "depends_on": [],
       "doc": "docs/TASK-090_ASSET_AND_UI_AUDIT.md",
-      "audit": "Partial code exists. See docs/RELEASE_0528_TASK_AUDIT.md; no full acceptance"
+      "audit": "Asset inventory 85 + real Godot HUD captures PASS. Art/style variants and real Android NOT_VERIFIED; approval B-02/B-03 pending."
     },
     {
       "id": "A-05",
       "task": "TASK-087-UI",
       "title": "Functional HUD, scrolling, safe area fixes",
       "priority": 1,
-      "status": "IN_PROGRESS",
+      "status": "TESTED",
       "depends_on": [],
       "doc": "docs/TASK-087_GAMEPLAY_WORLD_UI_POLISH.md",
-      "audit": "Partial code exists. See docs/RELEASE_0528_TASK_AUDIT.md; no full acceptance"
+      "audit": "Partial acceptance only: targeted Godot/WSS tests PASS; physical Android and full task criteria NOT_VERIFIED. See docs/audits/TASK-087_090_095_FOLLOWUP_20261108.md"
     },
     {
       "id": "A-06",
@@ -149,11 +149,11 @@
       "task": "TASK-095",
       "title": "Спасти раненого напарника",
       "priority": 0,
-      "status": "IN_PROGRESS",
+      "status": "TESTED",
       "depends_on": [],
       "doc": "docs/TASK-093_124_COOPERATIVE_TASKS.md",
       "approval_dependencies": [],
-      "audit": "Partial code exists. See docs/RELEASE_0528_TASK_AUDIT.md; no full acceptance"
+      "audit": "Partial acceptance only: targeted Godot/WSS tests PASS; physical Android and full task criteria NOT_VERIFIED. See docs/audits/TASK-087_090_095_FOLLOWUP_20261108.md"
     },
     {
       "id": "A-13",

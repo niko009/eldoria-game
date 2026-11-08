@@ -12,6 +12,7 @@ const WORLD_SAVE_SCRIPT := preload("res://world_save.gd")
 const POSTGRES_WORLD_STORE_SCRIPT := preload("res://postgres_world_store.gd")
 const BUILDING_SCRIPT := preload("res://building_object.gd")
 const TREE_REGROWTH_SCRIPT := preload("res://tree_regrowth.gd")
+const REVIVE_POLICY := preload("res://coop_revive_policy.gd")
 const HARVEST_VFX_SCRIPT := preload("res://harvest_vfx.gd")
 const TELEMETRY_SCRIPT := preload("res://performance_telemetry.gd")
 const TELEMETRY_SINK_SCRIPT := preload("res://telemetry_sink.gd")
@@ -46,6 +47,9 @@ var resource_remaining := {}
 var player_inventories := {}
 var player_health := {}
 var player_respawn_at := {}
+var player_downed_until: Dictionary = {} # Authoritative server-only deadlines.
+var downed_peers: Dictionary = {} # Client UI; server controls transitions.
+var revive_holds: Dictionary = {} # reviver -> {target,started,position}.
 var last_attack_at := {}
 var local_attack_pause_until_msec := 0
 const MAX_HEALTH := 100
@@ -798,6 +802,7 @@ func _ui() -> void:
         live_ui.combat_equip_requested.connect(_try_equip_combat)
         live_ui.armor_requested.connect(_try_equip_armor)
         live_ui.shield_requested.connect(_try_equip_offhand)
+        live_ui.revive_hold_requested.connect(_try_revive_hold)
         live_ui.preview_requested.connect(_live_preview)
         live_ui.set_avatar(selected_avatar)
         live_ui.set_inventory(_empty_inventory())
@@ -1188,6 +1193,12 @@ func _remove_actor(id: int) -> void:
     hero_ability_ready_at.erase(id)
     hero_mana.erase(id)
     player_respawn_at.erase(id)
+    player_downed_until.erase(id)
+    downed_peers.erase(id)
+    revive_holds.erase(id)
+    for reviver in revive_holds.keys():
+        if int(revive_holds[reviver]["target"]) == id:
+            revive_holds.erase(reviver)
     last_attack_at.erase(id)
     equipped_axes.erase(id)
     equipped_combat.erase(id)
@@ -1218,6 +1229,9 @@ func _clear_session() -> void:
     footstep_variant.clear()
     player_health.clear()
     player_respawn_at.clear()
+    player_downed_until.clear()
+    downed_peers.clear()
+    revive_holds.clear()
     food_regen_until.clear()
     mana_potion_used_at.clear()
     food_regen_accum = 0.0
@@ -1405,6 +1419,8 @@ func request_spawn(choice: int = 0, identity_token: String = "") -> void:
     inventory_snapshot.rpc_id(id, player_inventories[id])
     axe_equip_snapshot.rpc_id(id, false)
     health_snapshot.rpc_id(id, MAX_HEALTH, MAX_HEALTH)
+    for existing in player_downed_until:
+        player_downed_snapshot.rpc_id(id, int(existing), true)
     practice_snapshot.rpc_id(id, int(practice_points[id]))
     hunt_progress_snapshot.rpc_id(id,shared_hunt_kills)
     if passive_creatures.has(ALPHA_WOLF_ID):
@@ -1642,6 +1658,7 @@ func _process(delta: float) -> void:
         next_proximity_ui_at_msec = ui_now + 200
         if live_ui != null:
             live_ui.set_near_campfire(own_id != 0 and _near_campfire(own_id))
+            live_ui.set_revive_available(_nearest_downed_ally() > 0)
         _refresh_gather_hud()
     if not is_dedicated and telemetry != null and own_id != 0 and players.has(own_id):
         telemetry.sample_frame(delta)
@@ -2007,6 +2024,7 @@ func _combat_server_tick(delta: float) -> void:
     if not multiplayer.is_server() or multiplayer.multiplayer_peer is OfflineMultiplayerPeer:
         return
     var now := Time.get_ticks_msec()
+    _tick_revive_holds(now)
     if now >= next_tree_regrowth_tick_ms:
         next_tree_regrowth_tick_ms = now + 1500
         _tick_tree_regrowth(int(Time.get_unix_time_from_system()))
@@ -2058,6 +2076,14 @@ func _combat_server_tick(delta: float) -> void:
         if now < int(player_respawn_at[id]):
             continue
         player_respawn_at.erase(id)
+        player_downed_until.erase(id)
+        revive_holds.erase(id)
+        player_downed_snapshot.rpc(int(id),false)
+        if not is_dedicated:
+            player_downed_snapshot(int(id),false)
+        for reviver in revive_holds.keys():
+            if int(revive_holds[reviver]["target"]) == int(id):
+                revive_holds.erase(reviver)
         if not players.has(id):
             continue
         var world: Node3D = get_node("Eldoria_Forest")
@@ -2467,6 +2493,7 @@ func _damage_player_on_server(id: int, damage: int) -> bool:
         if not is_dedicated:
             shield_block_visual(id)
     player_health[id] = maxi(0, int(player_health[id]) - damage)
+    revive_holds.erase(id) # Damage always interrupts a rescue attempt.
     var remaining := int(player_health[id])
     health_snapshot_for.rpc(id, remaining)
     if id == own_id:
@@ -2474,7 +2501,19 @@ func _damage_player_on_server(id: int, damage: int) -> bool:
     elif multiplayer.get_peers().has(id):
         health_snapshot.rpc_id(id, remaining, MAX_HEALTH)
     if remaining == 0:
-        player_respawn_at[id] = Time.get_ticks_msec() + 4000
+        var has_live_ally := false
+        for ally_id in player_health:
+            if int(ally_id) != id and players.has(ally_id) and int(player_health[ally_id]) > 0:
+                has_live_ally = true
+                break
+        var delay_ms := REVIVE_POLICY.REVIVE_WINDOW_MS if has_live_ally else 4000
+        player_respawn_at[id] = Time.get_ticks_msec() + delay_ms
+        if has_live_ally:
+            player_downed_until[id] = int(player_respawn_at[id])
+            if not is_dedicated:
+                player_downed_snapshot(id,true)
+            player_downed_snapshot.rpc(id,true)
+            _send_hero_message(id,"Вы ранены. Напарник может спасти вас в течение 12 сек")
     player_hurt_visual.rpc(id)
     if not is_dedicated:
         player_hurt_visual(id)
@@ -3191,6 +3230,105 @@ func health_snapshot(hp: int, maximum: int) -> void:
 @rpc("authority", "call_remote", "reliable")
 func health_snapshot_for(id: int, hp: int) -> void:
     player_health[id] = clampi(hp, 0, MAX_HEALTH)
+
+@rpc("authority", "call_remote", "reliable")
+func player_downed_snapshot(id: int, downed: bool) -> void:
+    if downed:
+        downed_peers[id] = true
+    else:
+        downed_peers.erase(id)
+
+func _nearest_downed_ally() -> int:
+    if own_id <= 0 or not players.has(own_id) or int(player_health.get(own_id,0)) <= 0:
+        return 0
+    var closest := REVIVE_POLICY.REVIVE_DISTANCE_M * REVIVE_POLICY.REVIVE_DISTANCE_M
+    var chosen := 0
+    for ally in downed_peers:
+        if int(ally) == own_id or not players.has(ally) or int(player_health.get(ally,MAX_HEALTH)) != 0:
+            continue
+        var distance_sq: float = players[own_id].position.distance_squared_to(players[ally].position)
+        if distance_sq <= closest:
+            chosen = int(ally)
+            closest = distance_sq
+    return chosen
+
+func _try_revive_hold(pressed: bool) -> void:
+    if own_id <= 0 or not players.has(own_id):
+        return
+    var target_id := _nearest_downed_ally() if pressed else 0
+    if multiplayer.is_server():
+        _revive_hold_on_server(own_id,target_id,pressed)
+    else:
+        request_revive_hold.rpc_id(1,target_id,pressed)
+
+@rpc("any_peer", "reliable")
+func request_revive_hold(target_id: int, pressed: bool) -> void:
+    if multiplayer.is_server():
+        _revive_hold_on_server(multiplayer.get_remote_sender_id(),target_id,pressed)
+
+func _revive_clear_of_obstacles(a: Vector3, b: Vector3) -> bool:
+    var world: Node3D = get_node("Eldoria_Forest")
+    var origin := Vector2(a.x,a.z)
+    var destination := Vector2(b.x,b.z)
+    if world._sweep_hits(origin,destination,0.05):
+        return false
+    var segment := destination-origin
+    var length_sq := segment.length_squared()
+    for building in placed_buildings.values():
+        var center := Vector2(float(building["x"]),float(building["z"]))
+        var nearest := origin + segment * clampf((center-origin).dot(segment)/maxf(length_sq,0.001),0.0,1.0)
+        var radius := float(BUILDING_SCRIPT.RADII.get(str(building["kind"]),1.0))
+        if nearest.distance_squared_to(center) < radius*radius:
+            return false
+    return true
+
+func _revive_allowed(reviver: int, target: int, now: int) -> bool:
+    if not players.has(reviver) or not players.has(target):
+        return false
+    return REVIVE_POLICY.eligible(reviver,target,now,int(player_downed_until.get(target,0)),
+        int(player_health.get(reviver,0)),int(player_health.get(target,MAX_HEALTH)),
+        players[reviver].position,players[target].position,
+        _revive_clear_of_obstacles(players[reviver].position,players[target].position),false)
+
+func _revive_hold_on_server(reviver: int, target: int, pressed: bool) -> bool:
+    if not multiplayer.is_server() or not players.has(reviver):
+        return false
+    revive_holds.erase(reviver)
+    var now := Time.get_ticks_msec()
+    if not pressed or not _revive_allowed(reviver,target,now):
+        return false
+    revive_holds[reviver] = {"target":target,"started":now,"position":players[reviver].position}
+    _send_hero_message(reviver,"Удерживайте СПАСТИ 1,8 сек")
+    return true
+
+func _tick_revive_holds(now: int) -> void:
+    if not multiplayer.is_server():
+        return
+    for reviver in revive_holds.keys():
+        var hold: Dictionary = revive_holds[reviver]
+        var target := int(hold["target"])
+        if not _revive_allowed(int(reviver),target,now) or players[reviver].position.distance_to(hold["position"]) > 0.45:
+            revive_holds.erase(reviver)
+            continue
+        if not REVIVE_POLICY.hold_complete(int(hold["started"]),now,-1):
+            continue
+        revive_holds.erase(reviver)
+        player_respawn_at.erase(target)
+        player_downed_until.erase(target)
+        player_health[target] = REVIVE_POLICY.REVIVE_HEALTH
+        health_snapshot_for.rpc(target,int(player_health[target]))
+        if target == own_id:
+            health_snapshot(int(player_health[target]),MAX_HEALTH)
+        elif multiplayer.get_peers().has(target):
+            health_snapshot.rpc_id(target,int(player_health[target]),MAX_HEALTH)
+        player_downed_snapshot.rpc(target,false)
+        if not is_dedicated:
+            player_downed_snapshot(target,false)
+        _send_hero_message(target,"Напарник спас вас: +30 HP")
+        _send_hero_message(int(reviver),"Напарник спасён!")
+        for another in revive_holds.keys():
+            if int(revive_holds[another]["target"]) == target:
+                revive_holds.erase(another)
 
 @rpc("authority", "call_remote", "reliable")
 func wolf_snapshot(at: Vector3, hp: int, alive: bool, direction: Vector3) -> void:

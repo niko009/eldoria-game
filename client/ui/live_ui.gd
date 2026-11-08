@@ -12,6 +12,7 @@ signal joystick_moved(direction: Vector2)
 signal zoom_requested(step: float)
 signal armor_requested(equip: bool)
 signal shield_requested(equip: bool)
+signal revive_hold_requested(pressed: bool)
 
 const State = preload("res://ui/mock_game_ui_state.gd")
 const Style = preload("res://ui/ui_style.gd")
@@ -82,6 +83,7 @@ func _ready() -> void:
     hud.open_skills.connect(func() -> void: _open("skills"))
     hud.item_selected.connect(state.select_item)
     hud.action_requested.connect(_on_action)
+    hud.revive_hold_requested.connect(func(pressed: bool) -> void: revive_hold_requested.emit(pressed))
     hud.zoom_requested.connect(zoom_requested.emit)
     add_child(hud)
     bow_aim_hint = Style.label("+", 29, Color("f1e3ba"))
@@ -323,6 +325,10 @@ func set_near_campfire(near: bool) -> void:
         state.near_campfire = near
         state.changed.emit()
 
+func set_revive_available(value: bool) -> void:
+    if hud != null:
+        hud.set_revive_available(value and active_panel.is_empty())
+
 func set_raid_status(phase: String, round_number: int, kills: int, goal: int, seconds: int) -> void:
     if hud != null:
         hud.set_raid_status(phase, round_number, kills, goal, seconds)
@@ -385,6 +391,9 @@ func _open(kind: String) -> void:
     if kind == active_panel:
         _close()
         return
+    # Opening any modal cancels a potentially held rescue. Never let a press
+    # continue completing after the touch moves into inventory/settings.
+    revive_hold_requested.emit(false)
     active_panel = kind
     if gather_target_hint != null:
         gather_target_hint.visible = false
@@ -499,6 +508,7 @@ func _on_action(kind: String) -> void:
 func _close() -> void:
     if active_panel.is_empty():
         return
+    revive_hold_requested.emit(false)
     active_panel = ""
     if gather_target_hint != null:
         gather_target_hint.visible = gather_target_kind != ""

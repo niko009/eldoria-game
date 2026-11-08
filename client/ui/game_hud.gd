@@ -9,6 +9,7 @@ signal action_requested(action_id: String)
 signal open_settings
 signal open_skills
 signal zoom_requested(step: float)
+signal revive_hold_requested(pressed: bool)
 
 const Style = preload("res://ui/ui_style.gd")
 const State = preload("res://ui/mock_game_ui_state.gd")
@@ -54,6 +55,7 @@ var combat_mode := "unarmed"
 var raid_banner: Label
 var heal_button: Button
 var repair_button: Button
+var revive_button: Button
 var quick_consumables: HBoxContainer
 var quick_buttons: Dictionary = {}
 var zoom_controls: HBoxContainer
@@ -419,6 +421,22 @@ func _create_raid_ui() -> void:
 	repair_button.pressed.connect(func() -> void: action_requested.emit("repair"))
 	repair_button.visible = false
 	add_child(repair_button)
+	revive_button = Button.new()
+	revive_button.name = "RescueTeammateHold"
+	revive_button.text = "✚ СПАСТИ · удерживать"
+	revive_button.tooltip_text = "Раненый напарник рядом · удерживайте 1,8 секунды"
+	revive_button.focus_mode = Control.FOCUS_NONE
+	revive_button.add_theme_stylebox_override("normal", _card(Color("39534b",0.94),Color("b9e5c0"),12,6))
+	revive_button.add_theme_stylebox_override("pressed", _card(Color("739e71",0.96),GOLD,12,6))
+	revive_button.button_down.connect(func() -> void: revive_hold_requested.emit(true))
+	revive_button.button_up.connect(func() -> void: revive_hold_requested.emit(false))
+	revive_button.visible = false
+	add_child(revive_button)
+
+func set_revive_available(value: bool) -> void:
+	if revive_button != null and revive_button.visible != value:
+		revive_button.visible = value
+		_layout()
 
 func set_camp_health(hp: int, maximum: int) -> void:
 	camp_health = clampi(hp, 0, maximum)
@@ -592,6 +610,10 @@ func _layout() -> void:
 	heal_button.position = Vector2(inset.x, info_bottom + 8)
 	repair_button.size = Vector2(216, 37)
 	repair_button.position = Vector2(inset.x, heal_button.position.y + (43 if heal_button.visible else 0))
+	if revive_button != null:
+		revive_button.size = Vector2(194,44)
+		revive_button.position = Vector2((size.x - revive_button.size.x)*0.5,
+			maxf(inset.y+95,hotbar.position.y-130))
 	if quick_consumables != null:
 		quick_consumables.size = quick_consumables.get_combined_minimum_size()
 		quick_consumables.position = Vector2(inset.x, minf(size.y - inset.w - 45 - quick_consumables.size.y, info_bottom + (46 if heal_button.visible or repair_button.visible else 14)))

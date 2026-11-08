@@ -7,6 +7,7 @@ func _run() -> void:
 	root.add_child(game)
 	await process_frame
 	game.selected_avatar = 1 # Rogue: attack button always means a weapon strike.
+	game.is_websocket_host = true
 	game._host()
 	game.set_physics_process(false)
 	var id: int = game.own_id
@@ -57,13 +58,17 @@ func _run() -> void:
 		return
 	# The hotbar is the primary Android and Windows equipment control.
 	for weapon in ["spear","bow","shield"]:
+		# A bow occupies both hands; the new offhand shield deliberately cannot
+		# be equipped until the bow is stowed. Staff + shield remains allowed.
+		if weapon == "shield":
+			game._try_equip_combat("unarmed")
 		if ui.hud.hotbar.slot_buttons[weapon].disabled:
 			_fail("crafted weapon hotbar still disabled: "+weapon)
 			return
 		ui.hud.hotbar.slot_buttons[weapon].pressed.emit()
 		var equipped_ok: bool = str(game.equipped_offhand.get(id,"")) == "shield" and ui.shield_equipped if weapon == "shield" else str(game.equipped_combat.get(id,"")) == weapon and ui.combat_equipment == weapon and ui.state.selected_item == weapon
 		if not equipped_ok:
-			_fail("server, live UI or hotbar equipment selection mismatch: "+weapon)
+			_fail("server, live UI or hotbar equipment selection mismatch: "+weapon+" main="+str(game.equipped_combat.get(id,"?"))+" off="+str(game.equipped_offhand.get(id,"?"))+" UI="+str(ui.shield_equipped)+" selected="+str(ui.state.selected_item))
 			return
 	# Inventory alternative also equips weapon, no crafting menu necessary.
 	ui._open("inventory")
