@@ -4,6 +4,7 @@ extends RefCounted
 # resource counts. No plaintext player token, no client-side authority.
 const SCHEMA := 1
 const WORLD_SEED := 20261101
+const QUESTS := preload("res://quest_progress.gd")
 const ITEM_KINDS := ["wood","stone","herb","mana_herb","axe","bandage","repair_kit","spear","bow","shield","arrow","meat","hide","bone","leather_armor","grilled_meat","wooden_staff","mana_potion"]
 var save_path := ""
 var last_error := ""
@@ -145,7 +146,11 @@ func load_snapshot(world: Node3D) -> bool:
         if not _valid_equipment(equipment,sanitized,choice):
             last_error = "Invalid equipment"
             return false
-        profiles[hash_key] = {"inventory":sanitized,"avatar":clampi(choice,0,2),"skills":skills,"equipment":_normalize_equipment(equipment)}
+        var quests: Variant = profile.get("quests",{})
+        if not QUESTS.valid(quests):
+            last_error = "Invalid quest progress"
+            return false
+        profiles[hash_key] = {"inventory":sanitized,"avatar":clampi(choice,0,2),"skills":skills,"quests":QUESTS.normalize(quests),"equipment":_normalize_equipment(equipment)}
     return true
 
 static func _normalize_equipment(value: Dictionary) -> Dictionary:
@@ -161,6 +166,10 @@ static func _valid_equipment(value: Dictionary,inventory: Dictionary,avatar: int
 func save_snapshot(remaining: Dictionary, world: Node3D) -> bool:
     if save_path.is_empty():
         return false
+    for profile in profiles.values():
+        if not QUESTS.valid(profile.get("quests",{})):
+            last_error = "Invalid quest state to persist"
+            return false
     var depleted_only := {}
     for key in remaining.keys():
         var id := int(key)

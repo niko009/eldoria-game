@@ -190,7 +190,11 @@ func load_snapshot(world: Node3D) -> bool:
         if not preload("res://world_save.gd")._valid_equipment(equipment,inventory,avatar):
             last_error = "Invalid player equipment"
             return false
-        profiles[hash_key] = {"avatar":avatar,"inventory":inventory,"skills":skills,"equipment":preload("res://world_save.gd")._normalize_equipment(equipment)}
+        var quests: Variant = profile.get("quests",{})
+        if not preload("res://quest_progress.gd").valid(quests):
+            last_error = "Invalid PostgreSQL quest progress"
+            return false
+        profiles[hash_key] = {"avatar":avatar,"inventory":inventory,"skills":skills,"quests":preload("res://quest_progress.gd").normalize(quests),"equipment":preload("res://world_save.gd")._normalize_equipment(equipment)}
     var build_data: Variant = snapshot.get("buildings",{})
     if not build_data is Dictionary or build_data.size() > 300:
         last_error = "Invalid building snapshot"
@@ -212,6 +216,10 @@ func load_snapshot(world: Node3D) -> bool:
     return true
 
 func save_snapshot(remaining: Dictionary, world: Node3D) -> bool:
+    for profile in profiles.values():
+        if not preload("res://quest_progress.gd").valid(profile.get("quests",{})):
+            last_error = "Invalid quest state to save"
+            return false
     var depleted_only := {}
     for key in remaining.keys():
         var id := int(key)
@@ -301,6 +309,8 @@ func _snapshot_matches(live: Dictionary, expected: Dictionary) -> bool:
             if int(remote.get("skills",{}).get(skill,-1)) != int(wanted.get("skills",{}).get(skill,0)):
                 return false
         if preload("res://world_save.gd")._normalize_equipment(remote.get("equipment",{})) != preload("res://world_save.gd")._normalize_equipment(wanted.get("equipment",{})):
+            return false
+        if preload("res://quest_progress.gd").normalize(remote.get("quests",{})) != preload("res://quest_progress.gd").normalize(wanted.get("quests",{})):
             return false
     var remote_buildings: Variant = live.get("buildings",{})
     var local_buildings: Variant = expected.get("buildings",{})

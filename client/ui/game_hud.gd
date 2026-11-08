@@ -33,6 +33,8 @@ var health_detail: Label
 var health_bar: ProgressBar
 var xp_bar: ProgressBar
 var xp_label: Label
+var quest_status: Label
+var quest_claim: Button
 var avatar_name: Label
 var warning_detail: Label
 var resources_panel: HBoxContainer
@@ -141,6 +143,31 @@ func _create_status() -> void:
 	xp_bar.show_percentage = false
 	xp_bar.max_value = 1
 	xp_row.add_child(xp_bar)
+	quest_status = Style.label("", 11, Color("d5edba"))
+	quest_status.name = "StarterQuestProgress"
+	quest_status.visible = false
+	stats.add_child(quest_status)
+	quest_claim = Button.new()
+	quest_claim.name = "StarterQuestClaim"
+	quest_claim.text = "Получить награду"
+	quest_claim.tooltip_text = "Первые припасы: 2 травы и 5 XP навыка"
+	quest_claim.focus_mode = Control.FOCUS_NONE
+	quest_claim.visible = false
+	quest_claim.pressed.connect(func() -> void: action_requested.emit("quest_claim"))
+	stats.add_child(quest_claim)
+
+func set_quest_progress(quests: Dictionary) -> void:
+	if quest_status == null or quest_claim == null:
+		return
+	var stage: Dictionary = quests.get("first_supplies",{})
+	var status := str(stage.get("status",""))
+	quest_status.visible = status in ["active","claimed"]
+	quest_claim.visible = status == "completed"
+	if status == "active":
+		quest_status.text = "Припасы: дерево %d/3 · камень %d/2" % [int(stage.get("wood",0)),int(stage.get("stone",0))]
+	elif status == "claimed":
+		quest_status.text = "Припасы ✓ Награда получена"
+	_layout()
 
 func set_online_players(count: int) -> void:
 	if online_detail == null:
